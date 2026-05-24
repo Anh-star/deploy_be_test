@@ -1,0 +1,13 @@
+.git
+.gitignore
+.idea
+.vscode
+target/
+*.iml
+.mvn/
+mvnw
+mvnw.cmd
+pom.xml.releaseBackup
+release.properties
+Dockerfile
+.dockerignore
