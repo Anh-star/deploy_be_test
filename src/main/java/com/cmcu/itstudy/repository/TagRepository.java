@@ -30,4 +30,7 @@ public interface TagRepository extends JpaRepository<Tag, UUID> {
     List<Tag> findTop15PopularTags(Pageable pageable);
 
     Optional<Tag> findByName(String name);
+
+    Optional<Tag> findBySlug(String slug);
 }
+

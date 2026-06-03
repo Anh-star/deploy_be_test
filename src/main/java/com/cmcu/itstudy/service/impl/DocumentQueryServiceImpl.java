@@ -59,6 +59,7 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
         // Same source as list/home cards: denormalized counters on Document (updated by increaseView / downloadDocument).
         long totalViews = document.getViewCount() != null ? document.getViewCount() : 0L;
         long totalDownloads = document.getDownloadCount() != null ? document.getDownloadCount() : 0L;
+        long reportCount = document.getReports() != null ? document.getReports().size() : 0L;
 
         var comments = commentService.loadCommentsForDocument(id);
         List<DocumentDetailQuizDto> quizzes = quizService.loadQuizzesForDocument(id);
@@ -86,6 +87,7 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
                 tags,
                 totalViews,
                 totalDownloads,
+                reportCount,
                 primaryFile,
                 comments,
                 quizzes,

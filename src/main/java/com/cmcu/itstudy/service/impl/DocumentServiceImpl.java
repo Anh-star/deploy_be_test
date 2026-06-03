@@ -121,11 +121,12 @@ public class DocumentServiceImpl implements DocumentService {
         // 4. Handle Tags and DocumentTag associations
         Set<DocumentTag> documentTags = new HashSet<>();
         for (String tagName : documentCreateRequestDto.getTags()) {
-            Tag tag = tagRepository.findByName(tagName)
+            String tagSlug = SlugUtils.resolveSlug(tagName, tagName);
+            Tag tag = tagRepository.findBySlug(tagSlug)
                     .orElseGet(() -> { // Create tag if not exists
                         Tag newTag = Tag.builder()
                                 .name(tagName)
-                                .slug(SlugUtils.resolveSlug(tagName, tagName))
+                                .slug(tagSlug)
                                 .build();
                         return tagRepository.save(newTag);
                     });
@@ -211,11 +212,12 @@ public class DocumentServiceImpl implements DocumentService {
         // Add new tags
         Set<DocumentTag> newDocumentTags = new HashSet<>();
         for (String tagName : documentUpdateRequestDto.getTags()) {
-            Tag tag = tagRepository.findByName(tagName)
+            String tagSlug = SlugUtils.resolveSlug(tagName, tagName);
+            Tag tag = tagRepository.findBySlug(tagSlug)
                     .orElseGet(() -> { // Create tag if not exists
                         Tag newTag = Tag.builder()
                                 .name(tagName)
-                                .slug(SlugUtils.resolveSlug(tagName, tagName))
+                                .slug(tagSlug)
                                 .build();
                         return tagRepository.save(newTag);
                     });

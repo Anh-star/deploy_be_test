@@ -14,4 +14,5 @@ import lombok.Setter;
 public class DocumentDetailStatsDto {
     private Long totalViews;
     private Long totalDownloads;
+    private Long reportCount;
 }
