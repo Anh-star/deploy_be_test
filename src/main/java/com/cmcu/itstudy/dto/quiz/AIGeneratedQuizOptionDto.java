@@ -1,4 +1,4 @@
-package com.cmcu.itstudy.dto.document;
+package com.cmcu.itstudy.dto.quiz;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,8 +11,9 @@ import lombok.Setter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class DocumentDetailStatsDto {
-    private Long totalViews;
-    private Long totalDownloads;
-    private Long reportCount;
+public class AIGeneratedQuizOptionDto {
+
+    private String content;
+
+    private Boolean isCorrect;
 }

@@ -157,11 +157,6 @@ public class QuizServiceImpl implements QuizService {
                 endOfDay
         );
 
-        int maxAttemptsPerDay = quiz.getMaxAttemptsPerDay() != null ? quiz.getMaxAttemptsPerDay() : 3;
-        if (todayAttempts >= maxAttemptsPerDay) {
-            throw new IllegalArgumentException("Max attempts per day exceeded");
-        }
-
         int attemptNumber = (int) todayAttempts + 1;
         QuizAttempt attempt = QuizAttempt.builder()
                 .userId(userId)

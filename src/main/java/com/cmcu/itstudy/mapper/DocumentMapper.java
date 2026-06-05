@@ -61,6 +61,7 @@ public final class DocumentMapper {
                                                                   List<String> tags,
                                                                   long totalViews,
                                                                   long totalDownloads,
+                                                                  long reportCount,
                                                                   DocumentPrimaryFileDto primaryFile,
                                                                   DocumentDetailCommentsDto comments,
                                                                   List<DocumentDetailQuizDto> quizzes,
@@ -73,6 +74,7 @@ public final class DocumentMapper {
         DocumentDetailStatsDto stats = DocumentDetailStatsDto.builder()
                 .totalViews(totalViews)
                 .totalDownloads(totalDownloads)
+                .reportCount(reportCount)
                 .build();
 
         return DocumentDetailResponseDto.builder()
