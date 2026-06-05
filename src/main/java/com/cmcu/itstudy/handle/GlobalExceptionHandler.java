@@ -1,6 +1,7 @@
 package com.cmcu.itstudy.handle;
 
 import com.cmcu.itstudy.dto.common.ApiResponse;
+import com.cmcu.itstudy.handle.AIGeneratedQuizValidationException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -87,11 +88,26 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponse<Void>> handleGenericException(Exception ex) {
-        // Log ex internally (e.g., using a logger) but don't expose details.
-        ApiResponse<Void> body = ApiResponse.failure("Internal server error");
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+    @ExceptionHandler(AIGeneratedQuizValidationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAIGeneratedQuizValidation(AIGeneratedQuizValidationException ex) {
+        String message = ex.getMessage() != null ? ex.getMessage() : "Invalid AI-generated quiz data";
+        ApiResponse<Void> body = ApiResponse.failure(message);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
+
+    @ExceptionHandler(Exception.class)
+public ResponseEntity<ApiResponse<Void>> handleGenericException(Exception ex) {
+
+    ex.printStackTrace();
+
+    String msg = ex.getClass().getName() + ": " + ex.getMessage();
+
+    ApiResponse<Void> body =
+            ApiResponse.failure(msg);
+
+    return ResponseEntity
+            .status(HttpStatus.INTERNAL_SERVER_ERROR)
+            .body(body);
+}
 }
 

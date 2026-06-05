@@ -18,6 +18,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import jakarta.persistence.CascadeType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -59,9 +60,15 @@ public class QuizQuestion {
     @Builder.Default
     private Integer points = 1;
 
-    @OneToMany(mappedBy = "question", fetch = FetchType.LAZY)
+
     @ToString.Exclude
     @JsonIgnore
+    @OneToMany(
+        mappedBy = "question",
+        fetch = FetchType.LAZY,
+        cascade = CascadeType.ALL,
+        orphanRemoval = true
+    )
     @Builder.Default
     private List<QuizQuestionOption> options = new ArrayList<>();
 
