@@ -7,6 +7,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -18,4 +20,9 @@ public class ContributorStatusDto {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private int submissionCount;
+    /** Map tên trường -> lý do cần bổ sung (khi status = NEED_INFO). */
+    private Map<String, String> requestedFields;
+    private String portfolioLink;
+    private String experience;
+    private List<CertificateDto> certificates;
 }

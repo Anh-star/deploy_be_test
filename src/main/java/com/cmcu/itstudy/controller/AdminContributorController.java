@@ -10,6 +10,8 @@ import com.cmcu.itstudy.entity.User;
 import com.cmcu.itstudy.enums.ContributorRequestStatus;
 import com.cmcu.itstudy.repository.ContributorRequestRepository;
 import com.cmcu.itstudy.service.contract.AdminContributorRequestService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -31,8 +34,11 @@ public class AdminContributorController {
 
     private final ContributorRequestRepository contributorRequestRepository;
     private final AdminContributorRequestService adminContributorRequestService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public AdminContributorController(ContributorRequestRepository contributorRequestRepository, AdminContributorRequestService adminContributorRequestService) {
+    public AdminContributorController(
+            ContributorRequestRepository contributorRequestRepository,
+            AdminContributorRequestService adminContributorRequestService) {
         this.contributorRequestRepository = contributorRequestRepository;
         this.adminContributorRequestService = adminContributorRequestService;
     }
@@ -71,6 +77,16 @@ public class AdminContributorController {
                             .build());
                     }
 
+                    // Parse requestedFields từ JSON
+                    Map<String, String> parsedFields = Collections.emptyMap();
+                    if (req.getRequestedFields() != null && !req.getRequestedFields().isBlank()) {
+                        try {
+                            parsedFields = objectMapper.readValue(req.getRequestedFields(), new TypeReference<Map<String, String>>() {});
+                        } catch (Exception e) {
+                            System.err.println("Error parsing requestedFields: " + e.getMessage());
+                        }
+                    }
+
                     return AdminContributorRequestDto.builder()
                         .id(req.getId())
                         .userId(user != null ? user.getId() : null)
@@ -83,6 +99,8 @@ public class AdminContributorController {
                         .certificates(certificatesDto)
                         .avatarUrl(null) 
                         .rejectionReason(req.getRejectionReason())
+                        .supplementCount(req.getSupplementCount())
+                        .requestedFields(parsedFields)
                         .build();
                 })
                 .collect(Collectors.toList());
@@ -104,7 +122,8 @@ public class AdminContributorController {
             adminContributorRequestService.updateContributorRequestStatus(
                     requestId, 
                     updateDto.getStatus(), 
-                    updateDto.getRejectionReason()
+                    updateDto.getRejectionReason(),
+                    updateDto.getRequestedFields()
             );
             return ResponseEntity.ok(ApiResponse.success(null, "Cập nhật trạng thái yêu cầu Contributor thành công."));
         } catch (RuntimeException e) {

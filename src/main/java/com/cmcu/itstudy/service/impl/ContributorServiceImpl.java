@@ -1,5 +1,6 @@
 package com.cmcu.itstudy.service.impl;
 
+import com.cmcu.itstudy.dto.contributor.CertificateDto;
 import com.cmcu.itstudy.dto.contributor.ContributorRegistrationRequestDto;
 import com.cmcu.itstudy.dto.contributor.ContributorStatusDto;
 import com.cmcu.itstudy.entity.ContributorCertificate;
@@ -9,11 +10,15 @@ import com.cmcu.itstudy.enums.ContributorRequestStatus;
 import com.cmcu.itstudy.repository.ContributorRequestRepository;
 import com.cmcu.itstudy.repository.UserRepository;
 import com.cmcu.itstudy.service.contract.ContributorService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -23,8 +28,11 @@ public class ContributorServiceImpl implements ContributorService {
 
     private final ContributorRequestRepository contributorRequestRepository;
     private final UserRepository userRepository;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public ContributorServiceImpl(ContributorRequestRepository contributorRequestRepository, UserRepository userRepository) {
+    public ContributorServiceImpl(
+            ContributorRequestRepository contributorRequestRepository,
+            UserRepository userRepository) {
         this.contributorRequestRepository = contributorRequestRepository;
         this.userRepository = userRepository;
     }
@@ -64,22 +72,32 @@ public class ContributorServiceImpl implements ContributorService {
             throw new RuntimeException("Yêu cầu Contributor của bạn đã được phê duyệt.");
         }
 
-        if (st == ContributorRequestStatus.REJECTED || st == ContributorRequestStatus.NEED_INFO) {
+        if (st == ContributorRequestStatus.REJECTED) {
             if (latest.getSubmissionCount() >= 2) {
                 throw new RuntimeException("Bạn đã hết số lần gửi yêu cầu Contributor.");
             }
-            if (latest.getSubmissionCount() == 1) {
-                latest.setSubmissionCount(2);
-                latest.setStatus(ContributorRequestStatus.PENDING);
-                latest.setRejectionReason(null);
-                latest.setPortfolioLink(request.getPortfolioLink());
-                latest.setExperience(request.getExperience());
-                latest.setUpdatedAt(now);
-                applyCertificates(latest, request);
-                contributorRequestRepository.save(latest);
-                return;
-            }
-            throw new RuntimeException("Dữ liệu hồ sơ không hợp lệ. Vui lòng liên hệ hỗ trợ.");
+            latest.setSubmissionCount(latest.getSubmissionCount() + 1);
+            latest.setStatus(ContributorRequestStatus.PENDING);
+            latest.setRejectionReason(null);
+            latest.setRequestedFields(null);
+            latest.setPortfolioLink(request.getPortfolioLink());
+            latest.setExperience(request.getExperience());
+            latest.setUpdatedAt(now);
+            applyCertificates(latest, request);
+            contributorRequestRepository.save(latest);
+            return;
+        }
+
+        if (st == ContributorRequestStatus.NEED_INFO) {
+            latest.setStatus(ContributorRequestStatus.PENDING);
+            latest.setRejectionReason(null);
+            latest.setRequestedFields(null);
+            latest.setPortfolioLink(request.getPortfolioLink());
+            latest.setExperience(request.getExperience());
+            latest.setUpdatedAt(now);
+            applyCertificates(latest, request);
+            contributorRequestRepository.save(latest);
+            return;
         }
 
         throw new RuntimeException("Bạn đã có một yêu cầu đang chờ duyệt.");
@@ -117,12 +135,37 @@ public class ContributorServiceImpl implements ContributorService {
         }
 
         ContributorRequest request = latestRequest.get();
+
+        // Parse requestedFields từ JSON
+        Map<String, String> parsedFields = Collections.emptyMap();
+        if (request.getRequestedFields() != null && !request.getRequestedFields().isBlank()) {
+            try {
+                parsedFields = objectMapper.readValue(request.getRequestedFields(), new TypeReference<Map<String, String>>() {});
+            } catch (Exception e) {
+                System.err.println("Error parsing requestedFields: " + e.getMessage());
+            }
+        }
+
+        List<CertificateDto> certificatesDto = Collections.emptyList();
+        if (request.getCertificates() != null && !request.getCertificates().isEmpty()) {
+            certificatesDto = request.getCertificates().stream()
+                    .map(cert -> CertificateDto.builder()
+                            .url(cert.getCertificateUrl())
+                            .certificateName(cert.getCertificateName())
+                            .build())
+                    .collect(Collectors.toList());
+        }
+
         return ContributorStatusDto.builder()
                 .status(request.getStatus())
                 .rejectionReason(request.getRejectionReason())
                 .createdAt(request.getCreatedAt())
                 .updatedAt(request.getUpdatedAt())
                 .submissionCount(request.getSubmissionCount())
+                .requestedFields(parsedFields)
+                .portfolioLink(request.getPortfolioLink())
+                .experience(request.getExperience())
+                .certificates(certificatesDto)
                 .build();
     }
 }

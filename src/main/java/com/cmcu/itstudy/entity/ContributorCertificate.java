@@ -38,6 +38,6 @@ public class ContributorCertificate {
     @Column(name = "certificate_url", nullable = false)
     private String certificateUrl;
 
-    @Column(name = "certificate_name", nullable = false)
+    @Column(name = "certificate_name", nullable = false, columnDefinition = "nvarchar(255)")
     private String certificateName;
 }

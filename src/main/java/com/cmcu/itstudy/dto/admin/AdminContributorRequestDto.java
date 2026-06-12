@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Data
@@ -27,4 +28,8 @@ public class AdminContributorRequestDto {
     private List<AdminContributorCertificateDto> certificates;
     private String avatarUrl; // URL avatar của người dùng
     private String rejectionReason; // Lý do từ chối hoặc yêu cầu bổ sung thông tin
+    /** Số lần admin đã yêu cầu bổ sung (tối đa 3). */
+    private int supplementCount;
+    /** Map tên trường -> lý do cần bổ sung. */
+    private Map<String, String> requestedFields;
 }

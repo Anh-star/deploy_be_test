@@ -7,10 +7,15 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 public interface MenuRepository extends JpaRepository<Menu, UUID> {
 
     List<Menu> findByParentIsNullOrderByDisplayOrderAsc();
+
+    Optional<Menu> findByNameAndParent(String name, Menu parent);
+
+    Optional<Menu> findByNameAndParentIsNull(String name);
 
     @Query("""
             select distinct m

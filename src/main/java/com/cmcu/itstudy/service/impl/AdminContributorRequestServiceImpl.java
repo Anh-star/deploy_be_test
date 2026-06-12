@@ -11,10 +11,14 @@ import com.cmcu.itstudy.repository.RoleRepository;
 import com.cmcu.itstudy.repository.UserRepository;
 import com.cmcu.itstudy.repository.UserRoleRepository;
 import com.cmcu.itstudy.service.contract.AdminContributorRequestService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -24,6 +28,10 @@ public class AdminContributorRequestServiceImpl implements AdminContributorReque
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final UserRoleRepository userRoleRepository;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /** Số lần tối đa admin được yêu cầu bổ sung. */
+    private static final int MAX_SUPPLEMENT_COUNT = 3;
 
     public AdminContributorRequestServiceImpl(
             ContributorRequestRepository contributorRequestRepository,
@@ -38,17 +46,36 @@ public class AdminContributorRequestServiceImpl implements AdminContributorReque
 
     @Override
     @Transactional
-    public void updateContributorRequestStatus(UUID requestId, ContributorRequestStatus newStatus, String rejectionReason) {
+    public void updateContributorRequestStatus(UUID requestId, ContributorRequestStatus newStatus, String rejectionReason, Map<String, String> requestedFields) {
         ContributorRequest request = contributorRequestRepository.findById(requestId)
                 .orElseThrow(() -> new RuntimeException("Contributor request not found"));
 
         request.setStatus(newStatus);
         request.setUpdatedAt(LocalDateTime.now());
 
-        if (newStatus == ContributorRequestStatus.REJECTED || newStatus == ContributorRequestStatus.NEED_INFO) {
+        if (newStatus == ContributorRequestStatus.NEED_INFO) {
+            // Kiểm tra giới hạn yêu cầu bổ sung
+            if (request.getSupplementCount() >= MAX_SUPPLEMENT_COUNT) {
+                throw new RuntimeException("Đã đạt giới hạn " + MAX_SUPPLEMENT_COUNT + " lần yêu cầu bổ sung cho yêu cầu này.");
+            }
+            request.setSupplementCount(request.getSupplementCount() + 1);
             request.setRejectionReason(rejectionReason);
+            // Lưu map trường -> lý do dưới dạng JSON
+            if (requestedFields != null && !requestedFields.isEmpty()) {
+                try {
+                    request.setRequestedFields(objectMapper.writeValueAsString(requestedFields));
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException("Lỗi khi lưu danh sách trường cần bổ sung.", e);
+                }
+            } else {
+                request.setRequestedFields(null);
+            }
+        } else if (newStatus == ContributorRequestStatus.REJECTED) {
+            request.setRejectionReason(rejectionReason);
+            request.setRequestedFields(null);
         } else {
             request.setRejectionReason(null);
+            request.setRequestedFields(null);
         }
 
         contributorRequestRepository.save(request);

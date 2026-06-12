@@ -46,26 +46,35 @@ public class ContributorRequest {
     @Column(name = "portfolio_link")
     private String portfolioLink;
 
-    @Column(name = "experience", nullable = false, length = 1000)
+    @Column(name = "experience", nullable = false, columnDefinition = "nvarchar(1000)")
     private String experience;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 50)
     private ContributorRequestStatus status;
 
-    @Column(name = "certificate_name")
+    @Column(name = "certificate_name", columnDefinition = "nvarchar(255)")
     private String certificateName;
 
     @Column(name = "certificate_url")
     private String certificateUrl;
 
-    @Column(name = "rejection_reason", length = 1000)
+    @Column(name = "rejection_reason", columnDefinition = "nvarchar(1000)")
     private String rejectionReason;
 
     /** Số lần đã gửi hồ sơ (tối đa 2). */
     @Column(name = "submission_count", nullable = false)
     @Builder.Default
     private int submissionCount = 1;
+
+    /** Số lần admin đã yêu cầu bổ sung thông tin (tối đa 3). */
+    @Column(name = "supplement_count", nullable = false)
+    @Builder.Default
+    private int supplementCount = 0;
+
+    /** Danh sách các trường cần bổ sung, phân cách bằng dấu phẩy (vd: "fullName,email,portfolioLink"). */
+    @Column(name = "requested_fields", columnDefinition = "nvarchar(1000)")
+    private String requestedFields;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
