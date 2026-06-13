@@ -123,6 +123,12 @@ public class Document {
     @Column(name = "bookmark_count", nullable = false)
     private Long bookmarkCount = 0L;
 
+    @Column(name = "is_paid", nullable = false)
+    private Boolean isPaid = Boolean.FALSE;
+
+    @Column(name = "price")
+    private Long price = 0L;
+
     @Column(name = "last_viewed_at")
     private LocalDateTime lastViewedAt;
 
@@ -205,6 +211,8 @@ public class Document {
         if (this.downloadCount == null) this.downloadCount = 0L;
         if (this.bookmarkCount == null) this.bookmarkCount = 0L;
         if (this.status == null) this.status = DocumentStatus.PENDING;
+        if (this.isPaid == null) this.isPaid = Boolean.FALSE;
+        if (this.price == null) this.price = 0L;
     }
 
     @PreUpdate

@@ -65,12 +65,13 @@ public final class DocumentMapper {
                                                                   DocumentPrimaryFileDto primaryFile,
                                                                   DocumentDetailCommentsDto comments,
                                                                   List<DocumentDetailQuizDto> quizzes,
-                                                                  List<DocumentRelatedDocumentDto> relatedDocuments) {
+                                                                  List<DocumentRelatedDocumentDto> relatedDocuments,
+                                                                  Boolean hasAccess) {
         if (document == null) {
             return null;
         }
 
-        DocumentDetailInfoDto documentInfo = toDocumentDetailInfoDto(document, authorName, uploaderUserId, uploader, tags);
+        DocumentDetailInfoDto documentInfo = toDocumentDetailInfoDto(document, authorName, uploaderUserId, uploader, tags, hasAccess);
         DocumentDetailStatsDto stats = DocumentDetailStatsDto.builder()
                 .totalViews(totalViews)
                 .totalDownloads(totalDownloads)
@@ -92,6 +93,15 @@ public final class DocumentMapper {
                                                                  String uploaderUserId,
                                                                  DocumentUploaderDto uploader,
                                                                  List<String> tags) {
+        return toDocumentDetailInfoDto(document, authorName, uploaderUserId, uploader, tags, null);
+    }
+
+    public static DocumentDetailInfoDto toDocumentDetailInfoDto(Document document,
+                                                                 String authorName,
+                                                                 String uploaderUserId,
+                                                                 DocumentUploaderDto uploader,
+                                                                 List<String> tags,
+                                                                 Boolean hasAccess) {
         if (document == null) {
             return null;
         }
@@ -106,6 +116,9 @@ public final class DocumentMapper {
                 .uploader(uploader)
                 .categoryName(document.getCategory() != null ? document.getCategory().getName() : null)
                 .tags(tags != null ? tags : Collections.emptyList())
+                .isPaid(document.getIsPaid())
+                .price(document.getPrice())
+                .hasAccess(hasAccess)
                 .build();
     }
 

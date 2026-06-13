@@ -1,8 +1,8 @@
 package com.cmcu.itstudy.enums;
 
 public enum RoleEnum {
-    USER,
-    ADMIN,
-    CONTRIBUTOR,
-    USER_MODERATOR
+        USER,
+        ADMIN,
+        CONTRIBUTOR,
+        USER_MODERATOR
 }

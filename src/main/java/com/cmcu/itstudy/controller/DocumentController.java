@@ -27,14 +27,27 @@ public class DocumentController {
     }
 
     @GetMapping("/documents/{id}")
-    public ResponseEntity<ApiResponse<DocumentDetailResponseDto>> getDocumentDetail(
-            @PathVariable("id") UUID id,
-            @AuthenticationPrincipal UserDetailsImpl currentUser
-    ) {
-        UUID currentUserId = currentUser != null ? currentUser.getUser().getId() : null;
-        DocumentDetailResponseDto data = documentQueryService.getDocumentDetail(id, currentUserId);
-        return ResponseEntity.ok(ApiResponse.success(data, "Document detail"));
-    }
+public ResponseEntity<ApiResponse<DocumentDetailResponseDto>> getDocumentDetail(
+        @PathVariable("id") UUID id,
+        @AuthenticationPrincipal UserDetailsImpl currentUser
+) {
+
+    System.out.println("========== CONTROLLER ==========");
+    System.out.println("CURRENT_USER = " + currentUser);
+
+    UUID currentUserId =
+            currentUser != null
+                    ? currentUser.getUser().getId()
+                    : null;
+
+    System.out.println("CURRENT_USER_ID = " + currentUserId);
+    System.out.println("================================");
+
+    DocumentDetailResponseDto data =
+            documentQueryService.getDocumentDetail(id, currentUserId);
+
+    return ResponseEntity.ok(ApiResponse.success(data, "Document detail"));
+} 
 
     @GetMapping("/documents/{id}/file")
     public ResponseEntity<ApiResponse<DocumentFileUrlResponseDto>> getDocumentPrimaryFileUrl(
