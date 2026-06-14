@@ -4,8 +4,11 @@ import com.cmcu.itstudy.config.VnPayConfig;
 import com.cmcu.itstudy.dto.payment.CreatePaymentRequestDto;
 import com.cmcu.itstudy.dto.payment.CreatePaymentResponseDto;
 import com.cmcu.itstudy.dto.payment.PaymentHistoryDto;
+import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.entity.Payment;
+import com.cmcu.itstudy.enums.DocumentStatus;
 import com.cmcu.itstudy.enums.PaymentStatus;
+import com.cmcu.itstudy.repository.DocumentAccessRepository;
 import com.cmcu.itstudy.repository.DocumentRepository;
 import com.cmcu.itstudy.repository.PaymentRepository;
 import com.cmcu.itstudy.security.UserDetailsImpl;
@@ -29,19 +32,21 @@ import java.util.stream.Collectors;
 public class PaymentServiceImpl implements PaymentService {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentServiceImpl.class);
-    private static final Long DEFAULT_AMOUNT = 50000L;
 
     private final PaymentRepository paymentRepository;
     private final DocumentRepository documentRepository;
+    private final DocumentAccessRepository documentAccessRepository;
     private final VnPayConfig vnPayConfig;
     private final DocumentAccessService documentAccessService;
 
     public PaymentServiceImpl(PaymentRepository paymentRepository,
                              DocumentRepository documentRepository,
+                             DocumentAccessRepository documentAccessRepository,
                              VnPayConfig vnPayConfig,
                              DocumentAccessService documentAccessService) {
         this.paymentRepository = paymentRepository;
         this.documentRepository = documentRepository;
+        this.documentAccessRepository = documentAccessRepository;
         this.vnPayConfig = vnPayConfig;
         this.documentAccessService = documentAccessService;
     }
@@ -53,24 +58,40 @@ public class PaymentServiceImpl implements PaymentService {
 
         UUID userId = getCurrentUserId();
 
-        if (!documentRepository.existsById(request.getDocumentId())) {
-            throw new NoSuchElementException("Document not found with id: " + request.getDocumentId());
+        Document document = documentRepository.findById(request.getDocumentId())
+                .orElseThrow(() -> new NoSuchElementException("Document not found with id: " + request.getDocumentId()));
+
+        if (!Boolean.TRUE.equals(document.getIsPaid())) {
+            throw new IllegalStateException("Document is not a paid document");
+        }
+        if (document.getPrice() == null || document.getPrice() <= 0L) {
+            throw new IllegalStateException("Document price must be greater than zero");
+        }
+        if (document.getStatus() != DocumentStatus.APPROVED) {
+            throw new IllegalStateException("Document is not approved for sale");
+        }
+        if (document.getCreatedBy() != null && document.getCreatedBy().getId().equals(userId)) {
+            throw new IllegalStateException("You cannot purchase your own document");
+        }
+        if (documentAccessRepository.existsByUserIdAndDocumentId(userId, request.getDocumentId())) {
+            throw new IllegalStateException("You already have access to this document");
         }
 
+        long amount = document.getPrice();
         String orderCode = vnPayConfig.generateOrderCode();
-        log.info("Generated orderCode={} for user={}", orderCode, userId);
+        log.info("Generated orderCode={} for user={} amount={}", orderCode, userId, amount);
 
         Payment payment = Payment.builder()
                 .userId(userId)
                 .documentId(request.getDocumentId())
-                .amount(DEFAULT_AMOUNT)
+                .amount(amount)
                 .orderCode(orderCode)
                 .status(PaymentStatus.PENDING)
                 .paymentMethod("VNPay")
                 .build();
         Payment savedPayment = paymentRepository.save(payment);
 
-        String paymentUrl = vnPayConfig.buildPaymentUrl(DEFAULT_AMOUNT, orderCode, ipAddress);
+        String paymentUrl = vnPayConfig.buildPaymentUrl(amount, orderCode, ipAddress);
         log.info("Generated paymentUrl={} for paymentId={}", paymentUrl, savedPayment.getId());
 
         return CreatePaymentResponseDto.builder()
@@ -80,23 +101,43 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    @Transactional
-    public void processReturn(Map<String, String> params) {
-        log.info("Return callback received: {}", params);
+@Transactional
+public void processReturn(Map<String, String> params) {
 
-        if (!vnPayConfig.validateReturnChecksum(params)) {
-            log.warn("Checksum invalid for return. params={}", params);
-            throw new IllegalArgumentException("Invalid VNPay checksum");
-        }
-
-        String orderCode = params.get("vnp_TxnRef");
-        log.info("Checksum valid for orderCode={}", orderCode);
-
-        paymentRepository.findByOrderCode(orderCode)
-                .orElseThrow(() -> new NoSuchElementException("Payment not found for orderCode: " + orderCode));
-
-        log.info("Payment found for return. orderCode={}", orderCode);
+    if (!vnPayConfig.validateReturnChecksum(params)) {
+        throw new IllegalArgumentException("Invalid checksum");
     }
+
+    String orderCode = params.get("vnp_TxnRef");
+    String responseCode = params.get("vnp_ResponseCode");
+    String transactionNo = params.get("vnp_TransactionNo");
+    String bankCode = params.get("vnp_BankCode");
+
+    Payment payment = paymentRepository.findByOrderCode(orderCode)
+            .orElseThrow(() ->
+                    new NoSuchElementException("Payment not found"));
+
+    if ("00".equals(responseCode)) {
+
+        payment.setStatus(PaymentStatus.SUCCESS);
+        payment.setPaidAt(LocalDateTime.now());
+        payment.setTransactionNo(transactionNo);
+        payment.setBankCode(bankCode);
+
+        paymentRepository.save(payment);
+
+        documentAccessService.grantAccess(
+                payment.getUserId(),
+                payment.getDocumentId(),
+                payment.getId()
+        );
+
+    } else {
+
+        payment.setStatus(PaymentStatus.FAILED);
+        paymentRepository.save(payment);
+    }
+}
 
     @Override
     @Transactional
