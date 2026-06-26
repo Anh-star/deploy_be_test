@@ -3,6 +3,7 @@ package com.cmcu.itstudy.service.impl;
 import com.cmcu.itstudy.config.VnPayConfig;
 import com.cmcu.itstudy.dto.payment.CreatePaymentRequestDto;
 import com.cmcu.itstudy.dto.payment.CreatePaymentResponseDto;
+import com.cmcu.itstudy.dto.payment.PayOsCreateLinkResponseDto;
 import com.cmcu.itstudy.dto.payment.PaymentHistoryDto;
 import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.entity.Payment;
@@ -13,6 +14,7 @@ import com.cmcu.itstudy.repository.DocumentRepository;
 import com.cmcu.itstudy.repository.PaymentRepository;
 import com.cmcu.itstudy.security.UserDetailsImpl;
 import com.cmcu.itstudy.service.contract.DocumentAccessService;
+import com.cmcu.itstudy.service.contract.PayOsService;
 import com.cmcu.itstudy.service.contract.PaymentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,17 +40,20 @@ public class PaymentServiceImpl implements PaymentService {
     private final DocumentAccessRepository documentAccessRepository;
     private final VnPayConfig vnPayConfig;
     private final DocumentAccessService documentAccessService;
+    private final PayOsService payOsService;
 
     public PaymentServiceImpl(PaymentRepository paymentRepository,
                              DocumentRepository documentRepository,
                              DocumentAccessRepository documentAccessRepository,
                              VnPayConfig vnPayConfig,
-                             DocumentAccessService documentAccessService) {
+                             DocumentAccessService documentAccessService,
+                             PayOsService payOsService) {
         this.paymentRepository = paymentRepository;
         this.documentRepository = documentRepository;
         this.documentAccessRepository = documentAccessRepository;
         this.vnPayConfig = vnPayConfig;
         this.documentAccessService = documentAccessService;
+        this.payOsService = payOsService;
     }
 
     @Override
@@ -78,8 +83,10 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         long amount = document.getPrice();
-        String orderCode = vnPayConfig.generateOrderCode();
-        log.info("Generated orderCode={} for user={} amount={}", orderCode, userId, amount);
+        long orderCodeLong = System.currentTimeMillis();
+        String orderCode = String.valueOf(orderCodeLong);
+        String description = "TT" + orderCode.substring(Math.max(0, orderCode.length() - 7));
+        log.info("Generated orderCode={} description={} for user={} amount={}", orderCode, description, userId, amount);
 
         Payment payment = Payment.builder()
                 .userId(userId)
@@ -87,16 +94,26 @@ public class PaymentServiceImpl implements PaymentService {
                 .amount(amount)
                 .orderCode(orderCode)
                 .status(PaymentStatus.PENDING)
-                .paymentMethod("VNPay")
+                .paymentMethod("PayOS")
                 .build();
         Payment savedPayment = paymentRepository.save(payment);
 
-        String paymentUrl = vnPayConfig.buildPaymentUrl(amount, orderCode, ipAddress);
-        log.info("Generated paymentUrl={} for paymentId={}", paymentUrl, savedPayment.getId());
+        PayOsCreateLinkResponseDto payosResponse = payOsService.createPaymentLink(
+                orderCodeLong,
+                amount,
+                description
+        );
+        String checkoutUrl = payosResponse.getData() != null ? payosResponse.getData().getCheckoutUrl() : null;
+        String qrCode = payosResponse.getData() != null ? payosResponse.getData().getQrCode() : null;
+        log.info("Generated PayOS checkoutUrl for paymentId={} user={}", savedPayment.getId(), userId);
 
         return CreatePaymentResponseDto.builder()
                 .paymentId(savedPayment.getId())
-                .paymentUrl(paymentUrl)
+                .orderCode(orderCode)
+                .checkoutUrl(checkoutUrl)
+                .qrCode(qrCode)
+                .amount(amount)
+                .paymentUrl(checkoutUrl)
                 .build();
     }
 
@@ -227,5 +244,5 @@ public void processReturn(Map<String, String> params) {
         }
         return userDetails.getUser().getId();
     }
-    
+
 }
