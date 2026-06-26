@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Getter
@@ -16,8 +17,15 @@ import java.util.List;
 public class MenuDto {
 
     private String id;
-    private String name;
-    private String route;
-    private List<MenuDto> children;
-}
 
+    private String name;
+
+    private String route;
+
+    private Integer displayOrder;
+
+    private String icon;
+
+    @Builder.Default
+    private List<MenuDto> children = new ArrayList<>();
+}

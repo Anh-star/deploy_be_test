@@ -1,5 +1,7 @@
 package com.cmcu.itstudy.dto.document;
 
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -47,4 +49,15 @@ public class DocumentCreateRequestDto {
 
     @NotNull(message = "File size cannot be empty")
     private Long fileSizeBytes;
+
+    @NotNull(message = "isPaid flag cannot be null")
+    private Boolean isPaid;
+
+    @Min(value = 0, message = "Price cannot be negative")
+    private Long price;
+
+    @AssertTrue(message = "Price must be greater than 0 when isPaid is true")
+    private boolean isPriceValid() {
+        return !Boolean.TRUE.equals(isPaid) || (price != null && price > 0);
+    }
 }

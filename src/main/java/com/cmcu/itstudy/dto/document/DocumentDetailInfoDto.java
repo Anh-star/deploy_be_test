@@ -26,4 +26,7 @@ public class DocumentDetailInfoDto {
     private DocumentUploaderDto uploader;
     private String categoryName;
     private List<String> tags;
+    private Boolean isPaid;
+    private Long price;
+    private Boolean hasAccess;
 }

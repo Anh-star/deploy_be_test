@@ -11,10 +11,15 @@ import com.cmcu.itstudy.dto.document.QuizListPageResponseDto;
 import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.mapper.DocumentMapper;
 import com.cmcu.itstudy.repository.DocumentFileRepository;
+import com.cmcu.itstudy.security.UserDetailsImpl;
 import com.cmcu.itstudy.service.contract.CommentService;
+import com.cmcu.itstudy.service.contract.DocumentAccessService;
 import com.cmcu.itstudy.service.contract.DocumentQueryService;
 import com.cmcu.itstudy.service.contract.DocumentService;
 import com.cmcu.itstudy.service.contract.QuizService;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,17 +39,20 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
     private final QuizService quizService;
     private final DocumentFileRepository documentFileRepository;
     private final DocumentCardEnrichmentService documentCardEnrichmentService;
+    private final DocumentAccessService documentAccessService;
 
     public DocumentQueryServiceImpl(DocumentService documentService,
                                     CommentService commentService,
                                     QuizService quizService,
                                     DocumentFileRepository documentFileRepository,
-                                    DocumentCardEnrichmentService documentCardEnrichmentService) {
+                                    DocumentCardEnrichmentService documentCardEnrichmentService,
+                                    DocumentAccessService documentAccessService) {
         this.documentService = documentService;
         this.commentService = commentService;
         this.quizService = quizService;
         this.documentFileRepository = documentFileRepository;
         this.documentCardEnrichmentService = documentCardEnrichmentService;
+        this.documentAccessService = documentAccessService;
     }
 
     @Transactional(readOnly = true)
@@ -79,6 +87,11 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
             tags = card0.getTags();
         }
 
+        Boolean hasAccess = null;
+        if (currentUserId != null) {
+            hasAccess = documentAccessService.hasAccess(currentUserId, id);
+        }
+
         return DocumentMapper.toDetailResponseDto(
                 document,
                 authorName,
@@ -91,7 +104,8 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
                 primaryFile,
                 comments,
                 quizzes,
-                related
+                related,
+                hasAccess
         );
     }
 
@@ -106,7 +120,23 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
         if (dto == null || dto.getFileUrl() == null || dto.getFileUrl().isBlank()) {
             throw new NoSuchElementException("Primary document file not found");
         }
+
+        if (Boolean.TRUE.equals(document.getIsPaid())) {
+            UUID userId = getCurrentUserIdOrNull();
+            if (userId != null && !documentAccessService.hasAccess(userId, documentId)) {
+                throw new AccessDeniedException("You must purchase this document before downloading.");
+            }
+        }
+
         return dto;
+    }
+
+    private UUID getCurrentUserIdOrNull() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof UserDetailsImpl userDetails)) {
+            return null;
+        }
+        return userDetails.getUser().getId();
     }
 
     @Transactional(readOnly = true)

@@ -95,6 +95,8 @@ public class DocumentServiceImpl implements DocumentService {
                 .downloadCount(0L)
                 .bookmarkCount(0L)
                 .deleted(false)
+                .isPaid(documentCreateRequestDto.getIsPaid())
+                .price(documentCreateRequestDto.getPrice())
                 .build();
 
         // Set file type based on extension or frontend hint (more robust to check extension from fileName)
@@ -186,6 +188,8 @@ public class DocumentServiceImpl implements DocumentService {
         existingDocument.setThumbnailUrl(documentUpdateRequestDto.getThumbnailUrl());
         existingDocument.setCategory(category); // Link to updated Category
         existingDocument.setUpdatedBy(currentUser); // Set updater
+        existingDocument.setIsPaid(documentUpdateRequestDto.getIsPaid());
+        existingDocument.setPrice(documentUpdateRequestDto.getPrice());
 
         // Update file type if file name changed
         String fileName = existingDocument.getFileName();

@@ -75,6 +75,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/documents/*/comments").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/comments/*/replies").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/quizzes/ai-import").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/payments/return").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/payments/ipn").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth -> oauth
