@@ -63,6 +63,7 @@ public class SecurityConfig {
                                 "/api/auth/forgot-password",
                                 "/api/auth/reset-password",
                                 "/api/homepage/**",
+                                "/api/leaderboard",
                                 "/api/documents",
                                 "/api/documents/*",
                                 "/api/documents/*/view",

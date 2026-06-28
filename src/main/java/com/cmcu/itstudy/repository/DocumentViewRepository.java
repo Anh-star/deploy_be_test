@@ -2,6 +2,7 @@ package com.cmcu.itstudy.repository;
 
 import com.cmcu.itstudy.entity.DocumentView;
 import com.cmcu.itstudy.entity.Document;
+import com.cmcu.itstudy.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,6 +12,8 @@ import java.util.List;
 import java.util.UUID;
 
 public interface DocumentViewRepository extends JpaRepository<DocumentView, Long> {
+
+    boolean existsByDocumentAndUser(Document document, User user);
 
     @Query("""
             select count(distinct v.document.id)

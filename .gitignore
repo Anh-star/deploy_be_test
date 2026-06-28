@@ -32,3 +32,5 @@ build/
 ### VS Code ###
 .vscode/
 # src/main/resources/application.properties
+run-local.ps1
+run-server.ps1

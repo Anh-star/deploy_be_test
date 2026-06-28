@@ -68,7 +68,7 @@ public class ContributorRequest {
     private int submissionCount = 1;
 
     /** Số lần admin đã yêu cầu bổ sung thông tin (tối đa 3). */
-    @Column(name = "supplement_count", nullable = false)
+    @Column(name = "supplement_count", nullable = false, columnDefinition = "int default 0")
     @Builder.Default
     private int supplementCount = 0;
 

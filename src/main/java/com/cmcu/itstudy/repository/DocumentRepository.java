@@ -154,4 +154,30 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
 
     @Query("select d.id, u.id, u.fullName from Document d left join d.createdBy u where d.id in :ids")
     List<Object[]> findUploaderByDocumentIds(@Param("ids") Collection<UUID> ids);
+
+    @Query(value = """
+            select u.id, u.full_name, u.avatar,
+                   coalesce(sum(d.view_count), 0) as total_views,
+                   coalesce(sum(d.download_count), 0) as total_downloads,
+                   count(d.id) as total_documents
+            from tbl_users u
+            join tbl_documents d on d.created_by = u.id
+              and d.status = 'APPROVED' and d.is_deleted = 0
+            group by u.id, u.full_name, u.avatar
+            order by total_views desc, total_downloads desc, total_documents desc, u.full_name asc
+            """, nativeQuery = true)
+    List<Object[]> findLeaderboardUsersByViews(Pageable pageable);
+
+    @Query(value = """
+            select u.id, u.full_name, u.avatar,
+                   coalesce(sum(d.view_count), 0) as total_views,
+                   coalesce(sum(d.download_count), 0) as total_downloads,
+                   count(d.id) as total_documents
+            from tbl_users u
+            join tbl_documents d on d.created_by = u.id
+              and d.status = 'APPROVED' and d.is_deleted = 0
+            group by u.id, u.full_name, u.avatar
+            order by total_downloads desc, total_views desc, total_documents desc, u.full_name asc
+            """, nativeQuery = true)
+    List<Object[]> findLeaderboardUsersByDownloads(Pageable pageable);
 }
