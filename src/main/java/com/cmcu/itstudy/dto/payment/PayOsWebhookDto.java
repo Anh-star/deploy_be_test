@@ -59,5 +59,11 @@ public class PayOsWebhookDto {
 
         @JsonProperty("virtualAccountNumber")
         private String virtualAccountNumber;
+
+        @JsonProperty("counterAccountBankId")
+        private String counterAccountBankId;
+
+        @JsonProperty("currency")
+        private String currency;
     }
 }
