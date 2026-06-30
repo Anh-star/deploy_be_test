@@ -118,11 +118,20 @@ public class PayOsServiceImpl implements PayOsService {
             return false;
         }
         try {
+            String debugKey = props.getChecksumKey();
+            log.info("PayOS DEBUG key: null={}, length={}, first4={}, last4={}",
+                    debugKey == null,
+                    debugKey == null ? 0 : debugKey.length(),
+                    debugKey == null || debugKey.length() < 4 ? debugKey : debugKey.substring(0, 4),
+                    debugKey == null || debugKey.length() < 4 ? debugKey : debugKey.substring(debugKey.length() - 4));
             Map<String, String> sorted = sortedDataForSignature(payload.getData());
-            String expected = createSignatureFromMap(sorted, props.getChecksumKey());
+            String expected = createSignatureFromMapForVerify(sorted, props.getChecksumKey());
             boolean match = expected.equalsIgnoreCase(payload.getSignature());
             if (!match) {
-                log.warn("PayOS webhook signature mismatch. expected={} received={}", expected, payload.getSignature());
+                log.warn("PayOS webhook signature mismatch: expected={} received={}",
+                        expected, payload.getSignature());
+            } else {
+                log.info("PayOS webhook signature match: signature={}", expected);
             }
             return match;
         } catch (Exception e) {
@@ -189,11 +198,21 @@ public class PayOsServiceImpl implements PayOsService {
     }
 
     private String createSignatureFromMap(Map<String, String> data, String key) throws Exception {
-        return createSignatureFromMap(data, key, null, null, null);
+        return createSignatureFromMap(data, key, null, null, null, false);
+    }
+
+    private String createSignatureFromMapForVerify(Map<String, String> data, String key) throws Exception {
+        return createSignatureFromMap(data, key, null, null, null, true);
     }
 
     private String createSignatureFromMap(Map<String, String> data, String key,
                                           Long debugOrderCode, Long debugAmount, String debugDescription) throws Exception {
+        return createSignatureFromMap(data, key, debugOrderCode, debugAmount, debugDescription, false);
+    }
+
+    private String createSignatureFromMap(Map<String, String> data, String key,
+                                          Long debugOrderCode, Long debugAmount, String debugDescription,
+                                          boolean isVerify) throws Exception {
         StringBuilder query = new StringBuilder();
         for (Map.Entry<String, String> entry : data.entrySet()) {
             if (query.length() > 0) {
@@ -212,6 +231,13 @@ public class PayOsServiceImpl implements PayOsService {
                 hash.append('0');
             }
             hash.append(hex);
+        }
+        if (isVerify) {
+            log.info("====== PayOS DEBUG VERIFY SIGNATURE START ======");
+            log.info("PayOS VERIFY data string (before hash) = {}", query.toString());
+            log.info("PayOS VERIFY checksum key length = {}", key == null ? 0 : key.length());
+            log.info("PayOS VERIFY signature (after HMAC SHA256, hex lowercase) = {}", hash.toString());
+            log.info("====== PayOS DEBUG VERIFY SIGNATURE END ======");
         }
         if (debugOrderCode != null) {
             log.info("====== PayOS DEBUG SIGNATURE START ======");
