@@ -79,7 +79,22 @@ public class PaymentController {
     }
 
     @PostMapping("/webhook")
-    public ResponseEntity<Map<String, Object>> payOsWebhook(@RequestBody PayOsWebhookDto payload) {
+    public ResponseEntity<Map<String, Object>> payOsWebhook(@RequestBody PayOsWebhookDto payload, HttpServletRequest request) {
+        log.info("PayOS webhook request: method={}, uri={}, contentType={}, contentLength={}",
+                request.getMethod(),
+                request.getRequestURI(),
+                request.getContentType(),
+                request.getContentLengthLong());
+        log.info("PayOS webhook headers: User-Agent={}, Content-Length={}, Content-Type={}",
+                request.getHeader("User-Agent"),
+                request.getHeader("Content-Length"),
+                request.getHeader("Content-Type"));
+        boolean payloadIsNull = (payload == null);
+        boolean dataIsNull = payloadIsNull || (payload.getData() == null);
+        boolean signatureIsNull = payloadIsNull || (payload.getSignature() == null);
+        log.info("PayOS webhook payload nullability: payloadNull={}, dataNull={}, signatureNull={}",
+                payloadIsNull, dataIsNull, signatureIsNull);
+
         if (payload == null || payload.getData() == null || payload.getSignature() == null) {
             log.warn("PayOS webhook received malformed payload: payload={}", payload);
             return ResponseEntity.badRequest().body(Map.of(
