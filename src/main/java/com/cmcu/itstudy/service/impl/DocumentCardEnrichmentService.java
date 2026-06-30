@@ -67,6 +67,10 @@ public class DocumentCardEnrichmentService {
 
         List<Object[]> rows = documentRepository.findUploaderByDocumentIds(documentIds);
         Map<UUID, DocumentUploaderDto> result = new HashMap<>();
+        Set<UUID> userIds = new HashSet<>();
+        Map<UUID, UUID> docToUserMap = new HashMap<>();
+        Map<UUID, String> userNames = new HashMap<>();
+
         for (Object[] row : rows) {
             if (row == null || row.length < 1 || row[0] == null) {
                 continue;
@@ -77,9 +81,39 @@ public class DocumentCardEnrichmentService {
             if (userId == null) {
                 continue;
             }
+            userIds.add(userId);
+            docToUserMap.put(docId, userId);
+            userNames.put(userId, fullName);
+        }
+
+        Map<UUID, Long> userDownloads = new HashMap<>();
+        Map<UUID, Long> userDocuments = new HashMap<>();
+        if (!userIds.isEmpty()) {
+            List<Object[]> statsRows = documentRepository.findStatsByUserIds(userIds);
+            for (Object[] row : statsRows) {
+                if (row == null || row.length < 3 || row[0] == null) {
+                    continue;
+                }
+                UUID userId = (UUID) row[0];
+                long totalDownloads = row[1] instanceof Number n ? n.longValue() : 0L;
+                long totalDocs = row[2] instanceof Number n ? n.longValue() : 0L;
+                userDownloads.put(userId, totalDownloads);
+                userDocuments.put(userId, totalDocs);
+            }
+        }
+
+        for (Map.Entry<UUID, UUID> entry : docToUserMap.entrySet()) {
+            UUID docId = entry.getKey();
+            UUID userId = entry.getValue();
+            String fullName = userNames.get(userId);
+            long totalDownloads = userDownloads.getOrDefault(userId, 0L);
+            long totalDocs = userDocuments.getOrDefault(userId, 0L);
+
             result.put(docId, DocumentUploaderDto.builder()
                     .id(userId.toString())
                     .fullName(StringUtils.hasText(fullName) ? fullName : null)
+                    .hasManyDownloads(totalDownloads > 100)
+                    .hasManyDocuments(totalDocs >= 50)
                     .build());
         }
         return result;

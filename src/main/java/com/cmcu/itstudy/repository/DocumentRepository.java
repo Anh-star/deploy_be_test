@@ -155,6 +155,18 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @Query("select d.id, u.id, u.fullName from Document d left join d.createdBy u where d.id in :ids")
     List<Object[]> findUploaderByDocumentIds(@Param("ids") Collection<UUID> ids);
 
+    @Query("""
+            select d.createdBy.id,
+                   coalesce(sum(d.downloadCount), 0),
+                   count(d.id)
+            from Document d
+            where d.createdBy.id in :userIds
+              and d.deleted = false
+              and d.status = com.cmcu.itstudy.enums.DocumentStatus.APPROVED
+            group by d.createdBy.id
+            """)
+    List<Object[]> findStatsByUserIds(@Param("userIds") Collection<UUID> userIds);
+
     @Query(value = """
             select u.id, u.full_name, u.avatar,
                    coalesce(sum(d.view_count), 0) as total_views,
