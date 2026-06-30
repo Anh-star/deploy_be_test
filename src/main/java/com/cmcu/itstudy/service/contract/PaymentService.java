@@ -3,6 +3,7 @@ package com.cmcu.itstudy.service.contract;
 import com.cmcu.itstudy.dto.payment.CreatePaymentRequestDto;
 import com.cmcu.itstudy.dto.payment.CreatePaymentResponseDto;
 import com.cmcu.itstudy.dto.payment.PaymentHistoryDto;
+import com.cmcu.itstudy.dto.payment.PayOsWebhookDto;
 
 import java.util.List;
 import java.util.Map;
@@ -16,4 +17,6 @@ public interface PaymentService {
     void processIpn(Map<String, String> params);
 
     List<PaymentHistoryDto> getMyPaymentHistory();
+
+    void processPayOsWebhook(PayOsWebhookDto payload);
 }
