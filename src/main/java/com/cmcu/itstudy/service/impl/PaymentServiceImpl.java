@@ -5,6 +5,7 @@ import com.cmcu.itstudy.dto.payment.CreatePaymentRequestDto;
 import com.cmcu.itstudy.dto.payment.CreatePaymentResponseDto;
 import com.cmcu.itstudy.dto.payment.PayOsCreateLinkResponseDto;
 import com.cmcu.itstudy.dto.payment.PaymentHistoryDto;
+import com.cmcu.itstudy.dto.payment.PayOsWebhookDto;
 import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.entity.Payment;
 import com.cmcu.itstudy.enums.DocumentStatus;
@@ -223,6 +224,41 @@ public void processReturn(Map<String, String> params) {
         return payments.stream()
                 .map(this::toPaymentHistoryDto)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public void processPayOsWebhook(PayOsWebhookDto payload) {
+        String orderCode = String.valueOf(payload.getData().getOrderCode());
+        log.info("Processing PayOS webhook: orderCode={}", orderCode);
+
+        Payment payment = paymentRepository.findByOrderCode(orderCode)
+                .orElseThrow(() -> new NoSuchElementException("Payment not found with orderCode: " + orderCode));
+
+        if (payment.getStatus() == PaymentStatus.SUCCESS) {
+            log.info("PayOS webhook ignored - payment already SUCCESS: orderCode={}", orderCode);
+            return;
+        }
+
+        if (payment.getStatus() == PaymentStatus.FAILED || payment.getStatus() == PaymentStatus.CANCELLED) {
+            log.info("PayOS webhook ignored - payment already in terminal status {}: orderCode={}",
+                    payment.getStatus(), orderCode);
+            return;
+        }
+
+        if (payOsService.isSuccessPayload(payload)) {
+            payment.setStatus(PaymentStatus.SUCCESS);
+            payment.setPaidAt(LocalDateTime.now());
+            if (payload.getData().getReference() != null && !payload.getData().getReference().isBlank()) {
+                payment.setTransactionNo(payload.getData().getReference());
+            }
+            log.info("PayOS webhook: payment SUCCESS updated: orderCode={}", orderCode);
+        } else {
+            payment.setStatus(PaymentStatus.FAILED);
+            log.info("PayOS webhook: payment FAILED updated: orderCode={}", orderCode);
+        }
+
+        paymentRepository.save(payment);
     }
 
     private PaymentHistoryDto toPaymentHistoryDto(Payment payment) {
