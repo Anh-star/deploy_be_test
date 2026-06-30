@@ -130,8 +130,8 @@ public class PaymentController {
         } catch (NoSuchElementException e) {
             log.warn("PayOS webhook payment not found: orderCode={}",
                     payload.getData().getOrderCode());
-            return ResponseEntity.badRequest().body(Map.of(
-                    "received", false,
+            return ResponseEntity.ok(Map.of(
+                    "received", true,
                     "signatureValid", true,
                     "error", "payment_not_found"
             ));
