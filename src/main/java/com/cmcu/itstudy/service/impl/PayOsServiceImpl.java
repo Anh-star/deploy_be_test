@@ -158,46 +158,46 @@ public class PayOsServiceImpl implements PayOsService {
         if (data.getAmount() != null) {
             map.put("amount", String.valueOf(data.getAmount()));
         }
-        if (data.getDescription() != null && !data.getDescription().isEmpty()) {
+        if (data.getDescription() != null) {
             map.put("description", data.getDescription());
         }
-        if (data.getAccountNumber() != null && !data.getAccountNumber().isEmpty()) {
+        if (data.getAccountNumber() != null) {
             map.put("accountNumber", data.getAccountNumber());
         }
-        if (data.getReference() != null && !data.getReference().isEmpty()) {
+        if (data.getReference() != null) {
             map.put("reference", data.getReference());
         }
-        if (data.getTransactionDateTime() != null && !data.getTransactionDateTime().isEmpty()) {
+        if (data.getTransactionDateTime() != null) {
             map.put("transactionDateTime", data.getTransactionDateTime());
         }
-        if (data.getPaymentLinkId() != null && !data.getPaymentLinkId().isEmpty()) {
+        if (data.getPaymentLinkId() != null) {
             map.put("paymentLinkId", data.getPaymentLinkId());
         }
-        if (data.getCode() != null && !data.getCode().isEmpty()) {
+        if (data.getCode() != null) {
             map.put("code", data.getCode());
         }
-        if (data.getDesc() != null && !data.getDesc().isEmpty()) {
+        if (data.getDesc() != null) {
             map.put("desc", data.getDesc());
         }
-        if (data.getCounterAccountBankId() != null && !data.getCounterAccountBankId().isEmpty()) {
+        if (data.getCounterAccountBankId() != null) {
             map.put("counterAccountBankId", data.getCounterAccountBankId());
         }
-        if (data.getCounterAccountBankName() != null && !data.getCounterAccountBankName().isEmpty()) {
+        if (data.getCounterAccountBankName() != null) {
             map.put("counterAccountBankName", data.getCounterAccountBankName());
         }
-        if (data.getCounterAccountName() != null && !data.getCounterAccountName().isEmpty()) {
+        if (data.getCounterAccountName() != null) {
             map.put("counterAccountName", data.getCounterAccountName());
         }
-        if (data.getCounterAccountNumber() != null && !data.getCounterAccountNumber().isEmpty()) {
+        if (data.getCounterAccountNumber() != null) {
             map.put("counterAccountNumber", data.getCounterAccountNumber());
         }
-        if (data.getVirtualAccountName() != null && !data.getVirtualAccountName().isEmpty()) {
+        if (data.getVirtualAccountName() != null) {
             map.put("virtualAccountName", data.getVirtualAccountName());
         }
-        if (data.getVirtualAccountNumber() != null && !data.getVirtualAccountNumber().isEmpty()) {
+        if (data.getVirtualAccountNumber() != null) {
             map.put("virtualAccountNumber", data.getVirtualAccountNumber());
         }
-        if (data.getCurrency() != null && !data.getCurrency().isEmpty()) {
+        if (data.getCurrency() != null) {
             map.put("currency", data.getCurrency());
         }
         return map;
