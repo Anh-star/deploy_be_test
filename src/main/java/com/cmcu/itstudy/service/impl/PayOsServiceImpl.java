@@ -182,18 +182,12 @@ public class PayOsServiceImpl implements PayOsService {
         if (data.getCounterAccountBankId() != null) {
             map.put("counterAccountBankId", data.getCounterAccountBankId());
         }
-        if (data.getCounterAccountBankName() != null) {
-            map.put("counterAccountBankName", data.getCounterAccountBankName());
-        }
-        if (data.getCounterAccountName() != null) {
-            map.put("counterAccountName", data.getCounterAccountName());
-        }
+        map.put("counterAccountBankName", data.getCounterAccountBankName() == null ? "" : data.getCounterAccountBankName());
+        map.put("counterAccountName", data.getCounterAccountName() == null ? "" : data.getCounterAccountName());
         if (data.getCounterAccountNumber() != null) {
             map.put("counterAccountNumber", data.getCounterAccountNumber());
         }
-        if (data.getVirtualAccountName() != null) {
-            map.put("virtualAccountName", data.getVirtualAccountName());
-        }
+        map.put("virtualAccountName", data.getVirtualAccountName() == null ? "" : data.getVirtualAccountName());
         if (data.getVirtualAccountNumber() != null) {
             map.put("virtualAccountNumber", data.getVirtualAccountNumber());
         }
