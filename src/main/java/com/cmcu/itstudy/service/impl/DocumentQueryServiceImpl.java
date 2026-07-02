@@ -92,6 +92,18 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
             hasAccess = documentAccessService.hasAccess(currentUserId, id);
         }
 
+        boolean isOwner = currentUserId != null
+                && document.getCreatedBy() != null
+                && document.getCreatedBy().getId() != null
+                && document.getCreatedBy().getId().equals(currentUserId);
+        if (Boolean.TRUE.equals(document.getIsPaid())
+                && !isOwner
+                && (currentUserId == null || !Boolean.TRUE.equals(hasAccess))) {
+            if (primaryFile != null) {
+                primaryFile.setFileUrl(null);
+            }
+        }
+
         return DocumentMapper.toDetailResponseDto(
                 document,
                 authorName,
