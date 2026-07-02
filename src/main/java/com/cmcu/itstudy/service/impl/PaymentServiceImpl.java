@@ -259,6 +259,16 @@ public void processReturn(Map<String, String> params) {
         }
 
         paymentRepository.save(payment);
+
+        if (payment.getStatus() == PaymentStatus.SUCCESS) {
+            documentAccessService.grantAccess(
+                    payment.getUserId(),
+                    payment.getDocumentId(),
+                    payment.getId()
+            );
+            log.info("PayOS webhook: document access granted: orderCode={}, userId={}, documentId={}",
+                    orderCode, payment.getUserId(), payment.getDocumentId());
+        }
     }
 
     private PaymentHistoryDto toPaymentHistoryDto(Payment payment) {
