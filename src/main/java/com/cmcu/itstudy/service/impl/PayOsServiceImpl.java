@@ -55,11 +55,10 @@ public class PayOsServiceImpl implements PayOsService {
             signatureData.put("orderCode", String.valueOf(orderCode));
             signatureData.put("returnUrl", props.getReturnUrl());
 
-            String signature = createSignatureFromMap(signatureData, props.getChecksumKey(), orderCode, amount, description);
+            String signature = createSignature(signatureData, props.getChecksumKey());
             body.put("signature", signature);
 
             String jsonBody = objectMapper.writeValueAsString(body);
-            String jsonBodyPretty = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(body);
 
             String url = props.getApiBaseUrl() + "/v2/payment-requests";
             HttpRequest request = HttpRequest.newBuilder()
@@ -71,29 +70,7 @@ public class PayOsServiceImpl implements PayOsService {
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
                     .build();
 
-            log.info("====== PayOS DEBUG REQUEST START ======");
-            log.info("PayOS URL = {}", url);
-            log.info("PayOS HEADER x-client-id = {}", props.getClientId());
-            log.info("PayOS HEADER x-api-key   = {} (first 6 chars)", safePrefix(props.getApiKey()));
-            log.info("PayOS HEADER Content-Type = application/json");
-            log.info("PayOS BODY (pretty) =\n{}", jsonBodyPretty);
-            log.info("PayOS BODY (raw) = {}", jsonBody);
-            log.info("====== PayOS DEBUG REQUEST END ======");
-
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            log.info("====== PayOS DEBUG RESPONSE START ======");
-            log.info("PayOS RESPONSE status = {}", response.statusCode());
-            log.info("PayOS RESPONSE headers =\n{}", response.headers().map());
-            log.info("PayOS RESPONSE body (raw) = {}", response.body());
-            try {
-                Object prettyJson = objectMapper.readTree(response.body());
-                log.info("PayOS RESPONSE body (pretty) =\n{}",
-                        objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(prettyJson));
-            } catch (Exception parseEx) {
-                log.info("PayOS RESPONSE body is not valid JSON, skip pretty print");
-            }
-            log.info("====== PayOS DEBUG RESPONSE END ======");
 
             if (response.statusCode() / 100 != 2) {
                 throw new IllegalStateException("PayOS createPaymentLink failed: HTTP " + response.statusCode());
@@ -118,22 +95,9 @@ public class PayOsServiceImpl implements PayOsService {
             return false;
         }
         try {
-            String debugKey = props.getChecksumKey();
-            log.info("PayOS DEBUG key: null={}, length={}, first4={}, last4={}",
-                    debugKey == null,
-                    debugKey == null ? 0 : debugKey.length(),
-                    debugKey == null || debugKey.length() < 4 ? debugKey : debugKey.substring(0, 4),
-                    debugKey == null || debugKey.length() < 4 ? debugKey : debugKey.substring(debugKey.length() - 4));
             Map<String, String> sorted = sortedDataForSignature(payload.getData());
-            String expected = createSignatureFromMapForVerify(sorted, props.getChecksumKey());
-            boolean match = expected.equalsIgnoreCase(payload.getSignature());
-            if (!match) {
-                log.warn("PayOS webhook signature mismatch: expected={} received={}",
-                        expected, payload.getSignature());
-            } else {
-                log.info("PayOS webhook signature match: signature={}", expected);
-            }
-            return match;
+            String expected = createSignature(sorted, props.getChecksumKey());
+            return expected.equalsIgnoreCase(payload.getSignature());
         } catch (Exception e) {
             log.error("PayOS verifyWebhookSignature error", e);
             return false;
@@ -197,22 +161,7 @@ public class PayOsServiceImpl implements PayOsService {
         return map;
     }
 
-    private String createSignatureFromMap(Map<String, String> data, String key) throws Exception {
-        return createSignatureFromMap(data, key, null, null, null, false);
-    }
-
-    private String createSignatureFromMapForVerify(Map<String, String> data, String key) throws Exception {
-        return createSignatureFromMap(data, key, null, null, null, true);
-    }
-
-    private String createSignatureFromMap(Map<String, String> data, String key,
-                                          Long debugOrderCode, Long debugAmount, String debugDescription) throws Exception {
-        return createSignatureFromMap(data, key, debugOrderCode, debugAmount, debugDescription, false);
-    }
-
-    private String createSignatureFromMap(Map<String, String> data, String key,
-                                          Long debugOrderCode, Long debugAmount, String debugDescription,
-                                          boolean isVerify) throws Exception {
+    private String createSignature(Map<String, String> data, String key) throws Exception {
         StringBuilder query = new StringBuilder();
         for (Map.Entry<String, String> entry : data.entrySet()) {
             if (query.length() > 0) {
@@ -232,31 +181,6 @@ public class PayOsServiceImpl implements PayOsService {
             }
             hash.append(hex);
         }
-        if (isVerify) {
-            log.info("====== PayOS DEBUG VERIFY SIGNATURE START ======");
-            log.info("PayOS VERIFY data string (before hash) = {}", query.toString());
-            log.info("PayOS VERIFY checksum key length = {}", key == null ? 0 : key.length());
-            log.info("PayOS VERIFY signature (after HMAC SHA256, hex lowercase) = {}", hash.toString());
-            log.info("====== PayOS DEBUG VERIFY SIGNATURE END ======");
-        }
-        if (debugOrderCode != null) {
-            log.info("====== PayOS DEBUG SIGNATURE START ======");
-            log.info("PayOS SIG input orderCode = {}", debugOrderCode);
-            log.info("PayOS SIG input amount    = {}", debugAmount);
-            log.info("PayOS SIG input description = {}", debugDescription);
-            log.info("PayOS SIG checksum key (first 6) = {}", safePrefix(key));
-            log.info("PayOS SIG data string (before hash) = {}", query.toString());
-            log.info("PayOS SIG signature (after HMAC SHA256, hex lowercase) = {}", hash.toString());
-            log.info("====== PayOS DEBUG SIGNATURE END ======");
-        }
         return hash.toString();
-    }
-
-    private String safePrefix(String value) {
-        if (value == null) {
-            return "<null>";
-        }
-        int len = Math.min(6, value.length());
-        return value.substring(0, len) + "...";
     }
 }
