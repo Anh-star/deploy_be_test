@@ -48,6 +48,9 @@ public class PayOsServiceImpl implements PayOsService {
             body.put("cancelUrl", props.getCancelUrl());
             body.put("returnUrl", props.getReturnUrl());
 
+            log.info("PayOS DEBUG returnUrl={}", props.getReturnUrl());
+            log.info("PayOS DEBUG cancelUrl={}", props.getCancelUrl());
+
             Map<String, String> signatureData = new TreeMap<>();
             signatureData.put("amount", String.valueOf(amount));
             signatureData.put("cancelUrl", props.getCancelUrl());
