@@ -135,7 +135,14 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
 
         if (Boolean.TRUE.equals(document.getIsPaid())) {
             UUID userId = getCurrentUserIdOrNull();
-            if (userId != null && !documentAccessService.hasAccess(userId, documentId)) {
+            boolean isOwner = userId != null
+                    && document.getCreatedBy() != null
+                    && document.getCreatedBy().getId() != null
+                    && document.getCreatedBy().getId().equals(userId);
+            if (userId == null) {
+                throw new AccessDeniedException("You must purchase this document before downloading.");
+            }
+            if (!isOwner && !documentAccessService.hasAccess(userId, documentId)) {
                 throw new AccessDeniedException("You must purchase this document before downloading.");
             }
         }
