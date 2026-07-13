@@ -221,8 +221,20 @@ public void processReturn(Map<String, String> params) {
         UUID userId = getCurrentUserId();
         List<Payment> payments = paymentRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
 
+        if (payments.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> documentIds = payments.stream()
+                .map(Payment::getDocumentId)
+                .distinct()
+                .toList();
+
+        Map<UUID, String> titleByDocumentId = documentRepository.findAllById(documentIds).stream()
+                .collect(Collectors.toMap(Document::getId, Document::getTitle));
+
         return payments.stream()
-                .map(this::toPaymentHistoryDto)
+                .map(payment -> toPaymentHistoryDto(payment, titleByDocumentId))
                 .collect(Collectors.toList());
     }
 
@@ -271,11 +283,14 @@ public void processReturn(Map<String, String> params) {
         }
     }
 
-    private PaymentHistoryDto toPaymentHistoryDto(Payment payment) {
+    private PaymentHistoryDto toPaymentHistoryDto(Payment payment, Map<UUID, String> titleByDocumentId) {
         return PaymentHistoryDto.builder()
+                .paymentId(payment.getId())
                 .documentId(payment.getDocumentId())
+                .documentTitle(titleByDocumentId.get(payment.getDocumentId()))
                 .amount(payment.getAmount())
                 .status(payment.getStatus())
+                .orderCode(payment.getOrderCode())
                 .bankCode(payment.getBankCode())
                 .transactionNo(payment.getTransactionNo())
                 .createdAt(payment.getCreatedAt())

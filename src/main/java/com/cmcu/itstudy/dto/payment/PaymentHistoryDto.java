@@ -17,11 +17,17 @@ import java.util.UUID;
 @AllArgsConstructor
 public class PaymentHistoryDto {
 
+    private UUID paymentId;
+
     private UUID documentId;
+
+    private String documentTitle;
 
     private Long amount;
 
     private PaymentStatus status;
+
+    private String orderCode;
 
     private String bankCode;
 
