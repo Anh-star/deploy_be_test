@@ -11,6 +11,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
@@ -91,6 +92,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AIGeneratedQuizValidationException.class)
     public ResponseEntity<ApiResponse<Void>> handleAIGeneratedQuizValidation(AIGeneratedQuizValidationException ex) {
         String message = ex.getMessage() != null ? ex.getMessage() : "Invalid AI-generated quiz data";
+        ApiResponse<Void> body = ApiResponse.failure(message);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        String paramName = ex.getName();
+        String message = "Invalid value for parameter: " + paramName;
         ApiResponse<Void> body = ApiResponse.failure(message);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
