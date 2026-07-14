@@ -17,6 +17,7 @@ import com.cmcu.itstudy.security.UserDetailsImpl;
 import com.cmcu.itstudy.service.contract.DocumentAccessService;
 import com.cmcu.itstudy.service.contract.PayOsService;
 import com.cmcu.itstudy.service.contract.PaymentService;
+import com.cmcu.itstudy.service.contract.SellerEarningService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -42,19 +43,22 @@ public class PaymentServiceImpl implements PaymentService {
     private final VnPayConfig vnPayConfig;
     private final DocumentAccessService documentAccessService;
     private final PayOsService payOsService;
+    private final SellerEarningService sellerEarningService;
 
     public PaymentServiceImpl(PaymentRepository paymentRepository,
                              DocumentRepository documentRepository,
                              DocumentAccessRepository documentAccessRepository,
                              VnPayConfig vnPayConfig,
                              DocumentAccessService documentAccessService,
-                             PayOsService payOsService) {
+                             PayOsService payOsService,
+                             SellerEarningService sellerEarningService) {
         this.paymentRepository = paymentRepository;
         this.documentRepository = documentRepository;
         this.documentAccessRepository = documentAccessRepository;
         this.vnPayConfig = vnPayConfig;
         this.documentAccessService = documentAccessService;
         this.payOsService = payOsService;
+        this.sellerEarningService = sellerEarningService;
     }
 
     @Override
@@ -244,7 +248,7 @@ public void processReturn(Map<String, String> params) {
         String orderCode = String.valueOf(payload.getData().getOrderCode());
         log.info("Processing PayOS webhook: orderCode={}", orderCode);
 
-        Payment payment = paymentRepository.findByOrderCode(orderCode)
+        Payment payment = paymentRepository.findByOrderCodeForUpdate(orderCode)
                 .orElseThrow(() -> new NoSuchElementException("Payment not found with orderCode: " + orderCode));
 
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
@@ -280,6 +284,21 @@ public void processReturn(Map<String, String> params) {
             );
             log.info("PayOS webhook: document access granted: orderCode={}, userId={}, documentId={}",
                     orderCode, payment.getUserId(), payment.getDocumentId());
+
+            try {
+                var earning = sellerEarningService.recordSuccessfulPayment(payment.getId());
+                if (earning.isEmpty()) {
+                    log.warn("PayOS webhook: seller earning not recorded (Document missing or reconciliation required). paymentId={}",
+                            payment.getId());
+                } else {
+                    log.info("PayOS webhook: seller earning recorded. paymentId={}, earningId={}",
+                            payment.getId(), earning.get().getId());
+                }
+            } catch (RuntimeException ex) {
+                log.warn("PayOS webhook: seller earning service failed. paymentId={}, reason={}",
+                        payment.getId(), ex.getMessage());
+                throw ex;
+            }
         }
     }
 
