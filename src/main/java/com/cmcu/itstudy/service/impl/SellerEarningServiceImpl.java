@@ -8,6 +8,7 @@ import com.cmcu.itstudy.enums.SellerEarningStatus;
 import com.cmcu.itstudy.repository.DocumentRepository;
 import com.cmcu.itstudy.repository.PaymentRepository;
 import com.cmcu.itstudy.repository.SellerEarningRepository;
+import com.cmcu.itstudy.service.contract.SellerBalanceService;
 import com.cmcu.itstudy.service.contract.SellerEarningService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +28,7 @@ public class SellerEarningServiceImpl implements SellerEarningService {
     private final SellerEarningRepository sellerEarningRepository;
     private final PaymentRepository paymentRepository;
     private final DocumentRepository documentRepository;
+    private final SellerBalanceService sellerBalanceService;
 
     @Value("${seller.platform-fee-percent:10}")
     private int platformFeePercent;
@@ -37,10 +39,12 @@ public class SellerEarningServiceImpl implements SellerEarningService {
     public SellerEarningServiceImpl(
             SellerEarningRepository sellerEarningRepository,
             PaymentRepository paymentRepository,
-            DocumentRepository documentRepository) {
+            DocumentRepository documentRepository,
+            SellerBalanceService sellerBalanceService) {
         this.sellerEarningRepository = sellerEarningRepository;
         this.paymentRepository = paymentRepository;
         this.documentRepository = documentRepository;
+        this.sellerBalanceService = sellerBalanceService;
     }
 
     @Override
@@ -125,6 +129,13 @@ public class SellerEarningServiceImpl implements SellerEarningService {
                 .build();
 
         SellerEarning saved = sellerEarningRepository.save(earning);
+
+        sellerBalanceService.creditPending(
+                saved.getSellerId(),
+                saved.getSellerNetAmount(),
+                saved.getId()
+        );
+
         return Optional.of(saved);
     }
 }
