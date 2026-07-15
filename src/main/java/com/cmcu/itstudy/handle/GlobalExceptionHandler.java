@@ -3,6 +3,7 @@ package com.cmcu.itstudy.handle;
 import com.cmcu.itstudy.dto.common.ApiResponse;
 import com.cmcu.itstudy.handle.AIGeneratedQuizValidationException;
 import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -16,6 +17,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -114,18 +116,14 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-public ResponseEntity<ApiResponse<Void>> handleGenericException(Exception ex) {
+    public ResponseEntity<ApiResponse<Void>> handleGenericException(Exception ex) {
+        log.error("Unhandled exception", ex);
 
-    ex.printStackTrace();
+        ApiResponse<Void> body = ApiResponse.failure("Internal server error");
 
-    String msg = ex.getClass().getName() + ": " + ex.getMessage();
-
-    ApiResponse<Void> body =
-            ApiResponse.failure(msg);
-
-    return ResponseEntity
-            .status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(body);
-}
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(body);
+    }
 }
 
