@@ -40,7 +40,7 @@ public class RoleController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<AdminRolePageResponseDto>> listRoles(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
@@ -50,14 +50,14 @@ public class RoleController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<AdminRoleResponseDto>> getRole(@PathVariable UUID id) {
         AdminRoleResponseDto data = roleService.getRole(id);
         return ResponseEntity.ok(ApiResponse.success(data, "Role detail"));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<AdminRoleResponseDto>> createRole(
             @Valid @RequestBody AdminRoleCreateRequestDto request
     ) {
@@ -67,7 +67,7 @@ public class RoleController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<AdminRoleResponseDto>> updateRole(
             @PathVariable UUID id,
             @Valid @RequestBody AdminRoleUpdateRequestDto request
@@ -77,7 +77,7 @@ public class RoleController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<AdminRoleResponseDto>> patchStatus(
             @PathVariable UUID id,
             @Valid @RequestBody AdminRoleStatusPatchRequestDto request
@@ -87,14 +87,14 @@ public class RoleController {
     }
 
     @GetMapping("/{id}/permissions")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<List<AdminPermissionResponseDto>>> getRolePermissions(@PathVariable UUID id) {
         List<AdminPermissionResponseDto> data = roleService.getRolePermissions(id);
         return ResponseEntity.ok(ApiResponse.success(data, "Role permissions"));
     }
 
     @PostMapping("/{id}/permissions")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<MessageResponseDto>> addPermissionsToRole(
             @PathVariable UUID id,
             @RequestBody(required = false) RolePermissionIdsRequestDto body
@@ -108,7 +108,7 @@ public class RoleController {
     }
 
     @DeleteMapping("/{id}/permissions")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<MessageResponseDto>> removePermissionsFromRole(
             @PathVariable UUID id,
             @RequestBody(required = false) RolePermissionIdsRequestDto body
