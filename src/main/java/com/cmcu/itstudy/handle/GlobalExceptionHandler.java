@@ -96,6 +96,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    @ExceptionHandler(WithdrawalIdempotencyConflictException.class)
+    public ResponseEntity<ApiResponse<Void>> handleWithdrawalIdempotencyConflict(WithdrawalIdempotencyConflictException ex) {
+        String message = ex.getMessage() != null
+                ? ex.getMessage()
+                : "Client request ID was already used with different withdrawal data";
+        ApiResponse<Void> body = ApiResponse.failure(message);
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         String paramName = ex.getName();
