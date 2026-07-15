@@ -39,7 +39,7 @@ public class Role {
     @Column(name = "name", nullable = false, length = 100, unique = true)
     private String name;
 
-    @Column(name = "description", length = 500)
+    @Column(name = "description", columnDefinition = "nvarchar(500)")
     private String description;
 
     @Column(name = "created_at", nullable = false)
