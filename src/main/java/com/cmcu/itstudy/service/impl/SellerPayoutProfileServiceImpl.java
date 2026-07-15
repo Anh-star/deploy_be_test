@@ -95,7 +95,7 @@ public class SellerPayoutProfileServiceImpl implements SellerPayoutProfileServic
             created = false;
         }
 
-        SellerPayoutProfile saved = sellerPayoutProfileRepository.save(profile);
+        SellerPayoutProfile saved = sellerPayoutProfileRepository.saveAndFlush(profile);
 
         log.info(
                 "Seller payout profile upserted: sellerId={}, created={}",
