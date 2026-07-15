@@ -136,6 +136,102 @@ public class SellerBalanceServiceImpl implements SellerBalanceService {
         return saved;
     }
 
+    @Override
+    public SellerBalance reserveAvailableToLocked(UUID sellerId, Long amount) {
+        if (sellerId == null) {
+            throw new IllegalArgumentException("sellerId must not be null");
+        }
+        if (amount == null || amount <= 0L) {
+            throw new IllegalArgumentException("amount must be positive");
+        }
+
+        userRepository.findByIdForUpdate(sellerId)
+                .orElseThrow(() -> {
+                    log.error(
+                            "CRITICAL: Seller User not found while reserving available to locked. sellerId={}",
+                            sellerId);
+                    return new IllegalStateException("Seller User not found: " + sellerId);
+                });
+
+        SellerBalance balance = sellerBalanceRepository.findBySellerIdForUpdate(sellerId)
+                .orElseThrow(() -> {
+                    log.error(
+                            "CRITICAL: SellerBalance not found while reserving available to locked. sellerId={}",
+                            sellerId);
+                    return new IllegalStateException("Seller balance is not available");
+                });
+
+        validateNonNegativeForWithdrawal(balance, sellerId);
+
+        if (balance.getAvailableBalance() < amount) {
+            log.error(
+                    "CRITICAL: Insufficient availableBalance while reserving for withdrawal. sellerId={}, amount={}",
+                    sellerId,
+                    amount);
+            throw new IllegalStateException("Insufficient available balance");
+        }
+
+        long newAvailable = Math.subtractExact(balance.getAvailableBalance(), amount);
+        long newLocked = Math.addExact(balance.getLockedBalance(), amount);
+
+        balance.setAvailableBalance(newAvailable);
+        balance.setLockedBalance(newLocked);
+
+        SellerBalance saved = sellerBalanceRepository.save(balance);
+
+        log.info(
+                "SellerBalance reserveAvailableToLocked: sellerId={}, amount={}, newAvailable={}, newLocked={}",
+                sellerId,
+                amount,
+                newAvailable,
+                newLocked);
+
+        return saved;
+    }
+
+    private void validateNonNegativeForWithdrawal(SellerBalance balance, UUID sellerId) {
+        if (balance.getPendingBalance() == null || balance.getPendingBalance() < 0L) {
+            log.error(
+                    "CRITICAL: Invalid SellerBalance.pendingBalance for sellerId={}, field=pendingBalance, value={}",
+                    sellerId,
+                    balance.getPendingBalance());
+            throw new IllegalStateException(
+                    "Invalid pendingBalance for seller " + sellerId + ": " + balance.getPendingBalance());
+        }
+        if (balance.getAvailableBalance() == null || balance.getAvailableBalance() < 0L) {
+            log.error(
+                    "CRITICAL: Invalid SellerBalance.availableBalance for sellerId={}, field=availableBalance, value={}",
+                    sellerId,
+                    balance.getAvailableBalance());
+            throw new IllegalStateException(
+                    "Invalid availableBalance for seller " + sellerId + ": " + balance.getAvailableBalance());
+        }
+        if (balance.getLockedBalance() == null || balance.getLockedBalance() < 0L) {
+            log.error(
+                    "CRITICAL: Invalid SellerBalance.lockedBalance for sellerId={}, field=lockedBalance, value={}",
+                    sellerId,
+                    balance.getLockedBalance());
+            throw new IllegalStateException(
+                    "Invalid lockedBalance for seller " + sellerId + ": " + balance.getLockedBalance());
+        }
+        if (balance.getTotalEarned() == null || balance.getTotalEarned() < 0L) {
+            log.error(
+                    "CRITICAL: Invalid SellerBalance.totalEarned for sellerId={}, field=totalEarned, value={}",
+                    sellerId,
+                    balance.getTotalEarned());
+            throw new IllegalStateException(
+                    "Invalid totalEarned for seller " + sellerId + ": " + balance.getTotalEarned());
+        }
+        if (balance.getTotalWithdrawn() == null || balance.getTotalWithdrawn() < 0L) {
+            log.error(
+                    "CRITICAL: Invalid SellerBalance.totalWithdrawn for sellerId={}, field=totalWithdrawn, value={}",
+                    sellerId,
+                    balance.getTotalWithdrawn());
+            throw new IllegalStateException(
+                    "Invalid totalWithdrawn for seller " + sellerId + ": " + balance.getTotalWithdrawn());
+        }
+    }
+
     private void validateNonNegative(SellerBalance balance, UUID sellerId, UUID earningId) {
         if (balance.getPendingBalance() == null || balance.getPendingBalance() < 0L) {
             log.error(

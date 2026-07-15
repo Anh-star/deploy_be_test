@@ -9,4 +9,6 @@ public interface SellerBalanceService {
     SellerBalance creditPending(UUID sellerId, Long amount, UUID earningId);
 
     SellerBalance movePendingToAvailable(UUID sellerId, Long amount, UUID earningId);
+
+    SellerBalance reserveAvailableToLocked(UUID sellerId, Long amount);
 }
