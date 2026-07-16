@@ -27,9 +27,11 @@ public class PaymentModeratorWithdrawalActionResponseDto {
     private String adminNote;
 
     private UUID approvedByAdminId;
+    private UUID paidByAdminId;
     private UUID rejectedByAdminId;
 
     private LocalDateTime approvedAt;
+    private LocalDateTime paidAt;
     private LocalDateTime rejectedAt;
 
     private LocalDateTime createdAt;

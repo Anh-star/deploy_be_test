@@ -17,4 +17,10 @@ public interface PaymentModeratorWithdrawalCommandService {
             UUID moderatorId,
             String adminNote
     );
+
+    PaymentModeratorWithdrawalActionResponseDto markPaid(
+            UUID withdrawalId,
+            UUID moderatorId,
+            String adminNote
+    );
 }

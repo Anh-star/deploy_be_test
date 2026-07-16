@@ -108,6 +108,53 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
         return toActionResponse(saved);
     }
 
+    @Override
+    public PaymentModeratorWithdrawalActionResponseDto markPaid(
+            UUID withdrawalId,
+            UUID moderatorId,
+            String adminNote
+    ) {
+        if (withdrawalId == null) {
+            throw new IllegalArgumentException("Withdrawal ID is required");
+        }
+        if (moderatorId == null) {
+            throw new IllegalArgumentException("Moderator ID is required");
+        }
+        if (adminNote == null || adminNote.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Payment confirmation note is required"
+            );
+        }
+
+        WithdrawalRequest withdrawal = withdrawalRequestRepository
+                .findByIdForUpdate(withdrawalId)
+                .orElseThrow(() -> new NoSuchElementException(
+                        "Withdrawal request not found"
+                ));
+
+        if (withdrawal.getStatus() != WithdrawalStatus.APPROVED) {
+            throw new WithdrawalStateConflictException(
+                    "Withdrawal request has already been processed"
+            );
+        }
+
+        sellerBalanceService.moveLockedToWithdrawn(
+                withdrawal.getSellerId(),
+                withdrawal.getAmount()
+        );
+
+        LocalDateTime now = LocalDateTime.now();
+        withdrawal.setStatus(WithdrawalStatus.PAID);
+        withdrawal.setPaidByAdminId(moderatorId);
+        withdrawal.setPaidAt(now);
+        withdrawal.setAdminNote(adminNote.trim());
+
+        WithdrawalRequest saved = withdrawalRequestRepository
+                .saveAndFlush(withdrawal);
+
+        return toActionResponse(saved);
+    }
+
     private static String normalizeOptionalNote(String adminNote) {
         if (adminNote == null || adminNote.isBlank()) {
             return null;
@@ -127,8 +174,10 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
                 .adminNote(withdrawal.getAdminNote())
                 .approvedByAdminId(withdrawal.getApprovedByAdminId())
                 .rejectedByAdminId(withdrawal.getRejectedByAdminId())
+                .paidByAdminId(withdrawal.getPaidByAdminId())
                 .approvedAt(withdrawal.getApprovedAt())
                 .rejectedAt(withdrawal.getRejectedAt())
+                .paidAt(withdrawal.getPaidAt())
                 .createdAt(withdrawal.getCreatedAt())
                 .updatedAt(withdrawal.getUpdatedAt())
                 .build();

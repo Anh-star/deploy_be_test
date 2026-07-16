@@ -13,4 +13,6 @@ public interface SellerBalanceService {
     SellerBalance reserveAvailableToLocked(UUID sellerId, Long amount);
 
     SellerBalance releaseLockedToAvailable(UUID sellerId, Long amount);
+
+    SellerBalance moveLockedToWithdrawn(UUID sellerId, Long amount);
 }

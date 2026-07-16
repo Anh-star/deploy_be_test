@@ -4,6 +4,7 @@ import com.cmcu.itstudy.dto.common.ApiResponse;
 import com.cmcu.itstudy.dto.paymentmoderator.withdrawal.PaymentModeratorWithdrawalActionResponseDto;
 import com.cmcu.itstudy.dto.paymentmoderator.withdrawal.PaymentModeratorWithdrawalApproveRequestDto;
 import com.cmcu.itstudy.dto.paymentmoderator.withdrawal.PaymentModeratorWithdrawalDetailResponseDto;
+import com.cmcu.itstudy.dto.paymentmoderator.withdrawal.PaymentModeratorWithdrawalMarkPaidRequestDto;
 import com.cmcu.itstudy.dto.paymentmoderator.withdrawal.PaymentModeratorWithdrawalPageResponseDto;
 import com.cmcu.itstudy.dto.paymentmoderator.withdrawal.PaymentModeratorWithdrawalRejectRequestDto;
 import com.cmcu.itstudy.enums.WithdrawalStatus;
@@ -110,6 +111,27 @@ public class PaymentModeratorWithdrawalController {
 
         return ResponseEntity.ok(
                 ApiResponse.success(data, "Withdrawal request rejected")
+        );
+    }
+
+    @PostMapping("/{withdrawalId}/mark-paid")
+    @PreAuthorize("hasRole('PAYMENT_MODERATOR')")
+    public ResponseEntity<ApiResponse<PaymentModeratorWithdrawalActionResponseDto>> markPaidWithdrawal(
+            @PathVariable UUID withdrawalId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser,
+            @Valid @RequestBody PaymentModeratorWithdrawalMarkPaidRequestDto request
+    ) {
+        UUID moderatorId = requireAuthenticatedUserId(currentUser);
+
+        PaymentModeratorWithdrawalActionResponseDto data =
+                paymentModeratorWithdrawalCommandService.markPaid(
+                        withdrawalId,
+                        moderatorId,
+                        request.getAdminNote()
+                );
+
+        return ResponseEntity.ok(
+                ApiResponse.success(data, "Withdrawal request marked as paid")
         );
     }
 

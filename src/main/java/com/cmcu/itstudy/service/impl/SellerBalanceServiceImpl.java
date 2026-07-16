@@ -250,6 +250,81 @@ public class SellerBalanceServiceImpl implements SellerBalanceService {
         return saved;
     }
 
+    @Override
+    public SellerBalance moveLockedToWithdrawn(UUID sellerId, Long amount) {
+        if (sellerId == null) {
+            throw new IllegalArgumentException("Seller ID is required");
+        }
+        if (amount == null || amount <= 0L) {
+            throw new IllegalArgumentException("Amount must be greater than zero");
+        }
+
+        userRepository.findByIdForUpdate(sellerId)
+                .orElseThrow(() -> {
+                    log.error(
+                            "CRITICAL: Seller User not found while moving locked to withdrawn. sellerId={}",
+                            sellerId);
+                    return new IllegalStateException("Seller user not found");
+                });
+
+        SellerBalance balance = sellerBalanceRepository.findBySellerIdForUpdate(sellerId)
+                .orElseThrow(() -> {
+                    log.error(
+                            "CRITICAL: SellerBalance not found while moving locked to withdrawn. sellerId={}",
+                            sellerId);
+                    return new IllegalStateException("Seller balance not found");
+                });
+
+        validateNonNegativeForWithdrawal(balance, sellerId);
+
+        if (balance.getLockedBalance() == null
+                || balance.getTotalEarned() == null
+                || balance.getTotalWithdrawn() == null
+                || balance.getLockedBalance() < amount) {
+            log.error(
+                    "CRITICAL: Insufficient lockedBalance while moving locked to withdrawn. sellerId={}, amount={}, lockedBalance={}",
+                    sellerId,
+                    amount,
+                    balance.getLockedBalance());
+            throw new IllegalStateException("Insufficient locked balance");
+        }
+
+        long newLockedBalance = Math.subtractExact(
+                balance.getLockedBalance(),
+                amount
+        );
+        long newTotalWithdrawn = Math.addExact(
+                balance.getTotalWithdrawn(),
+                amount
+        );
+
+        if (newTotalWithdrawn > balance.getTotalEarned()) {
+            log.error(
+                    "CRITICAL: totalWithdrawn would exceed totalEarned. sellerId={}, amount={}, newTotalWithdrawn={}, totalEarned={}",
+                    sellerId,
+                    amount,
+                    newTotalWithdrawn,
+                    balance.getTotalEarned());
+            throw new IllegalStateException(
+                    "Total withdrawn exceeds total earned"
+            );
+        }
+
+        balance.setLockedBalance(newLockedBalance);
+        balance.setTotalWithdrawn(newTotalWithdrawn);
+
+        SellerBalance saved = sellerBalanceRepository.save(balance);
+
+        log.info(
+                "SellerBalance moveLockedToWithdrawn: sellerId={}, amount={}, newLockedBalance={}, newTotalWithdrawn={}",
+                sellerId,
+                amount,
+                newLockedBalance,
+                newTotalWithdrawn);
+
+        return saved;
+    }
+
     private void validateNonNegativeForWithdrawal(SellerBalance balance, UUID sellerId) {
         if (balance.getPendingBalance() == null || balance.getPendingBalance() < 0L) {
             log.error(
