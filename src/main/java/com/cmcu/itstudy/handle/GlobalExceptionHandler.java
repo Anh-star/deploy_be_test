@@ -2,6 +2,7 @@ package com.cmcu.itstudy.handle;
 
 import com.cmcu.itstudy.dto.common.ApiResponse;
 import com.cmcu.itstudy.handle.AIGeneratedQuizValidationException;
+import com.cmcu.itstudy.handle.WithdrawalStateConflictException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -103,6 +104,15 @@ public class GlobalExceptionHandler {
         String message = ex.getMessage() != null
                 ? ex.getMessage()
                 : "Client request ID was already used with different withdrawal data";
+        ApiResponse<Void> body = ApiResponse.failure(message);
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(WithdrawalStateConflictException.class)
+    public ResponseEntity<ApiResponse<Void>> handleWithdrawalStateConflict(WithdrawalStateConflictException ex) {
+        String message = ex.getMessage() != null
+                ? ex.getMessage()
+                : "Withdrawal request has already been processed";
         ApiResponse<Void> body = ApiResponse.failure(message);
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }

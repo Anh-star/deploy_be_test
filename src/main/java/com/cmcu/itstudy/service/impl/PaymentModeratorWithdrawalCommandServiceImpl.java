@@ -1,0 +1,136 @@
+package com.cmcu.itstudy.service.impl;
+
+import com.cmcu.itstudy.dto.paymentmoderator.withdrawal.PaymentModeratorWithdrawalActionResponseDto;
+import com.cmcu.itstudy.entity.WithdrawalRequest;
+import com.cmcu.itstudy.enums.WithdrawalStatus;
+import com.cmcu.itstudy.handle.WithdrawalStateConflictException;
+import com.cmcu.itstudy.repository.WithdrawalRequestRepository;
+import com.cmcu.itstudy.service.contract.PaymentModeratorWithdrawalCommandService;
+import com.cmcu.itstudy.service.contract.SellerBalanceService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.NoSuchElementException;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+@Transactional
+public class PaymentModeratorWithdrawalCommandServiceImpl
+        implements PaymentModeratorWithdrawalCommandService {
+
+    private final WithdrawalRequestRepository withdrawalRequestRepository;
+    private final SellerBalanceService sellerBalanceService;
+
+    @Override
+    public PaymentModeratorWithdrawalActionResponseDto approveWithdrawal(
+            UUID withdrawalId,
+            UUID moderatorId,
+            String adminNote
+    ) {
+        if (withdrawalId == null) {
+            throw new IllegalArgumentException("Withdrawal ID is required");
+        }
+        if (moderatorId == null) {
+            throw new IllegalArgumentException("Moderator ID is required");
+        }
+
+        WithdrawalRequest withdrawal = withdrawalRequestRepository
+                .findByIdForUpdate(withdrawalId)
+                .orElseThrow(() -> new NoSuchElementException(
+                        "Withdrawal request not found"
+                ));
+
+        if (withdrawal.getStatus() != WithdrawalStatus.PENDING) {
+            throw new WithdrawalStateConflictException(
+                    "Withdrawal request has already been processed"
+            );
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        withdrawal.setStatus(WithdrawalStatus.APPROVED);
+        withdrawal.setApprovedByAdminId(moderatorId);
+        withdrawal.setApprovedAt(now);
+        withdrawal.setAdminNote(normalizeOptionalNote(adminNote));
+
+        WithdrawalRequest saved = withdrawalRequestRepository
+                .saveAndFlush(withdrawal);
+
+        return toActionResponse(saved);
+    }
+
+    @Override
+    public PaymentModeratorWithdrawalActionResponseDto rejectWithdrawal(
+            UUID withdrawalId,
+            UUID moderatorId,
+            String adminNote
+    ) {
+        if (withdrawalId == null) {
+            throw new IllegalArgumentException("Withdrawal ID is required");
+        }
+        if (moderatorId == null) {
+            throw new IllegalArgumentException("Moderator ID is required");
+        }
+        if (adminNote == null || adminNote.isBlank()) {
+            throw new IllegalArgumentException("Rejection reason is required");
+        }
+
+        WithdrawalRequest withdrawal = withdrawalRequestRepository
+                .findByIdForUpdate(withdrawalId)
+                .orElseThrow(() -> new NoSuchElementException(
+                        "Withdrawal request not found"
+                ));
+
+        WithdrawalStatus currentStatus = withdrawal.getStatus();
+        if (currentStatus != WithdrawalStatus.PENDING
+                && currentStatus != WithdrawalStatus.APPROVED) {
+            throw new WithdrawalStateConflictException(
+                    "Withdrawal request has already been processed"
+            );
+        }
+
+        sellerBalanceService.releaseLockedToAvailable(
+                withdrawal.getSellerId(),
+                withdrawal.getAmount()
+        );
+
+        LocalDateTime now = LocalDateTime.now();
+        withdrawal.setStatus(WithdrawalStatus.REJECTED);
+        withdrawal.setRejectedByAdminId(moderatorId);
+        withdrawal.setRejectedAt(now);
+        withdrawal.setAdminNote(adminNote.trim());
+
+        WithdrawalRequest saved = withdrawalRequestRepository
+                .saveAndFlush(withdrawal);
+
+        return toActionResponse(saved);
+    }
+
+    private static String normalizeOptionalNote(String adminNote) {
+        if (adminNote == null || adminNote.isBlank()) {
+            return null;
+        }
+        return adminNote.trim();
+    }
+
+    private static PaymentModeratorWithdrawalActionResponseDto toActionResponse(
+            WithdrawalRequest withdrawal
+    ) {
+        return PaymentModeratorWithdrawalActionResponseDto.builder()
+                .id(withdrawal.getId())
+                .requestCode(withdrawal.getRequestCode())
+                .sellerId(withdrawal.getSellerId())
+                .amount(withdrawal.getAmount())
+                .status(withdrawal.getStatus())
+                .adminNote(withdrawal.getAdminNote())
+                .approvedByAdminId(withdrawal.getApprovedByAdminId())
+                .rejectedByAdminId(withdrawal.getRejectedByAdminId())
+                .approvedAt(withdrawal.getApprovedAt())
+                .rejectedAt(withdrawal.getRejectedAt())
+                .createdAt(withdrawal.getCreatedAt())
+                .updatedAt(withdrawal.getUpdatedAt())
+                .build();
+    }
+}

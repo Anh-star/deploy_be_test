@@ -189,6 +189,67 @@ public class SellerBalanceServiceImpl implements SellerBalanceService {
         return saved;
     }
 
+    @Override
+    public SellerBalance releaseLockedToAvailable(UUID sellerId, Long amount) {
+        if (sellerId == null) {
+            throw new IllegalArgumentException("Seller ID is required");
+        }
+        if (amount == null || amount <= 0L) {
+            throw new IllegalArgumentException("Amount must be greater than zero");
+        }
+
+        userRepository.findByIdForUpdate(sellerId)
+                .orElseThrow(() -> {
+                    log.error(
+                            "CRITICAL: Seller User not found while releasing locked to available. sellerId={}",
+                            sellerId);
+                    return new IllegalStateException("Seller user not found");
+                });
+
+        SellerBalance balance = sellerBalanceRepository.findBySellerIdForUpdate(sellerId)
+                .orElseThrow(() -> {
+                    log.error(
+                            "CRITICAL: SellerBalance not found while releasing locked to available. sellerId={}",
+                            sellerId);
+                    return new IllegalStateException("Seller balance not found");
+                });
+
+        validateNonNegativeForWithdrawal(balance, sellerId);
+
+        if (balance.getLockedBalance() == null
+                || balance.getAvailableBalance() == null
+                || balance.getLockedBalance() < amount) {
+            log.error(
+                    "CRITICAL: Insufficient lockedBalance while releasing for withdrawal. sellerId={}, amount={}",
+                    sellerId,
+                    amount);
+            throw new IllegalStateException("Insufficient locked balance");
+        }
+
+        long newLockedBalance = Math.subtractExact(
+                balance.getLockedBalance(),
+                amount
+        );
+        long newAvailableBalance = Math.addExact(
+                balance.getAvailableBalance(),
+                amount
+        );
+
+        balance.setLockedBalance(newLockedBalance);
+        balance.setAvailableBalance(newAvailableBalance);
+
+        SellerBalance saved = sellerBalanceRepository.save(balance);
+
+        log.info(
+                "SellerBalance releaseLockedToAvailable: sellerId={}, amount={}, newLockedBalance={}, newAvailableBalance={}",
+                sellerId,
+                amount,
+                newLockedBalance,
+                newAvailableBalance);
+
+        return saved;
+    }
+
     private void validateNonNegativeForWithdrawal(SellerBalance balance, UUID sellerId) {
         if (balance.getPendingBalance() == null || balance.getPendingBalance() < 0L) {
             log.error(
