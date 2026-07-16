@@ -1,7 +1,10 @@
 package com.cmcu.itstudy.repository;
 
 import com.cmcu.itstudy.entity.WithdrawalRequest;
+import com.cmcu.itstudy.enums.WithdrawalStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -25,5 +28,49 @@ public interface WithdrawalRequestRepository extends JpaRepository<WithdrawalReq
     Optional<WithdrawalRequest> findBySellerIdAndClientRequestId(
             UUID sellerId,
             UUID clientRequestId
+    );
+
+    @Query(
+            value = """
+                    SELECT wr
+                    FROM WithdrawalRequest wr
+                    LEFT JOIN User u ON u.id = wr.sellerId
+                    WHERE (:status IS NULL OR wr.status = :status)
+                      AND (
+                            :search IS NULL
+                            OR LOWER(wr.requestCode)
+                                LIKE LOWER(CONCAT('%', :search, '%'))
+                            OR LOWER(u.email)
+                                LIKE LOWER(CONCAT('%', :search, '%'))
+                            OR (
+                                u.fullName IS NOT NULL
+                                AND LOWER(u.fullName)
+                                    LIKE LOWER(CONCAT('%', :search, '%'))
+                            )
+                      )
+                    """,
+            countQuery = """
+                    SELECT COUNT(wr)
+                    FROM WithdrawalRequest wr
+                    LEFT JOIN User u ON u.id = wr.sellerId
+                    WHERE (:status IS NULL OR wr.status = :status)
+                      AND (
+                            :search IS NULL
+                            OR LOWER(wr.requestCode)
+                                LIKE LOWER(CONCAT('%', :search, '%'))
+                            OR LOWER(u.email)
+                                LIKE LOWER(CONCAT('%', :search, '%'))
+                            OR (
+                                u.fullName IS NOT NULL
+                                AND LOWER(u.fullName)
+                                    LIKE LOWER(CONCAT('%', :search, '%'))
+                            )
+                      )
+                    """
+    )
+    Page<WithdrawalRequest> searchForPaymentModerator(
+            @Param("status") WithdrawalStatus status,
+            @Param("search") String search,
+            Pageable pageable
     );
 }
