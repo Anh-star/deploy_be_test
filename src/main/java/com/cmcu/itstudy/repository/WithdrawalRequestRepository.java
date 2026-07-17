@@ -73,4 +73,20 @@ public interface WithdrawalRequestRepository extends JpaRepository<WithdrawalReq
             @Param("search") String search,
             Pageable pageable
     );
+
+    Page<WithdrawalRequest> findAllBySellerId(
+            UUID sellerId,
+            Pageable pageable
+    );
+
+    Page<WithdrawalRequest> findAllBySellerIdAndStatus(
+            UUID sellerId,
+            WithdrawalStatus status,
+            Pageable pageable
+    );
+
+    Optional<WithdrawalRequest> findByIdAndSellerId(
+            UUID withdrawalId,
+            UUID sellerId
+    );
 }

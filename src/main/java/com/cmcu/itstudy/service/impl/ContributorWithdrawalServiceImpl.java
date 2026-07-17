@@ -2,6 +2,9 @@ package com.cmcu.itstudy.service.impl;
 
 import com.cmcu.itstudy.dto.contributor.ContributorWithdrawalCreateRequestDto;
 import com.cmcu.itstudy.dto.contributor.ContributorWithdrawalResponseDto;
+import com.cmcu.itstudy.dto.contributor.withdrawal.ContributorWithdrawalDetailResponseDto;
+import com.cmcu.itstudy.dto.contributor.withdrawal.ContributorWithdrawalHistoryItemDto;
+import com.cmcu.itstudy.dto.contributor.withdrawal.ContributorWithdrawalPageResponseDto;
 import com.cmcu.itstudy.entity.SellerPayoutProfile;
 import com.cmcu.itstudy.entity.WithdrawalRequest;
 import com.cmcu.itstudy.enums.WithdrawalStatus;
@@ -14,9 +17,15 @@ import com.cmcu.itstudy.service.contract.SellerBalanceService;
 import com.cmcu.itstudy.service.dto.ContributorWithdrawalCreateResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -217,6 +226,144 @@ public class ContributorWithdrawalServiceImpl implements ContributorWithdrawalSe
                 .createdAt(withdrawalRequest.getCreatedAt())
                 .updatedAt(withdrawalRequest.getUpdatedAt())
                 .build();
+    }
+
+    private static String resolveRejectionReason(WithdrawalRequest withdrawal) {
+        if (withdrawal.getStatus() != WithdrawalStatus.REJECTED) {
+            return null;
+        }
+        String adminNote = withdrawal.getAdminNote();
+        if (adminNote == null || adminNote.isBlank()) {
+            return null;
+        }
+        return adminNote.trim();
+    }
+
+    private static ContributorWithdrawalHistoryItemDto toHistoryItemDto(
+            WithdrawalRequest withdrawal
+    ) {
+        return ContributorWithdrawalHistoryItemDto.builder()
+                .id(withdrawal.getId())
+                .requestCode(withdrawal.getRequestCode())
+                .amount(withdrawal.getAmount())
+                .status(withdrawal.getStatus())
+                .bankCode(withdrawal.getBankCode())
+                .bankName(withdrawal.getBankName())
+                .maskedBankAccountNumber(
+                        maskBankAccountNumber(
+                                withdrawal.getBankAccountNumber()
+                        )
+                )
+                .bankAccountHolderName(withdrawal.getBankAccountHolderName())
+                .sellerNote(withdrawal.getSellerNote())
+                .rejectionReason(resolveRejectionReason(withdrawal))
+                .createdAt(withdrawal.getCreatedAt())
+                .updatedAt(withdrawal.getUpdatedAt())
+                .approvedAt(withdrawal.getApprovedAt())
+                .paidAt(withdrawal.getPaidAt())
+                .rejectedAt(withdrawal.getRejectedAt())
+                .cancelledAt(withdrawal.getCancelledAt())
+                .build();
+    }
+
+    private static ContributorWithdrawalDetailResponseDto toDetailDto(
+            WithdrawalRequest withdrawal
+    ) {
+        return ContributorWithdrawalDetailResponseDto.builder()
+                .id(withdrawal.getId())
+                .requestCode(withdrawal.getRequestCode())
+                .amount(withdrawal.getAmount())
+                .status(withdrawal.getStatus())
+                .bankCode(withdrawal.getBankCode())
+                .bankName(withdrawal.getBankName())
+                .maskedBankAccountNumber(
+                        maskBankAccountNumber(
+                                withdrawal.getBankAccountNumber()
+                        )
+                )
+                .bankAccountHolderName(withdrawal.getBankAccountHolderName())
+                .sellerNote(withdrawal.getSellerNote())
+                .rejectionReason(resolveRejectionReason(withdrawal))
+                .createdAt(withdrawal.getCreatedAt())
+                .updatedAt(withdrawal.getUpdatedAt())
+                .approvedAt(withdrawal.getApprovedAt())
+                .paidAt(withdrawal.getPaidAt())
+                .rejectedAt(withdrawal.getRejectedAt())
+                .cancelledAt(withdrawal.getCancelledAt())
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ContributorWithdrawalPageResponseDto getWithdrawalHistory(
+            UUID sellerId,
+            int page,
+            int size,
+            WithdrawalStatus status
+    ) {
+        if (page < 0) {
+            throw new IllegalArgumentException(
+                    "Page index must not be negative"
+            );
+        }
+        if (size <= 0) {
+            throw new IllegalArgumentException(
+                    "Page size must be greater than zero"
+            );
+        }
+        if (size > 100) {
+            throw new IllegalArgumentException(
+                    "Page size must not exceed 100"
+            );
+        }
+
+        Sort sort = Sort.by(
+                Sort.Order.desc("createdAt"),
+                Sort.Order.desc("id")
+        );
+        Pageable pageable = PageRequest.of(page, size, sort);
+
+        Page<WithdrawalRequest> result;
+        if (status != null) {
+            result = withdrawalRequestRepository.findAllBySellerIdAndStatus(
+                    sellerId,
+                    status,
+                    pageable
+            );
+        } else {
+            result = withdrawalRequestRepository.findAllBySellerId(
+                    sellerId,
+                    pageable
+            );
+        }
+
+        List<ContributorWithdrawalHistoryItemDto> content = result.getContent()
+                .stream()
+                .map(ContributorWithdrawalServiceImpl::toHistoryItemDto)
+                .toList();
+
+        return ContributorWithdrawalPageResponseDto.builder()
+                .content(content)
+                .page(result.getNumber())
+                .size(result.getSize())
+                .totalElements(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ContributorWithdrawalDetailResponseDto getWithdrawalDetail(
+            UUID sellerId,
+            UUID withdrawalId
+    ) {
+        WithdrawalRequest withdrawal = withdrawalRequestRepository
+                .findByIdAndSellerId(withdrawalId, sellerId)
+                .orElseThrow(() -> new NoSuchElementException(
+                        "Withdrawal request not found"
+                ));
+
+        return toDetailDto(withdrawal);
     }
 
 }
