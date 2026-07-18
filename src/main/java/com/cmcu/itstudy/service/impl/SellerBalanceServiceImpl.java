@@ -1,5 +1,6 @@
 package com.cmcu.itstudy.service.impl;
 
+import com.cmcu.itstudy.dto.contributor.SellerBalanceResponseDto;
 import com.cmcu.itstudy.entity.SellerBalance;
 import com.cmcu.itstudy.repository.SellerBalanceRepository;
 import com.cmcu.itstudy.repository.UserRepository;
@@ -323,6 +324,34 @@ public class SellerBalanceServiceImpl implements SellerBalanceService {
                 newTotalWithdrawn);
 
         return saved;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SellerBalanceResponseDto getContributorBalance(UUID sellerId) {
+        if (sellerId == null) {
+            throw new IllegalArgumentException("sellerId must not be null");
+        }
+
+        return sellerBalanceRepository.findById(sellerId)
+                .map(this::toBalanceResponse)
+                .orElseGet(() -> SellerBalanceResponseDto.builder()
+                        .pendingBalance(0L)
+                        .availableBalance(0L)
+                        .lockedBalance(0L)
+                        .totalEarned(0L)
+                        .totalWithdrawn(0L)
+                        .build());
+    }
+
+    private SellerBalanceResponseDto toBalanceResponse(SellerBalance balance) {
+        return SellerBalanceResponseDto.builder()
+                .pendingBalance(balance.getPendingBalance() == null ? 0L : balance.getPendingBalance())
+                .availableBalance(balance.getAvailableBalance() == null ? 0L : balance.getAvailableBalance())
+                .lockedBalance(balance.getLockedBalance() == null ? 0L : balance.getLockedBalance())
+                .totalEarned(balance.getTotalEarned() == null ? 0L : balance.getTotalEarned())
+                .totalWithdrawn(balance.getTotalWithdrawn() == null ? 0L : balance.getTotalWithdrawn())
+                .build();
     }
 
     private void validateNonNegativeForWithdrawal(SellerBalance balance, UUID sellerId) {

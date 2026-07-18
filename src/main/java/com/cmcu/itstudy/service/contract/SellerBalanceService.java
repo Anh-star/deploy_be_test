@@ -1,5 +1,6 @@
 package com.cmcu.itstudy.service.contract;
 
+import com.cmcu.itstudy.dto.contributor.SellerBalanceResponseDto;
 import com.cmcu.itstudy.entity.SellerBalance;
 
 import java.util.UUID;
@@ -15,4 +16,6 @@ public interface SellerBalanceService {
     SellerBalance releaseLockedToAvailable(UUID sellerId, Long amount);
 
     SellerBalance moveLockedToWithdrawn(UUID sellerId, Long amount);
+
+    SellerBalanceResponseDto getContributorBalance(UUID sellerId);
 }
