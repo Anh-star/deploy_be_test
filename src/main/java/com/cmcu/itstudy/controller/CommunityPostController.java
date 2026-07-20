@@ -1,0 +1,181 @@
+package com.cmcu.itstudy.controller;
+
+import com.cmcu.itstudy.dto.common.ApiResponse;
+import com.cmcu.itstudy.dto.community.CommunityPostResponseDto;
+import com.cmcu.itstudy.dto.community.CreatePostCommentRequestDto;
+import com.cmcu.itstudy.dto.community.CreatePostRequestDto;
+import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
+import com.cmcu.itstudy.security.UserDetailsImpl;
+import com.cmcu.itstudy.service.contract.CommunityPostService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@Validated
+@RestController
+@RequestMapping("/api/community/posts")
+public class CommunityPostController {
+
+    private final CommunityPostService communityPostService;
+
+    public CommunityPostController(CommunityPostService communityPostService) {
+        this.communityPostService = communityPostService;
+    }
+
+    @PostMapping
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<CommunityPostResponseDto>> createPost(
+            @Valid @RequestBody CreatePostRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        CommunityPostResponseDto data = communityPostService.createPost(
+                userId, request.getContent(), request.getImageUrls()
+        );
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(data, "Post created"));
+    }
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getFeed(
+            @RequestParam(name = "page", defaultValue = "0") @Min(0) int page,
+            @RequestParam(name = "size", defaultValue = "10") int size,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser != null ? currentUser.getUser().getId() : null;
+        List<CommunityPostResponseDto> posts = communityPostService.getFeed(page, size, userId);
+        long total = communityPostService.getFeedTotalCount();
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("content", posts);
+        result.put("page", page);
+        result.put("size", size);
+        result.put("totalElements", total);
+
+        return ResponseEntity.ok(ApiResponse.success(result, "Feed"));
+    }
+
+    @GetMapping("/{postId}")
+    public ResponseEntity<ApiResponse<CommunityPostResponseDto>> getPostById(
+            @PathVariable UUID postId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser != null ? currentUser.getUser().getId() : null;
+        CommunityPostResponseDto data = communityPostService.getPostById(postId, userId);
+        return ResponseEntity.ok(ApiResponse.success(data, "Post detail"));
+    }
+
+    @DeleteMapping("/{postId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Void>> deletePost(
+            @PathVariable UUID postId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        communityPostService.deletePost(postId, userId);
+        return ResponseEntity.ok(ApiResponse.success(null, "Post deleted"));
+    }
+
+    @PostMapping("/{postId}/like")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<CommunityPostResponseDto>> toggleLike(
+            @PathVariable UUID postId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        CommunityPostResponseDto data = communityPostService.toggleLikePost(postId, userId);
+        return ResponseEntity.ok(ApiResponse.success(data, "Like toggled"));
+    }
+
+    @GetMapping("/{postId}/comments")
+    public ResponseEntity<ApiResponse<List<PostCommentResponseDto>>> getComments(
+            @PathVariable UUID postId,
+            @RequestParam(name = "page", defaultValue = "0") @Min(0) int page,
+            @RequestParam(name = "size", defaultValue = "10") int size,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser != null ? currentUser.getUser().getId() : null;
+        List<PostCommentResponseDto> data = communityPostService.getComments(postId, page, size, userId);
+        return ResponseEntity.ok(ApiResponse.success(data, "Comments"));
+    }
+
+    @PostMapping("/{postId}/comments")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<PostCommentResponseDto>> addComment(
+            @PathVariable UUID postId,
+            @Valid @RequestBody CreatePostCommentRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        UUID parentId = request.getParentCommentId() != null
+                ? UUID.fromString(request.getParentCommentId())
+                : null;
+        PostCommentResponseDto data = communityPostService.addComment(postId, userId, request.getBody(), parentId);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(data, "Comment added"));
+    }
+
+    @DeleteMapping("/comments/{commentId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Void>> deleteComment(
+            @PathVariable UUID commentId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        communityPostService.deleteComment(commentId, userId);
+        return ResponseEntity.ok(ApiResponse.success(null, "Comment deleted"));
+    }
+
+    @GetMapping("/comments/{commentId}/replies")
+    public ResponseEntity<ApiResponse<List<PostCommentResponseDto>>> getReplies(
+            @PathVariable UUID commentId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser != null ? currentUser.getUser().getId() : null;
+        List<PostCommentResponseDto> data = communityPostService.getReplies(commentId, userId);
+        return ResponseEntity.ok(ApiResponse.success(data, "Replies"));
+    }
+
+    @PostMapping("/comments/{commentId}/like")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<PostCommentResponseDto>> toggleCommentLike(
+            @PathVariable UUID commentId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        PostCommentResponseDto data = communityPostService.toggleLikeComment(commentId, userId);
+        return ResponseEntity.ok(ApiResponse.success(data, "Comment like toggled"));
+    }
+
+    @PutMapping("/{postId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<CommunityPostResponseDto>> updatePost(
+            @PathVariable UUID postId,
+            @Valid @RequestBody CreatePostRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        CommunityPostResponseDto data = communityPostService.updatePost(
+                postId, userId, request.getContent(), request.getImageUrls()
+        );
+        return ResponseEntity.ok(ApiResponse.success(data, "Post updated"));
+    }
+}
