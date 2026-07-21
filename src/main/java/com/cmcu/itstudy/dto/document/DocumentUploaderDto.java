@@ -14,4 +14,6 @@ import lombok.Setter;
 public class DocumentUploaderDto {
     private String id;
     private String fullName;
+    private Boolean hasManyDownloads;
+    private Boolean hasManyDocuments;
 }
