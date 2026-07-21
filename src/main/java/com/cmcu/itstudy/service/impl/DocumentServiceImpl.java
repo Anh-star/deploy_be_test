@@ -96,7 +96,9 @@ public class DocumentServiceImpl implements DocumentService {
                 .bookmarkCount(0L)
                 .deleted(false)
                 .isPaid(documentCreateRequestDto.getIsPaid())
-                .price(documentCreateRequestDto.getPrice())
+                .price(resolveDocumentPrice(
+                        Boolean.TRUE.equals(documentCreateRequestDto.getIsPaid()),
+                        documentCreateRequestDto.getPrice()))
                 .build();
 
         // Set file type based on extension or frontend hint (more robust to check extension from fileName)
@@ -188,8 +190,13 @@ public class DocumentServiceImpl implements DocumentService {
         existingDocument.setThumbnailUrl(documentUpdateRequestDto.getThumbnailUrl());
         existingDocument.setCategory(category); // Link to updated Category
         existingDocument.setUpdatedBy(currentUser); // Set updater
-        existingDocument.setIsPaid(documentUpdateRequestDto.getIsPaid());
-        existingDocument.setPrice(documentUpdateRequestDto.getPrice());
+        boolean finalIsPaid = Boolean.TRUE.equals(documentUpdateRequestDto.getIsPaid());
+        existingDocument.setIsPaid(finalIsPaid);
+        existingDocument.setPrice(resolveDocumentPrice(
+                finalIsPaid,
+                documentUpdateRequestDto.getPrice() != null
+                        ? documentUpdateRequestDto.getPrice()
+                        : existingDocument.getPrice()));
 
         // Update file type if file name changed
         String fileName = existingDocument.getFileName();
@@ -336,6 +343,24 @@ public class DocumentServiceImpl implements DocumentService {
         }
         String v = value.trim().toLowerCase();
         return v.startsWith("https://") || v.startsWith("http://");
+    }
+
+    /**
+     * Normalize the final price stored on a document so {@code isPaid} and
+     * {@code price} stay consistent. Free documents always store 0; paid
+     * documents store the request value (callers must have validated the
+     * minimum via {@code DocumentCreateRequestDto#isPriceValid} /
+     * {@code DocumentUpdateRequestDto#isPriceValid}). Negative or null inputs
+     * on a paid document are coerced to {@code MIN_PAID_DOCUMENT_PRICE} as
+     * defense-in-depth for legacy callers; validation should reject these
+     * earlier with HTTP 400.
+     */
+    private static long resolveDocumentPrice(boolean isPaid, Long requestedPrice) {
+        if (!isPaid) {
+            return 0L;
+        }
+        long v = requestedPrice == null ? 0L : requestedPrice;
+        return v < 0L ? 0L : v;
     }
 
     private DocumentCardDto mapToDocumentCardDto(Document document, User currentUser, DocumentFile primaryFile) {
