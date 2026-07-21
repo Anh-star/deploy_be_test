@@ -100,17 +100,24 @@ public class DocumentOperationsServiceImpl implements DocumentOperationsService 
                 .orElseThrow(() -> new NoSuchElementException("Document not found"));
 
         User user = null;
+        boolean alreadyViewed = false;
         if (userId != null) {
             user = userRepository.findById(userId).orElse(null);
+            if (user != null && documentViewRepository.existsByDocumentAndUser(document, user)) {
+                alreadyViewed = true;
+            }
         }
 
-        DocumentView view = DocumentView.builder()
-                .document(document)
-                .user(user)
-                .build();
-        documentViewRepository.save(view);
+        if (!alreadyViewed) {
+            DocumentView view = DocumentView.builder()
+                    .document(document)
+                    .user(user)
+                    .build();
+            documentViewRepository.save(view);
 
-        document.setViewCount(document.getViewCount() != null ? document.getViewCount() + 1 : 1L);
+            document.setViewCount(document.getViewCount() != null ? document.getViewCount() + 1 : 1L);
+        }
+
         document.setLastViewedAt(LocalDateTime.now());
         documentRepository.save(document);
     }
