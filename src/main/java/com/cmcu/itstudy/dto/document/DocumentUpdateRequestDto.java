@@ -1,11 +1,9 @@
 package com.cmcu.itstudy.dto.document;
 
 import jakarta.validation.constraints.AssertTrue;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -22,6 +20,11 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class DocumentUpdateRequestDto {
+
+    /**
+     * Minimum price for a paid document, in VND. Integer Long; no decimals.
+     */
+    public static final long MIN_PAID_DOCUMENT_PRICE = 2000L;
 
     @NotBlank(message = "Title cannot be empty")
     @Size(min = 15, max = 255, message = "Title must be between 15 and 255 characters")
@@ -52,14 +55,32 @@ public class DocumentUpdateRequestDto {
     @NotNull(message = "File size cannot be empty")
     private Long fileSizeBytes;
 
+    /**
+     * Full replacement: must be present. Update is not a partial patch.
+     */
     @NotNull(message = "isPaid flag cannot be null")
     private Boolean isPaid;
 
-    @Min(value = 0, message = "Price cannot be negative")
+    /**
+     * Integer VND price. Nullable only for free documents; paid documents must provide
+     * a value meeting {@link #MIN_PAID_DOCUMENT_PRICE}. The full-replacement update
+     * also accepts a positive value: when {@code isPaid=false} the service normalizes
+     * the stored price to 0.
+     */
     private Long price;
 
-    @AssertTrue(message = "Price must be greater than 0 when isPaid is true")
-    private boolean isPriceValid() {
-        return !Boolean.TRUE.equals(isPaid) || (price != null && price > 0);
+    /**
+     * Cross-field invariant (mirrors {@code DocumentCreateRequestDto#isPriceValid}).
+     * The update path is a full replacement, so the same rule as create applies.
+     */
+    @AssertTrue(message = "isPaid/price combination is invalid: free document requires price null or 0; paid document requires price >= 2,000 VND")
+    public boolean isPriceValid() {
+        if (isPaid == null) {
+            return false;
+        }
+        if (Boolean.FALSE.equals(isPaid)) {
+            return price == null || price == 0L;
+        }
+        return price != null && price >= MIN_PAID_DOCUMENT_PRICE;
     }
 }

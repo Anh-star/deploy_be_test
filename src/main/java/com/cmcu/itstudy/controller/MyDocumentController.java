@@ -8,6 +8,7 @@ import com.cmcu.itstudy.dto.document.MyDocumentDetailDto;
 import com.cmcu.itstudy.entity.User;
 import com.cmcu.itstudy.security.UserDetailsImpl;
 import com.cmcu.itstudy.service.contract.DocumentService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -46,7 +47,7 @@ public class MyDocumentController {
 
     @PostMapping
     public ResponseEntity<ApiResponse<DocumentCardDto>> createDocument(
-            @RequestBody DocumentCreateRequestDto documentCreateRequestDto,
+            @Valid @RequestBody DocumentCreateRequestDto documentCreateRequestDto,
             @AuthenticationPrincipal UserDetailsImpl currentUser) {
         User user = currentUser.getUser();
         DocumentCardDto createdDocument = documentService.createDocument(documentCreateRequestDto, user);
@@ -56,7 +57,7 @@ public class MyDocumentController {
     @PutMapping("/{documentId}")
     public ResponseEntity<ApiResponse<DocumentCardDto>> updateDocument(
             @PathVariable UUID documentId,
-            @RequestBody DocumentUpdateRequestDto documentUpdateRequestDto,
+            @Valid @RequestBody DocumentUpdateRequestDto documentUpdateRequestDto,
             @AuthenticationPrincipal UserDetailsImpl currentUser) {
         User user = currentUser.getUser();
         DocumentCardDto updatedDocument = documentService.updateDocument(documentId, documentUpdateRequestDto, user);
