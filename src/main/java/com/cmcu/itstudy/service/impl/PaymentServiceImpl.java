@@ -17,6 +17,7 @@ import com.cmcu.itstudy.security.UserDetailsImpl;
 import com.cmcu.itstudy.service.contract.DocumentAccessService;
 import com.cmcu.itstudy.service.contract.PayOsService;
 import com.cmcu.itstudy.service.contract.PaymentService;
+import com.cmcu.itstudy.service.contract.SellerEarningService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -42,19 +43,22 @@ public class PaymentServiceImpl implements PaymentService {
     private final VnPayConfig vnPayConfig;
     private final DocumentAccessService documentAccessService;
     private final PayOsService payOsService;
+    private final SellerEarningService sellerEarningService;
 
     public PaymentServiceImpl(PaymentRepository paymentRepository,
                              DocumentRepository documentRepository,
                              DocumentAccessRepository documentAccessRepository,
                              VnPayConfig vnPayConfig,
                              DocumentAccessService documentAccessService,
-                             PayOsService payOsService) {
+                             PayOsService payOsService,
+                             SellerEarningService sellerEarningService) {
         this.paymentRepository = paymentRepository;
         this.documentRepository = documentRepository;
         this.documentAccessRepository = documentAccessRepository;
         this.vnPayConfig = vnPayConfig;
         this.documentAccessService = documentAccessService;
         this.payOsService = payOsService;
+        this.sellerEarningService = sellerEarningService;
     }
 
     @Override
@@ -135,6 +139,11 @@ public void processReturn(Map<String, String> params) {
             .orElseThrow(() ->
                     new NoSuchElementException("Payment not found"));
 
+    if (payment.getStatus() == PaymentStatus.SUCCESS) {
+        ensureSuccessfulPaymentSideEffects(payment);
+        return;
+    }
+
     if ("00".equals(responseCode)) {
 
         payment.setStatus(PaymentStatus.SUCCESS);
@@ -144,11 +153,7 @@ public void processReturn(Map<String, String> params) {
 
         paymentRepository.save(payment);
 
-        documentAccessService.grantAccess(
-                payment.getUserId(),
-                payment.getDocumentId(),
-                payment.getId()
-        );
+        ensureSuccessfulPaymentSideEffects(payment);
 
     } else {
 
@@ -185,6 +190,11 @@ public void processReturn(Map<String, String> params) {
             return;
         }
 
+        if (payment.getStatus() == PaymentStatus.SUCCESS) {
+            ensureSuccessfulPaymentSideEffects(payment);
+            return;
+        }
+
         if (!"00".equals(responseCode)) {
             payment.setStatus(PaymentStatus.FAILED);
             log.info("Payment FAILED: orderCode={}, responseCode={}", orderCode, responseCode);
@@ -205,13 +215,7 @@ public void processReturn(Map<String, String> params) {
         log.info("Payment updated and saved: orderCode={}, status={}", orderCode, payment.getStatus());
 
         if (PaymentStatus.SUCCESS.equals(payment.getStatus())) {
-            documentAccessService.grantAccess(
-                payment.getUserId(),
-                payment.getDocumentId(),
-                payment.getId()
-            );
-            log.info("Document access granted for user={}, document={}, payment={}",
-                    payment.getUserId(), payment.getDocumentId(), payment.getId());
+            ensureSuccessfulPaymentSideEffects(payment);
         }
     }
 
@@ -248,7 +252,8 @@ public void processReturn(Map<String, String> params) {
                 .orElseThrow(() -> new NoSuchElementException("Payment not found with orderCode: " + orderCode));
 
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
-            log.info("PayOS webhook ignored - payment already SUCCESS: orderCode={}", orderCode);
+            log.info("PayOS webhook: payment already SUCCESS, reconciling side effects: orderCode={}", orderCode);
+            ensureSuccessfulPaymentSideEffects(payment);
             return;
         }
 
@@ -273,14 +278,41 @@ public void processReturn(Map<String, String> params) {
         paymentRepository.save(payment);
 
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
-            documentAccessService.grantAccess(
-                    payment.getUserId(),
-                    payment.getDocumentId(),
-                    payment.getId()
-            );
-            log.info("PayOS webhook: document access granted: orderCode={}, userId={}, documentId={}",
-                    orderCode, payment.getUserId(), payment.getDocumentId());
+            ensureSuccessfulPaymentSideEffects(payment);
         }
+    }
+
+    /**
+     * Idempotent post-SUCCESS side effects. Runs in the caller's transaction so
+     * payment/access/earning succeed or fail together. Each downstream call has
+     * its own idempotency guard (early-return on existing rows + DB UNIQUE),
+     * so safe to invoke on every SUCCESS transition including retries for
+     * legacy payments that completed before this wiring existed.
+     */
+    private void ensureSuccessfulPaymentSideEffects(Payment payment) {
+        if (payment == null) {
+            throw new IllegalArgumentException("payment must not be null");
+        }
+        if (payment.getStatus() != PaymentStatus.SUCCESS) {
+            throw new IllegalStateException(
+                    "Side effects require SUCCESS status, got: " + payment.getStatus());
+        }
+        UUID userId = payment.getUserId();
+        UUID documentId = payment.getDocumentId();
+        UUID paymentId = payment.getId();
+        if (userId == null || documentId == null || paymentId == null) {
+            throw new IllegalStateException(
+                    "Payment is missing required ids: userId/documentId/paymentId");
+        }
+
+        documentAccessService.grantAccess(userId, documentId, paymentId);
+
+        sellerEarningService.recordSuccessfulPayment(paymentId);
+
+        log.info(
+                "Payment SUCCESS side effects applied: paymentId={}, userId={}, documentId={}",
+                paymentId, userId, documentId
+        );
     }
 
     private PaymentHistoryDto toPaymentHistoryDto(Payment payment, Map<UUID, String> titleByDocumentId) {
