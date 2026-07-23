@@ -1,0 +1,21 @@
+package com.cmcu.itstudy.dto.community;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.util.List;
+
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class CreatePollRequestDto {
+    private String question;
+    private List<String> options;
+    private Integer durationDays;
+    private Boolean allowMultiple;
+}

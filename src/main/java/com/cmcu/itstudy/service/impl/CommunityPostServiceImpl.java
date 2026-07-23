@@ -1,19 +1,29 @@
 package com.cmcu.itstudy.service.impl;
 
 import com.cmcu.itstudy.dto.community.CommunityPostResponseDto;
+import com.cmcu.itstudy.dto.community.CreatePollRequestDto;
+import com.cmcu.itstudy.dto.community.PollDto;
 import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
+import com.cmcu.itstudy.entity.CommunityPoll;
+import com.cmcu.itstudy.entity.CommunityPollOption;
+import com.cmcu.itstudy.entity.CommunityPollVote;
 import com.cmcu.itstudy.entity.CommunityPost;
 import com.cmcu.itstudy.entity.CommunityPostComment;
 import com.cmcu.itstudy.entity.CommunityPostCommentLike;
 import com.cmcu.itstudy.entity.CommunityPostImage;
 import com.cmcu.itstudy.entity.CommunityPostLike;
+import com.cmcu.itstudy.entity.CommunityPostSave;
 import com.cmcu.itstudy.entity.User;
 import com.cmcu.itstudy.mapper.CommunityPostMapper;
+import com.cmcu.itstudy.repository.CommunityPollOptionRepository;
+import com.cmcu.itstudy.repository.CommunityPollRepository;
+import com.cmcu.itstudy.repository.CommunityPollVoteRepository;
 import com.cmcu.itstudy.repository.CommunityPostCommentLikeRepository;
 import com.cmcu.itstudy.repository.CommunityPostCommentRepository;
 import com.cmcu.itstudy.repository.CommunityPostImageRepository;
 import com.cmcu.itstudy.repository.CommunityPostLikeRepository;
 import com.cmcu.itstudy.repository.CommunityPostRepository;
+import com.cmcu.itstudy.repository.CommunityPostSaveRepository;
 import com.cmcu.itstudy.repository.UserRepository;
 import com.cmcu.itstudy.service.contract.CommunityPostService;
 import org.springframework.data.domain.Page;
@@ -21,10 +31,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -35,6 +47,10 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     private final CommunityPostRepository postRepository;
     private final CommunityPostImageRepository imageRepository;
     private final CommunityPostLikeRepository likeRepository;
+    private final CommunityPostSaveRepository saveRepository;
+    private final CommunityPollRepository pollRepository;
+    private final CommunityPollOptionRepository pollOptionRepository;
+    private final CommunityPollVoteRepository pollVoteRepository;
     private final CommunityPostCommentRepository commentRepository;
     private final CommunityPostCommentLikeRepository commentLikeRepository;
     private final UserRepository userRepository;
@@ -43,6 +59,10 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             CommunityPostRepository postRepository,
             CommunityPostImageRepository imageRepository,
             CommunityPostLikeRepository likeRepository,
+            CommunityPostSaveRepository saveRepository,
+            CommunityPollRepository pollRepository,
+            CommunityPollOptionRepository pollOptionRepository,
+            CommunityPollVoteRepository pollVoteRepository,
             CommunityPostCommentRepository commentRepository,
             CommunityPostCommentLikeRepository commentLikeRepository,
             UserRepository userRepository
@@ -50,6 +70,10 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         this.postRepository = postRepository;
         this.imageRepository = imageRepository;
         this.likeRepository = likeRepository;
+        this.saveRepository = saveRepository;
+        this.pollRepository = pollRepository;
+        this.pollOptionRepository = pollOptionRepository;
+        this.pollVoteRepository = pollVoteRepository;
         this.commentRepository = commentRepository;
         this.commentLikeRepository = commentLikeRepository;
         this.userRepository = userRepository;
@@ -58,11 +82,28 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     @Override
     @Transactional
     public CommunityPostResponseDto createPost(UUID userId, String content, List<String> imageUrls) {
+        return createPost(userId, content, imageUrls, null, null);
+    }
+
+    @Override
+    @Transactional
+    public CommunityPostResponseDto createPost(
+            UUID userId,
+            String content,
+            List<String> imageUrls,
+            List<String> fileUrls,
+            CreatePollRequestDto pollRequest
+    ) {
         User author = userRepository.getReferenceById(userId);
+
+        String joinedFileUrls = (fileUrls != null && !fileUrls.isEmpty())
+                ? String.join(";;;", fileUrls)
+                : null;
 
         CommunityPost post = postRepository.save(CommunityPost.builder()
                 .author(author)
-                .content(content)
+                .content(content != null ? content.trim() : "")
+                .fileUrls(joinedFileUrls)
                 .build());
 
         List<CommunityPostImage> images = new ArrayList<>();
@@ -76,9 +117,42 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             }
         }
 
-        // Re-fetch to get author details
-        CommunityPost saved = postRepository.findByIdWithAuthor(post.getId()).orElse(post);
-        return CommunityPostMapper.toPostResponse(saved, images, false);
+        // Create Poll if pollRequest exists
+        CommunityPoll poll = null;
+        if (pollRequest != null && pollRequest.getQuestion() != null && !pollRequest.getQuestion().isBlank()
+                && pollRequest.getOptions() != null && pollRequest.getOptions().size() >= 2) {
+            
+            LocalDateTime expiresAt = null;
+            if (pollRequest.getDurationDays() != null && pollRequest.getDurationDays() > 0) {
+                expiresAt = LocalDateTime.now().plusDays(pollRequest.getDurationDays());
+            }
+
+            poll = CommunityPoll.builder()
+                    .post(post)
+                    .question(pollRequest.getQuestion().trim())
+                    .expiresAt(expiresAt)
+                    .allowMultiple(Boolean.TRUE.equals(pollRequest.getAllowMultiple()))
+                    .build();
+
+            poll = pollRepository.save(poll);
+
+            List<CommunityPollOption> options = new ArrayList<>();
+            for (int i = 0; i < pollRequest.getOptions().size(); i++) {
+                String optText = pollRequest.getOptions().get(i);
+                if (optText != null && !optText.isBlank()) {
+                    options.add(CommunityPollOption.builder()
+                            .poll(poll)
+                            .optionText(optText.trim())
+                            .displayOrder(i)
+                            .build());
+                }
+            }
+            pollOptionRepository.saveAll(options);
+            poll.setOptions(options);
+        }
+
+        CommunityPost savedPost = postRepository.findByIdWithAuthor(post.getId()).orElse(post);
+        return CommunityPostMapper.toPostResponse(savedPost, images, false, null, false, poll, List.of());
     }
 
     @Override
@@ -88,12 +162,26 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 .orElseThrow(() -> new NoSuchElementException("Post not found"));
 
         List<CommunityPostImage> images = imageRepository.findByPostIdOrderByDisplayOrderAsc(postId);
+        
+        String currentUserVote = null;
         boolean isLiked = false;
+        boolean isSaved = false;
+
         if (currentUserId != null) {
-            isLiked = likeRepository.findByPost_IdAndUser_Id(postId, currentUserId).isPresent();
+            Optional<CommunityPostLike> likeOpt = likeRepository.findByPost_IdAndUser_Id(postId, currentUserId);
+            if (likeOpt.isPresent()) {
+                isLiked = true;
+                currentUserVote = likeOpt.get().getVoteType();
+            }
+            isSaved = saveRepository.findByPost_IdAndUser_Id(postId, currentUserId).isPresent();
         }
 
-        return CommunityPostMapper.toPostResponse(post, images, isLiked);
+        CommunityPoll poll = pollRepository.findByPost_Id(postId).orElse(null);
+        List<CommunityPollVote> userPollVotes = (poll != null && currentUserId != null)
+                ? pollVoteRepository.findAllByPoll_IdAndUser_Id(poll.getId(), currentUserId)
+                : List.of();
+
+        return CommunityPostMapper.toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes);
     }
 
     @Override
@@ -106,19 +194,30 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         List<CommunityPost> posts = postPage.getContent();
         if (posts.isEmpty()) return List.of();
 
-        List<UUID> postIds = posts.stream().map(CommunityPost::getId).toList();
+        return posts.stream().map(post -> getPostResponseForUser(post, currentUserId)).collect(Collectors.toList());
+    }
 
-        // Batch fetch liked post ids for current user
-        Set<UUID> likedPostIds = new HashSet<>();
+    private CommunityPostResponseDto getPostResponseForUser(CommunityPost post, UUID currentUserId) {
+        List<CommunityPostImage> images = imageRepository.findByPostIdOrderByDisplayOrderAsc(post.getId());
+        String currentUserVote = null;
+        boolean isLiked = false;
+        boolean isSaved = false;
+
         if (currentUserId != null) {
-            likedPostIds.addAll(postRepository.findLikedPostIds(postIds, currentUserId));
+            Optional<CommunityPostLike> likeOpt = likeRepository.findByPost_IdAndUser_Id(post.getId(), currentUserId);
+            if (likeOpt.isPresent()) {
+                isLiked = true;
+                currentUserVote = likeOpt.get().getVoteType();
+            }
+            isSaved = saveRepository.findByPost_IdAndUser_Id(post.getId(), currentUserId).isPresent();
         }
 
-        return posts.stream().map(post -> {
-            List<CommunityPostImage> images = imageRepository.findByPostIdOrderByDisplayOrderAsc(post.getId());
-            boolean isLiked = likedPostIds.contains(post.getId());
-            return CommunityPostMapper.toPostResponse(post, images, isLiked);
-        }).collect(Collectors.toList());
+        CommunityPoll poll = pollRepository.findByPost_Id(post.getId()).orElse(null);
+        List<CommunityPollVote> userPollVotes = (poll != null && currentUserId != null)
+                ? pollVoteRepository.findAllByPoll_IdAndUser_Id(poll.getId(), currentUserId)
+                : List.of();
+
+        return CommunityPostMapper.toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes);
     }
 
     @Override
@@ -138,7 +237,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         }
 
         post.setDeleted(true);
-        post.setDeletedAt(java.time.LocalDateTime.now());
+        post.setDeletedAt(LocalDateTime.now());
         postRepository.save(post);
     }
 
@@ -148,53 +247,212 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         CommunityPost post = postRepository.findById(postId).orElse(null);
         if (post == null) return;
 
-        // 1. Delete all comment likes associated with comments on this post
+        // Delete comments & comment likes
         List<CommunityPostComment> comments = commentRepository.findByPost_Id(postId);
         if (!comments.isEmpty()) {
             for (CommunityPostComment c : comments) {
                 commentLikeRepository.deleteByCommentId(c.getId());
             }
-            // 2. Delete all comments on this post
             commentRepository.deleteAll(comments);
         }
 
-        // 3. Delete all post likes
+        // Delete likes & saves
         likeRepository.deleteByPostId(postId);
+        saveRepository.deleteByPostId(postId);
 
-        // 4. Delete all post images
+        // Delete poll
+        pollRepository.deleteByPostId(postId);
+
+        // Delete images
         imageRepository.deleteByPostId(postId);
 
-        // 5. Delete the post itself
+        // Delete post
         postRepository.delete(post);
     }
 
     @Override
     @Transactional
     public CommunityPostResponseDto toggleLikePost(UUID postId, UUID userId) {
+        return votePost(postId, userId, "UPVOTE");
+    }
+
+    @Override
+    @Transactional
+    public CommunityPostResponseDto votePost(UUID postId, UUID userId, String voteType) {
+        String targetVote = ("DOWNVOTE".equalsIgnoreCase(voteType)) ? "DOWNVOTE" : "UPVOTE";
+
         CommunityPost post = postRepository.findByIdWithAuthor(postId)
                 .orElseThrow(() -> new NoSuchElementException("Post not found"));
 
         User userRef = userRepository.getReferenceById(userId);
-        var existing = likeRepository.findByPost_IdAndUser_Id(postId, userId);
+        Optional<CommunityPostLike> existing = likeRepository.findByPost_IdAndUser_Id(postId, userId);
 
-        boolean isLiked;
+        int upvotes = post.getUpvoteCount() != null ? post.getUpvoteCount() : 0;
+        int downvotes = post.getDownvoteCount() != null ? post.getDownvoteCount() : 0;
+
+        String resultVote = null;
+
         if (existing.isPresent()) {
-            likeRepository.delete(existing.get());
-            likeRepository.flush();
-            post.setLikeCount(Math.max(0, post.getLikeCount() - 1));
-            isLiked = false;
+            CommunityPostLike currentLike = existing.get();
+            String currentVoteType = currentLike.getVoteType() != null ? currentLike.getVoteType() : "UPVOTE";
+
+            if (currentVoteType.equalsIgnoreCase(targetVote)) {
+                // Toggle off (remove vote)
+                likeRepository.delete(currentLike);
+                likeRepository.flush();
+                if ("UPVOTE".equals(targetVote)) {
+                    upvotes = Math.max(0, upvotes - 1);
+                } else {
+                    downvotes = Math.max(0, downvotes - 1);
+                }
+                resultVote = null;
+            } else {
+                // Switch vote type
+                currentLike.setVoteType(targetVote);
+                likeRepository.save(currentLike);
+                if ("UPVOTE".equals(targetVote)) {
+                    upvotes = upvotes + 1;
+                    downvotes = Math.max(0, downvotes - 1);
+                } else {
+                    downvotes = downvotes + 1;
+                    upvotes = Math.max(0, upvotes - 1);
+                }
+                resultVote = targetVote;
+            }
         } else {
+            // New vote
             likeRepository.save(CommunityPostLike.builder()
                     .post(post)
                     .user(userRef)
+                    .voteType(targetVote)
                     .build());
-            post.setLikeCount(post.getLikeCount() + 1);
-            isLiked = true;
+
+            if ("UPVOTE".equals(targetVote)) {
+                upvotes = upvotes + 1;
+            } else {
+                downvotes = downvotes + 1;
+            }
+            resultVote = targetVote;
         }
 
+        post.setUpvoteCount(upvotes);
+        post.setDownvoteCount(downvotes);
         postRepository.save(post);
-        List<CommunityPostImage> images = imageRepository.findByPostIdOrderByDisplayOrderAsc(postId);
-        return CommunityPostMapper.toPostResponse(post, images, isLiked);
+
+        return getPostResponseForUser(post, userId);
+    }
+
+    @Override
+    @Transactional
+    public boolean toggleSavePost(UUID postId, UUID userId) {
+        CommunityPost post = postRepository.findById(postId)
+                .orElseThrow(() -> new NoSuchElementException("Post not found"));
+
+        Optional<CommunityPostSave> existing = saveRepository.findByPost_IdAndUser_Id(postId, userId);
+        if (existing.isPresent()) {
+            saveRepository.delete(existing.get());
+            saveRepository.flush();
+            return false; // Now unsaved
+        } else {
+            User userRef = userRepository.getReferenceById(userId);
+            saveRepository.save(CommunityPostSave.builder()
+                    .post(post)
+                    .user(userRef)
+                    .build());
+            return true; // Now saved
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommunityPostResponseDto> getSavedPosts(int page, int size, UUID userId) {
+        Page<CommunityPostSave> savePage = saveRepository.findByUser_IdOrderBySavedAtDesc(
+                userId, PageRequest.of(page, size)
+        );
+
+        List<CommunityPostSave> saves = savePage.getContent();
+        if (saves.isEmpty()) return List.of();
+
+        return saves.stream()
+                .map(save -> getPostResponseForUser(save.getPost(), userId))
+                .filter(dto -> dto != null)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public PollDto votePollOption(UUID pollId, UUID optionId, UUID userId) {
+        CommunityPoll poll = pollRepository.findById(pollId)
+                .orElseThrow(() -> new NoSuchElementException("Poll not found"));
+
+        if (poll.getExpiresAt() != null && LocalDateTime.now().isAfter(poll.getExpiresAt())) {
+            throw new IllegalArgumentException("Khảo sát này đã kết thúc.");
+        }
+
+        CommunityPollOption option = pollOptionRepository.findById(optionId)
+                .orElseThrow(() -> new NoSuchElementException("Option not found"));
+
+        User userRef = userRepository.findById(userId)
+                .orElseThrow(() -> new NoSuchElementException("User not found"));
+
+        // Eagerly fetch existing votes with their options via JOIN FETCH
+        List<CommunityPollVote> existingVotes = pollVoteRepository.findAllByPoll_IdAndUser_Id(pollId, userId);
+        boolean isAllowMultiple = Boolean.TRUE.equals(poll.getAllowMultiple());
+
+        // Check if user already voted for this specific option
+        boolean alreadyVotedThisOption = existingVotes.stream()
+                .anyMatch(v -> optionId.equals(v.getOption().getId()));
+
+        if (alreadyVotedThisOption) {
+            // Toggle off: user clicked the same option they already voted for
+            // Use bulk JPQL delete to avoid entity state issues
+            pollVoteRepository.deleteAllByPollIdAndUserId(pollId, userId);
+            pollVoteRepository.flush();
+
+            if (!isAllowMultiple) {
+                // Single-choice: just removed the vote, done
+            } else {
+                // Multi-choice: re-add all votes EXCEPT for this option
+                for (CommunityPollVote v : existingVotes) {
+                    if (!optionId.equals(v.getOption().getId())) {
+                        pollVoteRepository.save(CommunityPollVote.builder()
+                                .poll(poll)
+                                .option(v.getOption())
+                                .user(userRef)
+                                .build());
+                    }
+                }
+                pollVoteRepository.flush();
+            }
+        } else {
+            // User is voting for a new option
+            if (!isAllowMultiple) {
+                // Single-choice: clear all existing votes first
+                if (!existingVotes.isEmpty()) {
+                    pollVoteRepository.deleteAllByPollIdAndUserId(pollId, userId);
+                    pollVoteRepository.flush();
+                }
+            }
+            // Add the new vote
+            pollVoteRepository.save(CommunityPollVote.builder()
+                    .poll(poll)
+                    .option(option)
+                    .user(userRef)
+                    .build());
+            pollVoteRepository.flush();
+        }
+
+        // Recalculate exact vote counts for all options from DB
+        List<CommunityPollOption> freshOptions = pollOptionRepository.findByPoll_IdOrderByDisplayOrderAsc(pollId);
+        for (CommunityPollOption opt : freshOptions) {
+            long count = pollVoteRepository.countByOption_Id(opt.getId());
+            opt.setVoteCount((int) count);
+        }
+        pollOptionRepository.saveAll(freshOptions);
+        // DO NOT call poll.setOptions(...) — it triggers Hibernate orphan removal error
+
+        List<CommunityPollVote> updatedUserVotes = pollVoteRepository.findAllByPoll_IdAndUser_Id(pollId, userId);
+        return CommunityPostMapper.toPollDto(poll, freshOptions, updatedUserVotes);
     }
 
     @Override
@@ -241,20 +499,20 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         }
 
         comment.setDeleted(true);
-        comment.setDeletedAt(java.time.LocalDateTime.now());
+        comment.setDeletedAt(LocalDateTime.now());
         commentRepository.save(comment);
 
-        // 1. Soft-delete replies as well
+        // Soft-delete replies
         List<CommunityPostComment> replies = commentRepository.findByParent_Id(commentId);
         if (!replies.isEmpty()) {
             for (CommunityPostComment r : replies) {
                 r.setDeleted(true);
-                r.setDeletedAt(java.time.LocalDateTime.now());
+                r.setDeletedAt(LocalDateTime.now());
             }
             commentRepository.saveAll(replies);
         }
 
-        // 2. Update denormalized comment count of the post
+        // Update comment count
         CommunityPost post = comment.getPost();
         int commentsRemoved = 1 + replies.size();
         post.setCommentCount(Math.max(0, post.getCommentCount() - commentsRemoved));
@@ -267,7 +525,6 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         CommunityPostComment comment = commentRepository.findById(commentId).orElse(null);
         if (comment == null) return;
 
-        // 1. Find all replies to this comment
         List<CommunityPostComment> replies = commentRepository.findByParent_Id(commentId);
         if (!replies.isEmpty()) {
             for (CommunityPostComment r : replies) {
@@ -276,10 +533,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             commentRepository.deleteAll(replies);
         }
 
-        // 2. Delete likes of the comment itself
         commentLikeRepository.deleteByCommentId(commentId);
-
-        // 3. Delete the comment itself
         commentRepository.delete(comment);
     }
 
@@ -387,10 +641,6 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             }
         }
 
-        CommunityPost saved = postRepository.findByIdWithAuthor(postId).orElse(post);
-        List<CommunityPostImage> currentImages = imageRepository.findByPostIdOrderByDisplayOrderAsc(postId);
-        boolean isLiked = likeRepository.findByPost_IdAndUser_Id(postId, userId).isPresent();
-
-        return CommunityPostMapper.toPostResponse(saved, currentImages, isLiked);
+        return getPostResponseForUser(post, userId);
     }
 }

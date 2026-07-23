@@ -1,6 +1,7 @@
 package com.cmcu.itstudy.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -8,10 +9,10 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -21,6 +22,8 @@ import lombok.Setter;
 import lombok.ToString;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -31,14 +34,8 @@ import java.util.UUID;
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @ToString
 @Entity
-@Table(
-        name = "tbl_community_post_likes",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_community_post_like_post_user",
-                columnNames = {"post_id", "user_id"}
-        )
-)
-public class CommunityPostLike {
+@Table(name = "tbl_community_polls")
+public class CommunityPoll {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -46,27 +43,29 @@ public class CommunityPostLike {
     @EqualsAndHashCode.Include
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "post_id", nullable = false)
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "post_id", nullable = false, unique = true)
     @ToString.Exclude
     @JsonIgnore
     private CommunityPost post;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @Column(name = "question", nullable = false, length = 500)
+    private String question;
+
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
+
+    @Column(name = "allow_multiple", nullable = false)
+    private Boolean allowMultiple;
+
+    @OneToMany(mappedBy = "poll", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @ToString.Exclude
     @JsonIgnore
-    private User user;
-
-    @Column(name = "vote_type", length = 10)
-    private String voteType; // "UPVOTE" or "DOWNVOTE"
-
-    @Column(name = "liked_at", nullable = false)
-    private LocalDateTime likedAt;
+    @Builder.Default
+    private List<CommunityPollOption> options = new ArrayList<>();
 
     @PrePersist
     void prePersist() {
-        this.likedAt = LocalDateTime.now();
-        if (this.voteType == null) this.voteType = "UPVOTE";
+        if (this.allowMultiple == null) this.allowMultiple = false;
     }
 }

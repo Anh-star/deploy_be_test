@@ -62,6 +62,15 @@ public class CommunityPost {
     @Column(name = "like_count", nullable = false)
     private Integer likeCount;
 
+    @Column(name = "upvote_count")
+    private Integer upvoteCount;
+
+    @Column(name = "downvote_count")
+    private Integer downvoteCount;
+
+    @Column(name = "file_urls", columnDefinition = "nvarchar(max)")
+    private String fileUrls;
+
     @Column(name = "comment_count", nullable = false)
     private Integer commentCount;
 
@@ -101,6 +110,8 @@ public class CommunityPost {
         this.createdAt = now;
         this.updatedAt = now;
         if (this.likeCount == null) this.likeCount = 0;
+        if (this.upvoteCount == null) this.upvoteCount = 0;
+        if (this.downvoteCount == null) this.downvoteCount = 0;
         if (this.commentCount == null) this.commentCount = 0;
         if (this.deleted == null) this.deleted = Boolean.FALSE;
     }

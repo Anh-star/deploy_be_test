@@ -32,13 +32,13 @@ import java.util.UUID;
 @ToString
 @Entity
 @Table(
-        name = "tbl_community_post_likes",
+        name = "tbl_community_poll_votes",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_community_post_like_post_user",
-                columnNames = {"post_id", "user_id"}
+                name = "uk_community_poll_user_option",
+                columnNames = {"poll_id", "user_id", "option_id"}
         )
 )
-public class CommunityPostLike {
+public class CommunityPollVote {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -47,10 +47,16 @@ public class CommunityPostLike {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "post_id", nullable = false)
+    @JoinColumn(name = "poll_id", nullable = false)
     @ToString.Exclude
     @JsonIgnore
-    private CommunityPost post;
+    private CommunityPoll poll;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "option_id", nullable = false)
+    @ToString.Exclude
+    @JsonIgnore
+    private CommunityPollOption option;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
@@ -58,15 +64,11 @@ public class CommunityPostLike {
     @JsonIgnore
     private User user;
 
-    @Column(name = "vote_type", length = 10)
-    private String voteType; // "UPVOTE" or "DOWNVOTE"
-
-    @Column(name = "liked_at", nullable = false)
-    private LocalDateTime likedAt;
+    @Column(name = "voted_at", nullable = false)
+    private LocalDateTime votedAt;
 
     @PrePersist
     void prePersist() {
-        this.likedAt = LocalDateTime.now();
-        if (this.voteType == null) this.voteType = "UPVOTE";
+        this.votedAt = LocalDateTime.now();
     }
 }

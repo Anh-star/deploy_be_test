@@ -22,8 +22,14 @@ public class CommunityPostResponseDto {
     private String authorAvatar;
     private String content;
     private List<String> imageUrls;
+    private List<String> fileUrls;
     private Integer likeCount;
+    private Integer upvoteCount;
+    private Integer downvoteCount;
+    private String currentUserVote; // "UPVOTE", "DOWNVOTE", or null
     private Integer commentCount;
     private Boolean isLiked;
+    private Boolean isSaved;
+    private PollDto poll;
     private LocalDateTime createdAt;
 }

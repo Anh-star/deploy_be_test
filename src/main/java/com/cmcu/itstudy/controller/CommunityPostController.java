@@ -4,7 +4,9 @@ import com.cmcu.itstudy.dto.common.ApiResponse;
 import com.cmcu.itstudy.dto.community.CommunityPostResponseDto;
 import com.cmcu.itstudy.dto.community.CreatePostCommentRequestDto;
 import com.cmcu.itstudy.dto.community.CreatePostRequestDto;
+import com.cmcu.itstudy.dto.community.PollDto;
 import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
+import com.cmcu.itstudy.dto.community.VotePostRequestDto;
 import com.cmcu.itstudy.security.UserDetailsImpl;
 import com.cmcu.itstudy.service.contract.CommunityPostService;
 import jakarta.validation.Valid;
@@ -48,7 +50,7 @@ public class CommunityPostController {
     ) {
         UUID userId = currentUser.getUser().getId();
         CommunityPostResponseDto data = communityPostService.createPost(
-                userId, request.getContent(), request.getImageUrls()
+                userId, request.getContent(), request.getImageUrls(), request.getFileUrls(), request.getPoll()
         );
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(data, "Post created"));
@@ -71,6 +73,25 @@ public class CommunityPostController {
         result.put("totalElements", total);
 
         return ResponseEntity.ok(ApiResponse.success(result, "Feed"));
+    }
+
+    @GetMapping("/saved")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getSavedPosts(
+            @RequestParam(name = "page", defaultValue = "0") @Min(0) int page,
+            @RequestParam(name = "size", defaultValue = "10") int size,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        List<CommunityPostResponseDto> posts = communityPostService.getSavedPosts(page, size, userId);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("content", posts);
+        result.put("page", page);
+        result.put("size", size);
+        result.put("totalElements", posts.size());
+
+        return ResponseEntity.ok(ApiResponse.success(result, "Saved posts"));
     }
 
     @GetMapping("/{postId}")
@@ -101,8 +122,46 @@ public class CommunityPostController {
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
         UUID userId = currentUser.getUser().getId();
-        CommunityPostResponseDto data = communityPostService.toggleLikePost(postId, userId);
+        CommunityPostResponseDto data = communityPostService.votePost(postId, userId, "UPVOTE");
         return ResponseEntity.ok(ApiResponse.success(data, "Like toggled"));
+    }
+
+    @PostMapping("/{postId}/vote")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<CommunityPostResponseDto>> votePost(
+            @PathVariable UUID postId,
+            @RequestBody VotePostRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        String voteType = (request != null && request.getVoteType() != null) ? request.getVoteType() : "UPVOTE";
+        CommunityPostResponseDto data = communityPostService.votePost(postId, userId, voteType);
+        return ResponseEntity.ok(ApiResponse.success(data, "Post voted"));
+    }
+
+    @PostMapping("/{postId}/save")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> toggleSave(
+            @PathVariable UUID postId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        boolean isSaved = communityPostService.toggleSavePost(postId, userId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("isSaved", isSaved);
+        return ResponseEntity.ok(ApiResponse.success(result, isSaved ? "Post saved" : "Post unsaved"));
+    }
+
+    @PostMapping("/polls/{pollId}/options/{optionId}/vote")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<PollDto>> votePollOption(
+            @PathVariable UUID pollId,
+            @PathVariable UUID optionId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        PollDto data = communityPostService.votePollOption(pollId, optionId, userId);
+        return ResponseEntity.ok(ApiResponse.success(data, "Poll option voted"));
     }
 
     @GetMapping("/{postId}/comments")

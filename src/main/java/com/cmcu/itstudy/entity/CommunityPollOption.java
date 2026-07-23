@@ -11,7 +11,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -20,7 +19,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Getter
@@ -31,14 +29,8 @@ import java.util.UUID;
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @ToString
 @Entity
-@Table(
-        name = "tbl_community_post_likes",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_community_post_like_post_user",
-                columnNames = {"post_id", "user_id"}
-        )
-)
-public class CommunityPostLike {
+@Table(name = "tbl_community_poll_options")
+public class CommunityPollOption {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -47,26 +39,23 @@ public class CommunityPostLike {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "post_id", nullable = false)
+    @JoinColumn(name = "poll_id", nullable = false)
     @ToString.Exclude
     @JsonIgnore
-    private CommunityPost post;
+    private CommunityPoll poll;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    @ToString.Exclude
-    @JsonIgnore
-    private User user;
+    @Column(name = "option_text", nullable = false, length = 255)
+    private String optionText;
 
-    @Column(name = "vote_type", length = 10)
-    private String voteType; // "UPVOTE" or "DOWNVOTE"
+    @Column(name = "vote_count", nullable = false)
+    private Integer voteCount;
 
-    @Column(name = "liked_at", nullable = false)
-    private LocalDateTime likedAt;
+    @Column(name = "display_order", nullable = false)
+    private Integer displayOrder;
 
     @PrePersist
     void prePersist() {
-        this.likedAt = LocalDateTime.now();
-        if (this.voteType == null) this.voteType = "UPVOTE";
+        if (this.voteCount == null) this.voteCount = 0;
+        if (this.displayOrder == null) this.displayOrder = 0;
     }
 }

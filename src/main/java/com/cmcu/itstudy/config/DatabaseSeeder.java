@@ -238,6 +238,10 @@ public class DatabaseSeeder implements CommandLineRunner {
         Menu mSettings = seedMenu("Settings", "/admin/config", null, 8);
         seedMenuPermission(mSettings, pMenuSettings);
 
+        // User / Community Saved Posts Menu
+        Menu mSavedPosts = seedMenu("Bài viết đã lưu", "/community/saved", null, 9);
+        seedMenuPermission(mSavedPosts, pBookmarkView);
+
         System.out.println("[DatabaseSeeder] Database seeding completed successfully.");
     }
 

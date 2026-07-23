@@ -32,13 +32,13 @@ import java.util.UUID;
 @ToString
 @Entity
 @Table(
-        name = "tbl_community_post_likes",
+        name = "tbl_community_post_saves",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_community_post_like_post_user",
+                name = "uk_community_post_save_post_user",
                 columnNames = {"post_id", "user_id"}
         )
 )
-public class CommunityPostLike {
+public class CommunityPostSave {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -58,15 +58,11 @@ public class CommunityPostLike {
     @JsonIgnore
     private User user;
 
-    @Column(name = "vote_type", length = 10)
-    private String voteType; // "UPVOTE" or "DOWNVOTE"
-
-    @Column(name = "liked_at", nullable = false)
-    private LocalDateTime likedAt;
+    @Column(name = "saved_at", nullable = false)
+    private LocalDateTime savedAt;
 
     @PrePersist
     void prePersist() {
-        this.likedAt = LocalDateTime.now();
-        if (this.voteType == null) this.voteType = "UPVOTE";
+        this.savedAt = LocalDateTime.now();
     }
 }
