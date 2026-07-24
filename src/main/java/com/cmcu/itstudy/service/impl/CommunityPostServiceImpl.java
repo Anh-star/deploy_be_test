@@ -4,6 +4,7 @@ import com.cmcu.itstudy.dto.community.CommunityPostResponseDto;
 import com.cmcu.itstudy.dto.community.CreatePollRequestDto;
 import com.cmcu.itstudy.dto.community.PollDto;
 import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
+import com.cmcu.itstudy.dto.community.VoterDto;
 import com.cmcu.itstudy.entity.CommunityPoll;
 import com.cmcu.itstudy.entity.CommunityPollOption;
 import com.cmcu.itstudy.entity.CommunityPollVote;
@@ -82,7 +83,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     @Override
     @Transactional
     public CommunityPostResponseDto createPost(UUID userId, String content, List<String> imageUrls) {
-        return createPost(userId, content, imageUrls, null, null);
+        return createPost(userId, content, imageUrls, null, null, true);
     }
 
     @Override
@@ -92,7 +93,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             String content,
             List<String> imageUrls,
             List<String> fileUrls,
-            CreatePollRequestDto pollRequest
+            CreatePollRequestDto pollRequest,
+            Boolean allowComments
     ) {
         User author = userRepository.getReferenceById(userId);
 
@@ -104,6 +106,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 .author(author)
                 .content(content != null ? content.trim() : "")
                 .fileUrls(joinedFileUrls)
+                .allowComments(allowComments != null ? allowComments : true)
                 .build());
 
         List<CommunityPostImage> images = new ArrayList<>();
@@ -132,6 +135,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .question(pollRequest.getQuestion().trim())
                     .expiresAt(expiresAt)
                     .allowMultiple(Boolean.TRUE.equals(pollRequest.getAllowMultiple()))
+                    .allowAddOptions(Boolean.TRUE.equals(pollRequest.getAllowAddOptions()))
+                    .hideResultsBeforeVote(Boolean.TRUE.equals(pollRequest.getHideResultsBeforeVote()))
+                    .hideVoters(Boolean.TRUE.equals(pollRequest.getHideVoters()))
                     .build();
 
             poll = pollRepository.save(poll);
@@ -456,12 +462,68 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<VoterDto> getPollVoters(UUID optionId, UUID currentUserId) {
+        CommunityPollOption option = pollOptionRepository.findById(optionId)
+                .orElseThrow(() -> new NoSuchElementException("Option not found"));
+
+        if (Boolean.TRUE.equals(option.getPoll().getHideVoters())) {
+            throw new IllegalArgumentException("Khảo sát này đã ẩn người bình chọn.");
+        }
+
+        List<CommunityPollVote> votes = pollVoteRepository.findByOptionIdWithUser(optionId);
+        return votes.stream()
+                .filter(v -> v.getUser() != null)
+                .map(v -> VoterDto.builder()
+                        .userId(v.getUser().getId() != null ? v.getUser().getId().toString() : null)
+                        .fullName(v.getUser().getFullName())
+                        .avatarUrl(v.getUser().getAvatarUrl())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public PollDto addPollOption(UUID pollId, String optionText, UUID userId) {
+        CommunityPoll poll = pollRepository.findById(pollId)
+                .orElseThrow(() -> new NoSuchElementException("Poll not found"));
+
+        if (!Boolean.TRUE.equals(poll.getAllowAddOptions())) {
+            throw new IllegalArgumentException("Khảo sát này không cho phép người khác thêm phương án.");
+        }
+
+        if (poll.getExpiresAt() != null && LocalDateTime.now().isAfter(poll.getExpiresAt())) {
+            throw new IllegalArgumentException("Khảo sát này đã kết thúc.");
+        }
+
+        if (optionText == null || optionText.isBlank()) {
+            throw new IllegalArgumentException("Nội dung phương án không được để trống.");
+        }
+
+        List<CommunityPollOption> currentOptions = pollOptionRepository.findByPoll_IdOrderByDisplayOrderAsc(pollId);
+
+        CommunityPollOption newOption = pollOptionRepository.save(CommunityPollOption.builder()
+                .poll(poll)
+                .optionText(optionText.trim())
+                .voteCount(0)
+                .displayOrder(currentOptions.size())
+                .build());
+
+        List<CommunityPollOption> updatedOptions = pollOptionRepository.findByPoll_IdOrderByDisplayOrderAsc(pollId);
+        List<CommunityPollVote> userVotes = pollVoteRepository.findAllByPoll_IdAndUser_Id(pollId, userId);
+        return CommunityPostMapper.toPollDto(poll, updatedOptions, userVotes);
+    }
+
+    @Override
     @Transactional
     public PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId) {
         CommunityPost post = postRepository.findById(postId)
                 .orElseThrow(() -> new NoSuchElementException("Post not found"));
         if (Boolean.TRUE.equals(post.getDeleted())) {
             throw new NoSuchElementException("Post not found");
+        }
+        if (Boolean.FALSE.equals(post.getAllowComments())) {
+            throw new IllegalArgumentException("Bài viết này đã tắt tính năng bình luận.");
         }
 
         User author = userRepository.getReferenceById(userId);

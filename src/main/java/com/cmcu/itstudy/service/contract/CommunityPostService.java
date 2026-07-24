@@ -4,6 +4,7 @@ import com.cmcu.itstudy.dto.community.CommunityPostResponseDto;
 import com.cmcu.itstudy.dto.community.CreatePollRequestDto;
 import com.cmcu.itstudy.dto.community.PollDto;
 import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
+import com.cmcu.itstudy.dto.community.VoterDto;
 
 import java.util.List;
 import java.util.UUID;
@@ -12,7 +13,7 @@ public interface CommunityPostService {
 
     CommunityPostResponseDto createPost(UUID userId, String content, List<String> imageUrls);
 
-    CommunityPostResponseDto createPost(UUID userId, String content, List<String> imageUrls, List<String> fileUrls, CreatePollRequestDto pollRequest);
+    CommunityPostResponseDto createPost(UUID userId, String content, List<String> imageUrls, List<String> fileUrls, CreatePollRequestDto pollRequest, Boolean allowComments);
 
     CommunityPostResponseDto getPostById(UUID postId, UUID currentUserId);
 
@@ -31,6 +32,10 @@ public interface CommunityPostService {
     List<CommunityPostResponseDto> getSavedPosts(int page, int size, UUID userId);
 
     PollDto votePollOption(UUID pollId, UUID optionId, UUID userId);
+
+    List<VoterDto> getPollVoters(UUID optionId, UUID currentUserId);
+
+    PollDto addPollOption(UUID pollId, String optionText, UUID userId);
 
     PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId);
 

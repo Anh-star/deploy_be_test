@@ -18,6 +18,7 @@ import com.cmcu.itstudy.repository.MenuRepository;
 import com.cmcu.itstudy.repository.PermissionRepository;
 import com.cmcu.itstudy.repository.MenuPermissionRepository;
 import com.cmcu.itstudy.repository.RolePermissionRepository;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -40,6 +41,7 @@ public class DatabaseSeeder implements CommandLineRunner {
     private final PermissionRepository permissionRepository;
     private final MenuPermissionRepository menuPermissionRepository;
     private final RolePermissionRepository rolePermissionRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     public DatabaseSeeder(
             UserRepository userRepository,
@@ -51,7 +53,8 @@ public class DatabaseSeeder implements CommandLineRunner {
             MenuRepository menuRepository,
             PermissionRepository permissionRepository,
             MenuPermissionRepository menuPermissionRepository,
-            RolePermissionRepository rolePermissionRepository
+            RolePermissionRepository rolePermissionRepository,
+            JdbcTemplate jdbcTemplate
     ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
@@ -63,12 +66,32 @@ public class DatabaseSeeder implements CommandLineRunner {
         this.permissionRepository = permissionRepository;
         this.menuPermissionRepository = menuPermissionRepository;
         this.rolePermissionRepository = rolePermissionRepository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Override
     @Transactional
     public void run(String... args) throws Exception {
         System.out.println("[DatabaseSeeder] Starting database initialization/seeding...");
+
+        // 0. Auto-migrate missing columns for community posts & polls
+        try {
+            jdbcTemplate.execute("IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_community_posts') AND name = N'allow_comments') " +
+                    "ALTER TABLE tbl_community_posts ADD allow_comments BIT NOT NULL DEFAULT 1;");
+            jdbcTemplate.execute("IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_community_polls') AND name = N'allow_add_options') " +
+                    "ALTER TABLE tbl_community_polls ADD allow_add_options BIT NOT NULL DEFAULT 0;");
+            jdbcTemplate.execute("IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_community_polls') AND name = N'hide_results_before_vote') " +
+                    "ALTER TABLE tbl_community_polls ADD hide_results_before_vote BIT NOT NULL DEFAULT 0;");
+            jdbcTemplate.execute("IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_community_polls') AND name = N'hide_voters') " +
+                    "ALTER TABLE tbl_community_polls ADD hide_voters BIT NOT NULL DEFAULT 0;");
+
+            // Ensure Unicode (NVARCHAR) types for Vietnamese text columns
+            jdbcTemplate.execute("ALTER TABLE tbl_community_posts ALTER COLUMN content NVARCHAR(MAX) NOT NULL;");
+            jdbcTemplate.execute("ALTER TABLE tbl_community_polls ALTER COLUMN question NVARCHAR(500) NOT NULL;");
+            jdbcTemplate.execute("ALTER TABLE tbl_community_poll_options ALTER COLUMN option_text NVARCHAR(255) NOT NULL;");
+        } catch (Exception e) {
+            System.err.println("[DatabaseSeeder] Column migration: " + e.getMessage());
+        }
 
         // 1. Seed Roles
         Role userRole = seedRole("USER", "Normal User");

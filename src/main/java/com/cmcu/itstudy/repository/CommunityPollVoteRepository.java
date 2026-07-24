@@ -21,6 +21,9 @@ public interface CommunityPollVoteRepository extends JpaRepository<CommunityPoll
 
     long countByOption_Id(UUID optionId);
 
+    @Query("SELECT v FROM CommunityPollVote v JOIN FETCH v.user WHERE v.option.id = :optionId")
+    List<CommunityPollVote> findByOptionIdWithUser(@Param("optionId") UUID optionId);
+
     @Modifying
     @Query("DELETE FROM CommunityPollVote v WHERE v.poll.id = :pollId AND v.user.id = :userId")
     void deleteAllByPollIdAndUserId(@Param("pollId") UUID pollId, @Param("userId") UUID userId);

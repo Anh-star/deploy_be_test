@@ -75,6 +75,7 @@ public final class CommunityPostMapper {
                 .isLiked(isLiked != null ? isLiked : false)
                 .isSaved(isSaved != null ? isSaved : false)
                 .poll(pollDto)
+                .allowComments(post.getAllowComments() != null ? post.getAllowComments() : true)
                 .createdAt(post.getCreatedAt())
                 .build();
     }
@@ -93,25 +94,32 @@ public final class CommunityPostMapper {
                         .collect(Collectors.toSet())
                 : Set.of();
 
+        boolean hasCurrentUserVoted = !votedOptionIds.isEmpty();
+        boolean hideResults = Boolean.TRUE.equals(poll.getHideResultsBeforeVote()) && !hasCurrentUserVoted;
+
         List<PollOptionDto> optionDtos = (options != null)
                 ? options.stream()
                         .filter(opt -> opt != null)
                         .map(opt -> PollOptionDto.builder()
                                 .id(uuidToString(opt.getId()))
                                 .optionText(opt.getOptionText())
-                                .voteCount(opt.getVoteCount() != null ? opt.getVoteCount() : 0)
+                                .voteCount(hideResults ? 0 : (opt.getVoteCount() != null ? opt.getVoteCount() : 0))
                                 .isVotedByCurrentUser(opt.getId() != null && votedOptionIds.contains(opt.getId()))
                                 .build())
                         .collect(Collectors.toList())
                 : List.of();
 
-        int totalVotes = optionDtos.stream().mapToInt(o -> o.getVoteCount() != null ? o.getVoteCount() : 0).sum();
+        int totalVotes = hideResults ? 0 : optionDtos.stream().mapToInt(o -> o.getVoteCount() != null ? o.getVoteCount() : 0).sum();
 
         return PollDto.builder()
                 .id(uuidToString(poll.getId()))
                 .question(poll.getQuestion())
                 .expiresAt(poll.getExpiresAt())
                 .allowMultiple(poll.getAllowMultiple())
+                .allowAddOptions(poll.getAllowAddOptions())
+                .hideResultsBeforeVote(poll.getHideResultsBeforeVote())
+                .hideVoters(poll.getHideVoters())
+                .hasCurrentUserVoted(hasCurrentUserVoted)
                 .totalVotes(totalVotes)
                 .options(optionDtos)
                 .build();

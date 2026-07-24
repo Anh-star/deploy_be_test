@@ -31,5 +31,6 @@ public class CommunityPostResponseDto {
     private Boolean isLiked;
     private Boolean isSaved;
     private PollDto poll;
+    private Boolean allowComments;
     private LocalDateTime createdAt;
 }

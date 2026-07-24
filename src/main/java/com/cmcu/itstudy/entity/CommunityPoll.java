@@ -49,7 +49,7 @@ public class CommunityPoll {
     @JsonIgnore
     private CommunityPost post;
 
-    @Column(name = "question", nullable = false, length = 500)
+    @Column(name = "question", nullable = false, columnDefinition = "nvarchar(500)")
     private String question;
 
     @Column(name = "expires_at")
@@ -57,6 +57,15 @@ public class CommunityPoll {
 
     @Column(name = "allow_multiple", nullable = false)
     private Boolean allowMultiple;
+
+    @Column(name = "allow_add_options", nullable = false)
+    private Boolean allowAddOptions;
+
+    @Column(name = "hide_results_before_vote", nullable = false)
+    private Boolean hideResultsBeforeVote;
+
+    @Column(name = "hide_voters", nullable = false)
+    private Boolean hideVoters;
 
     @OneToMany(mappedBy = "poll", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @ToString.Exclude
@@ -67,5 +76,8 @@ public class CommunityPoll {
     @PrePersist
     void prePersist() {
         if (this.allowMultiple == null) this.allowMultiple = false;
+        if (this.allowAddOptions == null) this.allowAddOptions = false;
+        if (this.hideResultsBeforeVote == null) this.hideResultsBeforeVote = false;
+        if (this.hideVoters == null) this.hideVoters = false;
     }
 }

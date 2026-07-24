@@ -44,7 +44,7 @@ public class CommunityPollOption {
     @JsonIgnore
     private CommunityPoll poll;
 
-    @Column(name = "option_text", nullable = false, length = 255)
+    @Column(name = "option_text", nullable = false, columnDefinition = "nvarchar(255)")
     private String optionText;
 
     @Column(name = "vote_count", nullable = false)

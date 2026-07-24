@@ -24,4 +24,6 @@ public class CreatePostRequestDto {
     private List<String> fileUrls;
 
     private CreatePollRequestDto poll;
+
+    private Boolean allowComments;
 }

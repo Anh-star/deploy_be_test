@@ -7,6 +7,7 @@ import com.cmcu.itstudy.dto.community.CreatePostRequestDto;
 import com.cmcu.itstudy.dto.community.PollDto;
 import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
 import com.cmcu.itstudy.dto.community.VotePostRequestDto;
+import com.cmcu.itstudy.dto.community.VoterDto;
 import com.cmcu.itstudy.security.UserDetailsImpl;
 import com.cmcu.itstudy.service.contract.CommunityPostService;
 import jakarta.validation.Valid;
@@ -50,7 +51,7 @@ public class CommunityPostController {
     ) {
         UUID userId = currentUser.getUser().getId();
         CommunityPostResponseDto data = communityPostService.createPost(
-                userId, request.getContent(), request.getImageUrls(), request.getFileUrls(), request.getPoll()
+                userId, request.getContent(), request.getImageUrls(), request.getFileUrls(), request.getPoll(), request.getAllowComments()
         );
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(data, "Post created"));
@@ -162,6 +163,29 @@ public class CommunityPostController {
         UUID userId = currentUser.getUser().getId();
         PollDto data = communityPostService.votePollOption(pollId, optionId, userId);
         return ResponseEntity.ok(ApiResponse.success(data, "Poll option voted"));
+    }
+
+    @GetMapping("/polls/options/{optionId}/voters")
+    public ResponseEntity<ApiResponse<List<VoterDto>>> getPollVoters(
+            @PathVariable UUID optionId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser != null ? currentUser.getUser().getId() : null;
+        List<VoterDto> voters = communityPostService.getPollVoters(optionId, userId);
+        return ResponseEntity.ok(ApiResponse.success(voters, "Poll option voters"));
+    }
+
+    @PostMapping("/polls/{pollId}/options")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<PollDto>> addPollOption(
+            @PathVariable UUID pollId,
+            @RequestBody Map<String, String> request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        String optionText = request != null ? request.get("optionText") : null;
+        PollDto data = communityPostService.addPollOption(pollId, optionText, userId);
+        return ResponseEntity.ok(ApiResponse.success(data, "Poll option added"));
     }
 
     @GetMapping("/{postId}/comments")

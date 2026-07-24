@@ -104,6 +104,9 @@ public class CommunityPost {
     @Builder.Default
     private List<CommunityPostComment> comments = new ArrayList<>();
 
+    @Column(name = "allow_comments", nullable = false)
+    private Boolean allowComments;
+
     @PrePersist
     void prePersist() {
         LocalDateTime now = LocalDateTime.now();
@@ -114,6 +117,7 @@ public class CommunityPost {
         if (this.downvoteCount == null) this.downvoteCount = 0;
         if (this.commentCount == null) this.commentCount = 0;
         if (this.deleted == null) this.deleted = Boolean.FALSE;
+        if (this.allowComments == null) this.allowComments = Boolean.TRUE;
     }
 
     @PreUpdate

@@ -18,4 +18,7 @@ public class CreatePollRequestDto {
     private List<String> options;
     private Integer durationDays;
     private Boolean allowMultiple;
+    private Boolean allowAddOptions;
+    private Boolean hideResultsBeforeVote;
+    private Boolean hideVoters;
 }

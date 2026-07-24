@@ -19,6 +19,10 @@ public class PollDto {
     private String question;
     private LocalDateTime expiresAt;
     private Boolean allowMultiple;
+    private Boolean allowAddOptions;
+    private Boolean hideResultsBeforeVote;
+    private Boolean hideVoters;
+    private Boolean hasCurrentUserVoted;
     private Integer totalVotes;
     private List<PollOptionDto> options;
 }
