@@ -83,20 +83,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     @Override
     @Transactional
     public CommunityPostResponseDto createPost(UUID userId, String content, List<String> imageUrls) {
-        return createPost(userId, content, imageUrls, null, null, true);
-    }
-
-    @Override
-    @Transactional
-    public CommunityPostResponseDto createPost(
-            UUID userId,
-            String content,
-            List<String> imageUrls,
-            List<String> fileUrls,
-            CreatePollRequestDto pollRequest,
-            Boolean allowComments
-    ) {
-        return createPost(userId, null, content, null, imageUrls, fileUrls, pollRequest, allowComments);
+        return createPost(userId, null, content, null, imageUrls, null, null, true);
     }
 
     @Override
