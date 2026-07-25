@@ -16,7 +16,11 @@ import java.util.List;
 @AllArgsConstructor
 public class CreatePostRequestDto {
 
+    private String title;
+
     private String content;
+
+    private List<String> tags;
 
     @Size(max = 4, message = "Maximum 4 images allowed")
     private List<String> imageUrls;

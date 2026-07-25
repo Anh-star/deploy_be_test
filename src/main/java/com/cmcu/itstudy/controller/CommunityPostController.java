@@ -51,7 +51,7 @@ public class CommunityPostController {
     ) {
         UUID userId = currentUser.getUser().getId();
         CommunityPostResponseDto data = communityPostService.createPost(
-                userId, request.getContent(), request.getImageUrls(), request.getFileUrls(), request.getPoll(), request.getAllowComments()
+                userId, request.getTitle(), request.getContent(), request.getTags(), request.getImageUrls(), request.getFileUrls(), request.getPoll(), request.getAllowComments()
         );
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(data, "Post created"));

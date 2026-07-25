@@ -20,7 +20,9 @@ public class CommunityPostResponseDto {
     private String authorId;
     private String authorName;
     private String authorAvatar;
+    private String title;
     private String content;
+    private List<String> tags;
     private List<String> imageUrls;
     private List<String> fileUrls;
     private Integer likeCount;

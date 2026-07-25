@@ -96,6 +96,21 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             CreatePollRequestDto pollRequest,
             Boolean allowComments
     ) {
+        return createPost(userId, null, content, null, imageUrls, fileUrls, pollRequest, allowComments);
+    }
+
+    @Override
+    @Transactional
+    public CommunityPostResponseDto createPost(
+            UUID userId,
+            String title,
+            String content,
+            List<String> tags,
+            List<String> imageUrls,
+            List<String> fileUrls,
+            CreatePollRequestDto pollRequest,
+            Boolean allowComments
+    ) {
         User author = userRepository.getReferenceById(userId);
 
         String joinedFileUrls = (fileUrls != null && !fileUrls.isEmpty())
@@ -104,7 +119,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         CommunityPost post = postRepository.save(CommunityPost.builder()
                 .author(author)
+                .title(title != null && !title.isBlank() ? title.trim() : null)
                 .content(content != null ? content.trim() : "")
+                .tags(tags != null ? new ArrayList<>(tags) : new ArrayList<>())
                 .fileUrls(joinedFileUrls)
                 .allowComments(allowComments != null ? allowComments : true)
                 .build());

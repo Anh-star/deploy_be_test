@@ -15,6 +15,8 @@ public interface CommunityPostService {
 
     CommunityPostResponseDto createPost(UUID userId, String content, List<String> imageUrls, List<String> fileUrls, CreatePollRequestDto pollRequest, Boolean allowComments);
 
+    CommunityPostResponseDto createPost(UUID userId, String title, String content, List<String> tags, List<String> imageUrls, List<String> fileUrls, CreatePollRequestDto pollRequest, Boolean allowComments);
+
     CommunityPostResponseDto getPostById(UUID postId, UUID currentUserId);
 
     List<CommunityPostResponseDto> getFeed(int page, int size, UUID currentUserId);

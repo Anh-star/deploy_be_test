@@ -1,7 +1,9 @@
 package com.cmcu.itstudy.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -56,8 +58,17 @@ public class CommunityPost {
     @JsonIgnore
     private User author;
 
+    @Column(name = "title", columnDefinition = "nvarchar(255)")
+    private String title;
+
     @Column(name = "content", nullable = false, columnDefinition = "nvarchar(max)")
     private String content;
+
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "tbl_post_tags", joinColumns = @JoinColumn(name = "post_id"))
+    @Column(name = "tag_name", columnDefinition = "nvarchar(50)")
+    @Builder.Default
+    private List<String> tags = new ArrayList<>();
 
     @Column(name = "like_count", nullable = false)
     private Integer likeCount;
