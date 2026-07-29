@@ -7,6 +7,8 @@ import com.cmcu.itstudy.dto.document.MyDocumentDetailDto;
 import com.cmcu.itstudy.entity.*;
 import com.cmcu.itstudy.enums.DocumentStatus;
 import com.cmcu.itstudy.enums.FileType;
+import com.cmcu.itstudy.enums.PaymentStatus;
+import com.cmcu.itstudy.handle.DocumentPricingLockedException;
 import com.cmcu.itstudy.repository.*;
 import com.cmcu.itstudy.service.contract.DocumentService;
 import com.cmcu.itstudy.util.SlugUtils;
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -36,17 +39,20 @@ public class DocumentServiceImpl implements DocumentService {
     private final CategoryRepository categoryRepository;
     private final TagRepository tagRepository;
     private final DocumentFileRepository documentFileRepository;
+    private final PaymentRepository paymentRepository;
 
     public DocumentServiceImpl(DocumentRepository documentRepository,
                                DocumentTagRepository documentTagRepository,
                                CategoryRepository categoryRepository,
                                TagRepository tagRepository,
-                               DocumentFileRepository documentFileRepository) {
+                               DocumentFileRepository documentFileRepository,
+                               PaymentRepository paymentRepository) {
         this.documentRepository = documentRepository;
         this.documentTagRepository = documentTagRepository;
         this.categoryRepository = categoryRepository;
         this.tagRepository = tagRepository;
         this.documentFileRepository = documentFileRepository;
+        this.paymentRepository = paymentRepository;
     }
 
     @Transactional(readOnly = true)
@@ -172,6 +178,75 @@ public class DocumentServiceImpl implements DocumentService {
             throw new SecurityException("User does not have permission to update this document.");
         }
 
+        // ─────────────────────────────────────────────────────────────────
+        // Pricing-change guard (legacy compatibility).
+        //
+        // The update DTO no longer enforces the 3,000 VND floor at the
+        // validator level so legacy documents priced below 3,000 VND under
+        // the previous 2,222 VND minimum can still round-trip metadata-only
+        // edits. Here we compare the existing vs requested pricing and:
+        //
+        //   • reject a Paid doc whose stored price is null / non-positive
+        //     (those are malformed, not legacy);
+        //   • reject any paid request whose price has actually changed and
+        //     is now below the minimum;
+        //   • otherwise let the existing or requested price flow through.
+        // ─────────────────────────────────────────────────────────────────
+        boolean existingIsPaid = Boolean.TRUE.equals(existingDocument.getIsPaid());
+        Long existingStoredPrice = existingDocument.getPrice();
+        if (existingIsPaid && (existingStoredPrice == null || existingStoredPrice <= 0L)) {
+            throw new IllegalArgumentException("Dữ liệu giá hiện tại của tài liệu không hợp lệ.");
+        }
+        long existingPrice = existingIsPaid ? existingStoredPrice : 0L;
+        boolean requestedIsPaid = Boolean.TRUE.equals(documentUpdateRequestDto.getIsPaid());
+        long requestedPrice = requestedIsPaid
+                ? (documentUpdateRequestDto.getPrice() == null ? 0L : documentUpdateRequestDto.getPrice())
+                : 0L;
+        boolean pricingChanged =
+                existingIsPaid != requestedIsPaid
+                        || existingPrice != requestedPrice;
+
+        // ─────────────────────────────────────────────────────────────────
+        // Pricing-lock state (Phase C.1B2).
+        //
+        // For an EXISTING document we always need the real lock state because
+        // the update response ({@link DocumentCardDto#pricingLocked}) must
+        // reflect reality, not a default. The lock guard then runs only when
+        // the request actually changes pricing; metadata-only updates on a
+        // locked document still pass and return pricingLocked = true.
+        //
+        // The single repository call below is reused for BOTH:
+        //   • the guard (pricingChanged && pricingLocked → throw 409)
+        //   • the response mapper (pricingLocked propagates to the DTO)
+        // so an update never issues two pricing-lock queries.
+        //
+        // Self-purchase rows are excluded by the repository method via
+        // userId <> owner, defending against any historical / anomalous
+        // data the create-payment guard did not catch.
+        // ─────────────────────────────────────────────────────────────────
+        UUID ownerId = existingDocument.getCreatedBy() != null
+                ? existingDocument.getCreatedBy().getId()
+                : null;
+        boolean pricingLocked = ownerId != null
+                && paymentRepository.existsByDocumentIdAndStatusAndUserIdNot(
+                        documentId,
+                        PaymentStatus.SUCCESS,
+                        ownerId);
+
+        if (pricingChanged && pricingLocked) {
+            throw new DocumentPricingLockedException(
+                    "Tài liệu đã có người mua nên không thể thay đổi hình thức hoặc giá bán."
+            );
+        }
+
+        if (pricingChanged
+                && requestedIsPaid
+                && requestedPrice < DocumentUpdateRequestDto.MIN_PAID_DOCUMENT_PRICE) {
+            throw new IllegalArgumentException(
+                    "Giá bán tài liệu có phí phải từ 3.000 VND trở lên."
+            );
+        }
+
         // 1. Find or create Category
         Category category = categoryRepository.findByName(documentUpdateRequestDto.getCategory())
                 .orElseThrow(() -> new NoSuchElementException("Category not found: " + documentUpdateRequestDto.getCategory()));
@@ -254,7 +329,11 @@ public class DocumentServiceImpl implements DocumentService {
         DocumentFile primaryFile = documentFileRepository.findByDocumentIdAndPrimaryTrue(updatedDocument.getId())
                 .orElse(null);
 
-        return mapToDocumentCardDto(updatedDocument, currentUser, primaryFile);
+        // pricingLocked here is the REAL value queried above. Do NOT delegate
+        // to the default overload because that one is reserved for the create
+        // response (a freshly created document cannot have a SUCCESS payment
+        // yet, so it is correctly forced to false there).
+        return mapToDocumentCardDto(updatedDocument, currentUser, primaryFile, pricingLocked);
     }
 
     @Override
@@ -280,13 +359,63 @@ public class DocumentServiceImpl implements DocumentService {
         // Fetch documents created by the current user, not deleted, ordered by creation date
         List<Document> documents = documentRepository.findByCreatedByAndDeletedFalseOrderByCreatedAtDesc(currentUser);
 
+        // Resolve the pricing-locked document ids in a SINGLE bulk query so the
+        // owner list never falls into an N+1 pattern against PaymentRepository.
+        Set<UUID> lockedDocumentIds = resolveLockedDocumentIds(documents);
+
         // Map to card DTO for consistency with service contract
         return documents.stream()
                 .map(doc -> mapToDocumentCardDto(
                         doc,
                         currentUser,
-                        documentFileRepository.findByDocumentIdAndPrimaryTrue(doc.getId()).orElse(null)))
+                        documentFileRepository.findByDocumentIdAndPrimaryTrue(doc.getId()).orElse(null),
+                        lockedDocumentIds.contains(doc.getId())))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Returns the set of document ids (within the supplied {@code documents}
+     * window) that already have at least one SUCCESS payment from a non-owner
+     * buyer. Empty when the input is empty — no SQL is issued in that case.
+     */
+    private Set<UUID> resolveLockedDocumentIds(Collection<Document> documents) {
+        if (documents == null || documents.isEmpty()) {
+            return Collections.emptySet();
+        }
+        List<UUID> ids = documents.stream()
+                .map(Document::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (ids.isEmpty()) {
+            return Collections.emptySet();
+        }
+        List<UUID> locked = paymentRepository.findDistinctDocumentIdsWithSuccessfulBuyer(
+                ids,
+                PaymentStatus.SUCCESS,
+                // Owner-self exclusion handled server-side too; the current
+                // user IS the owner for every row in this list, so any
+                // payment counted here was made by a different buyer.
+                currentUserIdOrUnknown(documents));
+        return locked == null ? Collections.emptySet() : new HashSet<>(locked);
+    }
+
+    /**
+     * Resolves the user id to exclude from the bulk query. All documents in
+     * the owner list share the same creator (the current user), so we only
+     * need one id. When the creator is unexpectedly null on every row we
+     * fall back to a UUID that matches nothing so the query still executes
+     * safely — in practice the caller never reaches this branch because
+     * documents without a creator would not pass the owner check.
+     */
+    private static UUID currentUserIdOrUnknown(Collection<Document> documents) {
+        for (Document d : documents) {
+            if (d != null && d.getCreatedBy() != null && d.getCreatedBy().getId() != null) {
+                return d.getCreatedBy().getId();
+            }
+        }
+        // Sentinel that is guaranteed to not equal any real user id; keeps
+        // the query runnable while excluding every payment from the count.
+        return new UUID(0L, 0L);
     }
 
     @Override
@@ -306,6 +435,14 @@ public class DocumentServiceImpl implements DocumentService {
                 .filter(StringUtils::hasText)
                 .collect(Collectors.toList());
         String documentUrl = resolveOwnerPreviewUrl(document);
+
+        UUID ownerId = document.getCreatedBy().getId();
+        long successfulPurchaseCount = paymentRepository.countByDocumentIdAndStatusAndUserIdNot(
+                document.getId(),
+                PaymentStatus.SUCCESS,
+                ownerId);
+        boolean pricingLocked = successfulPurchaseCount > 0L;
+
         return MyDocumentDetailDto.builder()
                 .id(document.getId().toString())
                 .title(document.getTitle())
@@ -320,6 +457,10 @@ public class DocumentServiceImpl implements DocumentService {
                 .status(document.getStatus())
                 .rejectReason(document.getRejectReason())
                 .createdAt(document.getCreatedAt())
+                .isPaid(Boolean.TRUE.equals(document.getIsPaid()))
+                .price(resolveOwnerPriceForResponse(document.getIsPaid(), document.getPrice()))
+                .pricingLocked(pricingLocked)
+                .successfulPurchaseCount(successfulPurchaseCount)
                 .build();
     }
 
@@ -337,6 +478,19 @@ public class DocumentServiceImpl implements DocumentService {
         return StringUtils.hasText(document.getFileUrl()) ? document.getFileUrl().trim() : null;
     }
 
+    /**
+     * Owner-detail / owner-list pricing field: free documents always report
+     * {@code price = 0L} so the frontend can render the badge without dealing
+     * with a nullable number; paid documents report the stored value as-is.
+     */
+    private static long resolveOwnerPriceForResponse(Boolean isPaid, Long storedPrice) {
+        if (!Boolean.TRUE.equals(isPaid)) {
+            return 0L;
+        }
+        long v = storedPrice == null ? 0L : storedPrice;
+        return v < 0L ? 0L : v;
+    }
+
     private static boolean isHttpUrl(String value) {
         if (value == null || value.isBlank()) {
             return false;
@@ -348,12 +502,14 @@ public class DocumentServiceImpl implements DocumentService {
     /**
      * Normalize the final price stored on a document so {@code isPaid} and
      * {@code price} stay consistent. Free documents always store 0; paid
-     * documents store the request value (callers must have validated the
-     * minimum via {@code DocumentCreateRequestDto#isPriceValid} /
-     * {@code DocumentUpdateRequestDto#isPriceValid}). Negative or null inputs
-     * on a paid document are coerced to {@code MIN_PAID_DOCUMENT_PRICE} as
-     * defense-in-depth for legacy callers; validation should reject these
-     * earlier with HTTP 400.
+     * documents store the request value verbatim. Negative inputs on a paid
+     * document are clamped to 0 as defense-in-depth; the create DTO and the
+     * update service guard should reject these earlier with HTTP 400.
+     *
+     * <p>This helper does NOT enforce the minimum — legacy prices below
+     * {@code MIN_PAID_DOCUMENT_PRICE} are intentionally preserved when the
+     * update path decides pricing has not changed. See the pricing-change
+     * guard at the top of {@link #updateDocument(UUID, DocumentUpdateRequestDto, User)}.
      */
     private static long resolveDocumentPrice(boolean isPaid, Long requestedPrice) {
         if (!isPaid) {
@@ -363,7 +519,21 @@ public class DocumentServiceImpl implements DocumentService {
         return v < 0L ? 0L : v;
     }
 
+    /**
+     * CREATE-RESPONSE default. A document that was just created cannot have
+     * any SUCCESS purchase yet, so reporting {@code pricingLocked = false}
+     * here is correct.
+     *
+     * <p>DO NOT call this overload for any other endpoint that returns an
+     * existing document — the update response in particular must reflect
+     * the real lock state queried from {@code PaymentRepository}. Call the
+     * 4-argument overload instead.
+     */
     private DocumentCardDto mapToDocumentCardDto(Document document, User currentUser, DocumentFile primaryFile) {
+        return mapToDocumentCardDto(document, currentUser, primaryFile, false);
+    }
+
+    private DocumentCardDto mapToDocumentCardDto(Document document, User currentUser, DocumentFile primaryFile, boolean pricingLocked) {
         return DocumentCardDto.builder()
                 .id(document.getId().toString())
                 .title(document.getTitle())
@@ -382,6 +552,9 @@ public class DocumentServiceImpl implements DocumentService {
                 .authorName(currentUser != null ? currentUser.getFullName() : null)
                 .documentUrl(document.getFileUrl())
                 .storagePath(primaryFile != null ? primaryFile.getStoragePath() : null)
+                .isPaid(Boolean.TRUE.equals(document.getIsPaid()))
+                .price(resolveOwnerPriceForResponse(document.getIsPaid(), document.getPrice()))
+                .pricingLocked(pricingLocked)
                 .build();
     }
 

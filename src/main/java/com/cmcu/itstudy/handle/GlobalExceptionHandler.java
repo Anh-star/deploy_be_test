@@ -92,6 +92,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
+    @ExceptionHandler(DocumentPricingLockedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDocumentPricingLocked(DocumentPricingLockedException ex) {
+        String message = ex.getMessage() != null
+                ? ex.getMessage()
+                : "Tài liệu đã có người mua nên không thể thay đổi hình thức hoặc giá bán.";
+        ApiResponse<Void> body = ApiResponse.failure(message);
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(AIGeneratedQuizValidationException.class)
     public ResponseEntity<ApiResponse<Void>> handleAIGeneratedQuizValidation(AIGeneratedQuizValidationException ex) {
         String message = ex.getMessage() != null ? ex.getMessage() : "Invalid AI-generated quiz data";

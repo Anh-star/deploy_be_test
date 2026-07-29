@@ -22,9 +22,24 @@ public class DocumentCreateRequestDto {
 
     /**
      * Minimum price for a paid document, in VND. Integer Long; no decimals.
-     * Used as a cross-field invariant and by the service for normalization.
+     * Used as a cross-field invariant by the create DTO and as the service-side
+     * floor when the owner updates a paid document with a new price.
+     *
+     * <p>Floor is derived from the contributor-net requirement: after a 10%
+     * platform fee the contributor must net at least 2,700 VND. With
+     * {@code platformFee = Math.floor(price * 10 / 100)} and
+     * {@code sellerNet = price - platformFee}, the smallest integer
+     * {@code price} giving {@code sellerNet >= 2700} is 3,000
+     * (fee = 300, net = 2,700).
+     *
+     * <p>Note: the update DTO does NOT enforce this floor at the DTO level.
+     * Legacy documents created under the previous 2,222 VND minimum must still
+     * round-trip their existing price through a metadata-only PUT, so
+     * {@code DocumentUpdateRequestDto#isPriceValid} only checks structure. The
+     * minimum-vs-pricing-changed rule lives in
+     * {@code DocumentServiceImpl#updateDocument}.
      */
-    public static final long MIN_PAID_DOCUMENT_PRICE = 2000L;
+    public static final long MIN_PAID_DOCUMENT_PRICE = 3000L;
 
     @NotBlank(message = "Title cannot be empty")
     @Size(min = 15, max = 255, message = "Title must be between 15 and 255 characters")
@@ -67,14 +82,15 @@ public class DocumentCreateRequestDto {
     private Long price;
 
     /**
-     * Cross-field invariant:
+     * Cross-field invariant enforced at the create DTO:
      * <ul>
      *   <li>Free document ({@code isPaid == false}): {@code price} must be null or 0.</li>
-     *   <li>Paid document ({@code isPaid == true}): {@code price} must be present and {@code >= 2,000} VND.</li>
+     *   <li>Paid document ({@code isPaid == true}): {@code price} must be present
+     *       and {@code >= MIN_PAID_DOCUMENT_PRICE} (3,000 VND).</li>
      * </ul>
      * Negative prices are rejected here too.
      */
-    @AssertTrue(message = "isPaid/price combination is invalid: free document requires price null or 0; paid document requires price >= 2,000 VND")
+    @AssertTrue(message = "Giá bán tài liệu có phí phải từ 3.000 VND trở lên.")
     public boolean isPriceValid() {
         if (isPaid == null) {
             return false;
