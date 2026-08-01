@@ -61,12 +61,15 @@ public class Category {
     @OneToMany(mappedBy = "parent", fetch = FetchType.LAZY)
     @ToString.Exclude
     @JsonIgnore
+    @Builder.Default
     private List<Category> children = new ArrayList<>();
 
     @Column(name = "is_active", nullable = false)
+    @Builder.Default
     private Boolean active = Boolean.TRUE;
 
     @Column(name = "display_order", nullable = false)
+    @Builder.Default
     private Integer displayOrder = 0;
 
     @Column(name = "created_at", nullable = false)

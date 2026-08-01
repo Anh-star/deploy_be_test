@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 public class PostCommentResponseDto {
 
     private String id;
+    private String parentCommentId;
     private String authorId;
     private String authorName;
     private String authorAvatar;

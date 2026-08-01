@@ -41,9 +41,11 @@ public class Tag {
     private String slug;
 
     @Column(name = "usage_count", nullable = false)
+    @Builder.Default
     private Long usageCount = 0L;
 
     @Column(name = "is_active", nullable = false)
+    @Builder.Default
     private Boolean active = Boolean.TRUE;
 
     @Column(name = "created_at", nullable = false)

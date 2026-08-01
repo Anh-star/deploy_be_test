@@ -34,5 +34,9 @@ public class CommunityPostResponseDto {
     private Boolean isSaved;
     private PollDto poll;
     private Boolean allowComments;
+    private Boolean isHidden;
+    private Boolean isReported;
+    private Boolean isMuted;
+    private Long reportCount;
     private LocalDateTime createdAt;
 }

@@ -116,6 +116,17 @@ public class CommunityPostController {
         return ResponseEntity.ok(ApiResponse.success(null, "Post deleted"));
     }
 
+    @PostMapping("/{postId}/report")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Void>> reportPost(
+            @PathVariable UUID postId,
+            @Valid @RequestBody com.cmcu.itstudy.dto.community.ReportPostRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        communityPostService.reportPost(postId, currentUser.getUser().getId(), request.getReasonCode(), request.getDetail());
+        return ResponseEntity.ok(ApiResponse.success(null, "Đã gửi báo cáo bài viết thành công"));
+    }
+
     @PostMapping("/{postId}/like")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<CommunityPostResponseDto>> toggleLike(
@@ -151,6 +162,19 @@ public class CommunityPostController {
         Map<String, Object> result = new HashMap<>();
         result.put("isSaved", isSaved);
         return ResponseEntity.ok(ApiResponse.success(result, isSaved ? "Post saved" : "Post unsaved"));
+    }
+
+    @PostMapping("/{postId}/toggle-notifications")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> toggleNotifications(
+            @PathVariable UUID postId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        boolean isMuted = communityPostService.toggleMutePostNotifications(postId, userId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("isMuted", isMuted);
+        return ResponseEntity.ok(ApiResponse.success(result, isMuted ? "Đã tắt thông báo bài viết" : "Đã bật thông báo bài viết"));
     }
 
     @PostMapping("/polls/{pollId}/options/{optionId}/vote")
@@ -208,9 +232,7 @@ public class CommunityPostController {
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
         UUID userId = currentUser.getUser().getId();
-        UUID parentId = request.getParentCommentId() != null
-                ? UUID.fromString(request.getParentCommentId())
-                : null;
+        UUID parentId = parseUuid(request.getParentCommentId());
         PostCommentResponseDto data = communityPostService.addComment(postId, userId, request.getBody(), parentId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(data, "Comment added"));
@@ -260,5 +282,10 @@ public class CommunityPostController {
                 postId, userId, request.getContent(), request.getImageUrls()
         );
         return ResponseEntity.ok(ApiResponse.success(data, "Post updated"));
+    }
+
+    private UUID parseUuid(String str) {
+        if (str == null || str.isBlank()) return null;
+        try { return UUID.fromString(str.trim()); } catch (Exception e) { return null; }
     }
 }

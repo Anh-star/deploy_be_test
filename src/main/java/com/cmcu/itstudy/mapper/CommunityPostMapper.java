@@ -39,11 +39,62 @@ public final class CommunityPostMapper {
             CommunityPoll poll,
             List<CommunityPollVote> userPollVotes
     ) {
+        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, false, 0L, false);
+    }
+
+    public static CommunityPostResponseDto toPostResponse(
+            CommunityPost post,
+            List<CommunityPostImage> images,
+            Boolean isLiked,
+            String currentUserVote,
+            Boolean isSaved,
+            CommunityPoll poll,
+            List<CommunityPollVote> userPollVotes,
+            Boolean isMuted
+    ) {
+        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, false, 0L, isMuted);
+    }
+
+    public static CommunityPostResponseDto toPostResponse(
+            CommunityPost post,
+            List<CommunityPostImage> images,
+            Boolean isLiked,
+            String currentUserVote,
+            Boolean isSaved,
+            CommunityPoll poll,
+            List<CommunityPollVote> userPollVotes,
+            Boolean isReported,
+            Long reportCount
+    ) {
+        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, isReported, reportCount, false);
+    }
+
+    public static CommunityPostResponseDto toPostResponse(
+            CommunityPost post,
+            List<CommunityPostImage> images,
+            Boolean isLiked,
+            String currentUserVote,
+            Boolean isSaved,
+            CommunityPoll poll,
+            List<CommunityPollVote> userPollVotes,
+            Boolean isReported,
+            Long reportCount,
+            Boolean isMuted
+    ) {
         if (post == null) return null;
 
-        String authorName = post.getAuthor() != null ? post.getAuthor().getFullName() : null;
-        String authorAvatar = post.getAuthor() != null ? post.getAuthor().getAvatarUrl() : null;
-        String authorId = post.getAuthor() != null ? uuidToString(post.getAuthor().getId()) : null;
+        String authorName = null;
+        String authorAvatar = null;
+        String authorId = null;
+        try {
+            if (post.getAuthor() != null) {
+                authorName = post.getAuthor().getFullName();
+                authorAvatar = post.getAuthor().getAvatarUrl();
+                authorId = uuidToString(post.getAuthor().getId());
+            }
+        } catch (Exception e) {
+            authorName = "Người dùng";
+        }
 
         List<String> imageUrls = images != null
                 ? images.stream().map(CommunityPostImage::getImageUrl).collect(Collectors.toList())
@@ -78,6 +129,10 @@ public final class CommunityPostMapper {
                 .isSaved(isSaved != null ? isSaved : false)
                 .poll(pollDto)
                 .allowComments(post.getAllowComments() != null ? post.getAllowComments() : true)
+                .isHidden(post.getHidden() != null ? post.getHidden() : false)
+                .isReported(isReported != null ? isReported : false)
+                .isMuted(isMuted != null ? isMuted : false)
+                .reportCount(reportCount != null ? reportCount : 0L)
                 .createdAt(post.getCreatedAt())
                 .build();
     }
@@ -138,9 +193,11 @@ public final class CommunityPostMapper {
         String authorAvatar = comment.getAuthor() != null ? comment.getAuthor().getAvatarUrl() : null;
         String authorId = comment.getAuthor() != null ? uuidToString(comment.getAuthor().getId()) : null;
         String replyToUserName = comment.getReplyToUser() != null ? comment.getReplyToUser().getFullName() : null;
+        String parentCommentId = comment.getParent() != null ? uuidToString(comment.getParent().getId()) : null;
 
         return PostCommentResponseDto.builder()
                 .id(uuidToString(comment.getId()))
+                .parentCommentId(parentCommentId)
                 .authorId(authorId)
                 .authorName(authorName)
                 .authorAvatar(authorAvatar)

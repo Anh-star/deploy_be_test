@@ -1,16 +1,19 @@
 package com.cmcu.itstudy.entity;
 
+import com.cmcu.itstudy.enums.NotificationType;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -29,9 +32,15 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@ToString
 @Entity
-@Table(name = "tbl_document_bookmarks")
-public class DocumentBookmark {
+@Table(
+        name = "tbl_notifications",
+        indexes = {
+                @Index(name = "idx_notif_recipient_read", columnList = "recipient_user_id, is_read, created_at")
+        }
+)
+public class Notification {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -40,37 +49,41 @@ public class DocumentBookmark {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "document_id", nullable = false)
+    @JoinColumn(name = "recipient_user_id", nullable = false)
     @ToString.Exclude
     @JsonIgnore
-    private Document document;
+    private User recipient;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "actor_user_id")
     @ToString.Exclude
     @JsonIgnore
-    private User user;
+    private User actor;
 
-    @Column(name = "is_active", nullable = false)
-    @Builder.Default
-    private Boolean active = Boolean.TRUE;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "type", nullable = false, length = 64)
+    private NotificationType type;
+
+    @Column(name = "reference_id", length = 255)
+    private String referenceId;
+
+    @Column(name = "reference_type", length = 64)
+    private String referenceType;
+
+    @Column(name = "message", nullable = false, columnDefinition = "nvarchar(500)")
+    private String message;
+
+    @Column(name = "is_read", nullable = false)
+    private Boolean read;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "deleted_at")
-    private LocalDateTime deletedAt;
-
     @PrePersist
     void prePersist() {
         this.createdAt = LocalDateTime.now();
-        if (this.active == null) this.active = Boolean.TRUE;
-    }
-
-    @PreUpdate
-    void preUpdate() {
-        if (Boolean.FALSE.equals(this.active) && this.deletedAt == null) {
-            this.deletedAt = LocalDateTime.now();
+        if (this.read == null) {
+            this.read = Boolean.FALSE;
         }
     }
 }

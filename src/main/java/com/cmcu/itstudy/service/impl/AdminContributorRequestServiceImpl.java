@@ -5,12 +5,14 @@ import com.cmcu.itstudy.entity.Role;
 import com.cmcu.itstudy.entity.User;
 import com.cmcu.itstudy.entity.UserRole;
 import com.cmcu.itstudy.enums.ContributorRequestStatus;
+import com.cmcu.itstudy.enums.NotificationType;
 import com.cmcu.itstudy.enums.RoleEnum;
 import com.cmcu.itstudy.repository.ContributorRequestRepository;
 import com.cmcu.itstudy.repository.RoleRepository;
 import com.cmcu.itstudy.repository.UserRepository;
 import com.cmcu.itstudy.repository.UserRoleRepository;
 import com.cmcu.itstudy.service.contract.AdminContributorRequestService;
+import com.cmcu.itstudy.service.contract.NotificationService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,6 +30,7 @@ public class AdminContributorRequestServiceImpl implements AdminContributorReque
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final UserRoleRepository userRoleRepository;
+    private final NotificationService notificationService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** Số lần tối đa admin được yêu cầu bổ sung. */
@@ -37,11 +40,13 @@ public class AdminContributorRequestServiceImpl implements AdminContributorReque
             ContributorRequestRepository contributorRequestRepository,
             UserRepository userRepository,
             RoleRepository roleRepository,
-            UserRoleRepository userRoleRepository) {
+            UserRoleRepository userRoleRepository,
+            NotificationService notificationService) {
         this.contributorRequestRepository = contributorRequestRepository;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.userRoleRepository = userRoleRepository;
+        this.notificationService = notificationService;
     }
 
     @Override
@@ -105,6 +110,24 @@ public class AdminContributorRequestServiceImpl implements AdminContributorReque
                         .build();
                 userRoleRepository.save(newUserRole);
             }
+
+            notificationService.createAndPush(
+                    user.getId(),
+                    null,
+                    NotificationType.CONTRIBUTOR_APPROVED,
+                    request.getId().toString(),
+                    "CONTRIBUTOR_REQUEST",
+                    "Hồ sơ người đóng góp (Contributor) của bạn đã được phê duyệt thành công!"
+            );
+        } else if (newStatus == ContributorRequestStatus.REJECTED) {
+            notificationService.createAndPush(
+                    request.getUser().getId(),
+                    null,
+                    NotificationType.CONTRIBUTOR_REJECTED,
+                    request.getId().toString(),
+                    "CONTRIBUTOR_REQUEST",
+                    "Hồ sơ người đóng góp (Contributor) của bạn đã bị từ chối." + (rejectionReason != null ? " Lý do: " + rejectionReason : "")
+            );
         }
     }
 }

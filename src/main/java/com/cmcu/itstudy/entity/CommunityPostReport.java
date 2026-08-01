@@ -10,8 +10,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -29,9 +29,15 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@ToString
 @Entity
-@Table(name = "tbl_document_bookmarks")
-public class DocumentBookmark {
+@Table(
+        name = "tbl_community_post_reports",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uq_one_report_per_user_post", columnNames = {"post_id", "reporter_user_id"})
+        }
+)
+public class CommunityPostReport {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -40,37 +46,43 @@ public class DocumentBookmark {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "document_id", nullable = false)
+    @JoinColumn(name = "post_id", nullable = false)
     @ToString.Exclude
     @JsonIgnore
-    private Document document;
+    private CommunityPost post;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "reporter_user_id", nullable = false)
     @ToString.Exclude
     @JsonIgnore
-    private User user;
+    private User reporter;
 
-    @Column(name = "is_active", nullable = false)
-    @Builder.Default
-    private Boolean active = Boolean.TRUE;
+    @Column(name = "reason_code", nullable = false, length = 64)
+    private String reasonCode;
+
+    @Column(name = "detail", columnDefinition = "nvarchar(max)")
+    private String detail;
+
+    @Column(name = "status", nullable = false, length = 32)
+    private String status; // PENDING, RESOLVED, DISMISSED
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "deleted_at")
-    private LocalDateTime deletedAt;
+    @Column(name = "resolved_at")
+    private LocalDateTime resolvedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "resolved_by_user_id")
+    @ToString.Exclude
+    @JsonIgnore
+    private User resolvedBy;
 
     @PrePersist
     void prePersist() {
         this.createdAt = LocalDateTime.now();
-        if (this.active == null) this.active = Boolean.TRUE;
-    }
-
-    @PreUpdate
-    void preUpdate() {
-        if (Boolean.FALSE.equals(this.active) && this.deletedAt == null) {
-            this.deletedAt = LocalDateTime.now();
+        if (this.status == null) {
+            this.status = "PENDING";
         }
     }
 }

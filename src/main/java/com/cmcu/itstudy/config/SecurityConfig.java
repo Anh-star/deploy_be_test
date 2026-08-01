@@ -71,7 +71,8 @@ public class SecurityConfig {
                                 "/api/tags/popular",
                                 "/api/auth/**",
                                 "/oauth2/**",
-                                "/login/oauth2/**"
+                                "/login/oauth2/**",
+                                "/api/notifications/subscribe"
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/documents/*/comments").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/comments/*/replies").permitAll()

@@ -55,6 +55,7 @@ public class DocumentAuthor {
     private String authorRole;
 
     @Column(name = "display_order", nullable = false)
+    @Builder.Default
     private Integer displayOrder = 0;
 
     @Column(name = "created_at", nullable = false)

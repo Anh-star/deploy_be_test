@@ -118,6 +118,9 @@ public class CommunityPost {
     @Column(name = "allow_comments", nullable = false)
     private Boolean allowComments;
 
+    @Column(name = "is_hidden", nullable = false)
+    private Boolean hidden;
+
     @PrePersist
     void prePersist() {
         LocalDateTime now = LocalDateTime.now();
@@ -129,6 +132,7 @@ public class CommunityPost {
         if (this.commentCount == null) this.commentCount = 0;
         if (this.deleted == null) this.deleted = Boolean.FALSE;
         if (this.allowComments == null) this.allowComments = Boolean.TRUE;
+        if (this.hidden == null) this.hidden = Boolean.FALSE;
     }
 
     @PreUpdate

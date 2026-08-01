@@ -14,9 +14,15 @@ import java.util.UUID;
 
 public interface CommunityPostRepository extends JpaRepository<CommunityPost, UUID> {
 
+    @Query(
+        value = "SELECT p FROM CommunityPost p LEFT JOIN FETCH p.author WHERE p.deleted = false ORDER BY p.createdAt DESC",
+        countQuery = "SELECT COUNT(p) FROM CommunityPost p WHERE p.deleted = false"
+    )
     Page<CommunityPost> findByDeletedFalseOrderByCreatedAtDesc(Pageable pageable);
 
-    @Query("SELECT p FROM CommunityPost p JOIN FETCH p.author WHERE p.id = :id AND p.deleted = false")
+    long countByDeletedFalse();
+
+    @Query("SELECT p FROM CommunityPost p LEFT JOIN FETCH p.author WHERE p.id = :id AND p.deleted = false")
     Optional<CommunityPost> findByIdWithAuthor(@Param("id") UUID id);
 
     @Query("SELECT p.id FROM CommunityPostLike pl JOIN pl.post p WHERE p.id IN :postIds AND pl.user.id = :userId")

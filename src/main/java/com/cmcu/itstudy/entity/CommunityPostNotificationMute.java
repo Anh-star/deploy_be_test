@@ -10,8 +10,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -29,9 +29,16 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@ToString
 @Entity
-@Table(name = "tbl_document_bookmarks")
-public class DocumentBookmark {
+@Table(
+        name = "tbl_community_post_notification_mutes",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_community_post_notification_mute_post_user",
+                columnNames = {"post_id", "user_id"}
+        )
+)
+public class CommunityPostNotificationMute {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -40,10 +47,10 @@ public class DocumentBookmark {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "document_id", nullable = false)
+    @JoinColumn(name = "post_id", nullable = false)
     @ToString.Exclude
     @JsonIgnore
-    private Document document;
+    private CommunityPost post;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
@@ -51,26 +58,11 @@ public class DocumentBookmark {
     @JsonIgnore
     private User user;
 
-    @Column(name = "is_active", nullable = false)
-    @Builder.Default
-    private Boolean active = Boolean.TRUE;
-
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
-
-    @Column(name = "deleted_at")
-    private LocalDateTime deletedAt;
 
     @PrePersist
     void prePersist() {
         this.createdAt = LocalDateTime.now();
-        if (this.active == null) this.active = Boolean.TRUE;
-    }
-
-    @PreUpdate
-    void preUpdate() {
-        if (Boolean.FALSE.equals(this.active) && this.deletedAt == null) {
-            this.deletedAt = LocalDateTime.now();
-        }
     }
 }

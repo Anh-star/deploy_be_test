@@ -91,6 +91,7 @@ public class Document {
     private String rejectReason;
 
     @Column(name = "is_deleted", nullable = false)
+    @Builder.Default
     private Boolean deleted = Boolean.FALSE;
 
     @Column(name = "deleted_at")
@@ -115,18 +116,23 @@ public class Document {
     private User updatedBy;
 
     @Column(name = "view_count", nullable = false)
+    @Builder.Default
     private Long viewCount = 0L;
 
     @Column(name = "download_count", nullable = false)
+    @Builder.Default
     private Long downloadCount = 0L;
 
     @Column(name = "bookmark_count", nullable = false)
+    @Builder.Default
     private Long bookmarkCount = 0L;
 
     @Column(name = "is_paid", nullable = false)
+    @Builder.Default
     private Boolean isPaid = Boolean.FALSE;
 
     @Column(name = "price")
+    @Builder.Default
     private Long price = 0L;
 
     @Column(name = "last_viewed_at")
@@ -147,16 +153,19 @@ public class Document {
     @OneToMany(mappedBy = "document", fetch = FetchType.LAZY)
     @ToString.Exclude
     @JsonIgnore
+    @Builder.Default
     private Set<DocumentTag> documentTags = new HashSet<>();
 
     @OneToMany(mappedBy = "document", fetch = FetchType.LAZY)
     @ToString.Exclude
     @JsonIgnore
+    @Builder.Default
     private Set<DocumentAuthor> documentAuthors = new HashSet<>();
 
     @OneToMany(mappedBy = "document", fetch = FetchType.LAZY)
     @ToString.Exclude
     @JsonIgnore
+    @Builder.Default
     private Set<DocumentBookmark> bookmarks = new HashSet<>();
 
     @OneToMany(mappedBy = "document", fetch = FetchType.LAZY)

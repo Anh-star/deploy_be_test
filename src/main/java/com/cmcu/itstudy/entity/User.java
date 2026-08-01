@@ -73,6 +73,7 @@ public class User {
 
     @JsonIgnore
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+    @Builder.Default
     private Set<UserRole> userRoles = new HashSet<>();
 
     public Set<Role> getRoles() {
@@ -85,10 +86,11 @@ public class User {
     }
     @JsonIgnore
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+    @Builder.Default
     private Set<RefreshToken> refreshTokens = new HashSet<>();
 
     @JsonIgnore
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
+    @Builder.Default
     private Set<PasswordResetToken> passwordResetTokens = new HashSet<>();
 }
-

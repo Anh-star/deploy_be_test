@@ -1,0 +1,15 @@
+package com.cmcu.itstudy.enums;
+
+public enum NotificationType {
+    POST_LIKED,
+    POST_COMMENTED,
+    COMMENT_LIKED,
+    COMMENT_REPLIED,
+    POST_REPORTED,
+    POST_HIDDEN,
+    POST_DELETED,
+    CONTRIBUTOR_APPROVED,
+    CONTRIBUTOR_REJECTED,
+    DOCUMENT_COMMENTED,
+    POST_UPVOTED
+}

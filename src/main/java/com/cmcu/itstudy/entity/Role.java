@@ -54,10 +54,12 @@ public class Role {
 
     @JsonIgnore
     @OneToMany(mappedBy = "role", fetch = FetchType.LAZY)
+    @Builder.Default
     private Set<UserRole> userRoles = new HashSet<>();
 
     @JsonIgnore
     @OneToMany(mappedBy = "role", fetch = FetchType.LAZY)
+    @Builder.Default
     private Set<RolePermission> rolePermissions = new HashSet<>();
 
     @PrePersist

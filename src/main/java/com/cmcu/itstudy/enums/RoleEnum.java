@@ -5,5 +5,6 @@ public enum RoleEnum {
         ADMIN,
         CONTRIBUTOR,
         USER_MODERATOR,
-        PAYMENT_MODERATOR
+        PAYMENT_MODERATOR,
+        COMMUNITY_MODERATOR
 }

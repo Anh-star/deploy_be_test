@@ -4,6 +4,7 @@ import com.cmcu.itstudy.dto.community.CommunityPostResponseDto;
 import com.cmcu.itstudy.dto.community.CreatePollRequestDto;
 import com.cmcu.itstudy.dto.community.PollDto;
 import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
+import com.cmcu.itstudy.dto.community.PostReportResponseDto;
 import com.cmcu.itstudy.dto.community.VoterDto;
 import com.cmcu.itstudy.entity.CommunityPoll;
 import com.cmcu.itstudy.entity.CommunityPollOption;
@@ -13,8 +14,11 @@ import com.cmcu.itstudy.entity.CommunityPostComment;
 import com.cmcu.itstudy.entity.CommunityPostCommentLike;
 import com.cmcu.itstudy.entity.CommunityPostImage;
 import com.cmcu.itstudy.entity.CommunityPostLike;
+import com.cmcu.itstudy.entity.CommunityPostNotificationMute;
+import com.cmcu.itstudy.entity.CommunityPostReport;
 import com.cmcu.itstudy.entity.CommunityPostSave;
 import com.cmcu.itstudy.entity.User;
+import com.cmcu.itstudy.enums.NotificationType;
 import com.cmcu.itstudy.mapper.CommunityPostMapper;
 import com.cmcu.itstudy.repository.CommunityPollOptionRepository;
 import com.cmcu.itstudy.repository.CommunityPollRepository;
@@ -23,10 +27,13 @@ import com.cmcu.itstudy.repository.CommunityPostCommentLikeRepository;
 import com.cmcu.itstudy.repository.CommunityPostCommentRepository;
 import com.cmcu.itstudy.repository.CommunityPostImageRepository;
 import com.cmcu.itstudy.repository.CommunityPostLikeRepository;
+import com.cmcu.itstudy.repository.CommunityPostNotificationMuteRepository;
+import com.cmcu.itstudy.repository.CommunityPostReportRepository;
 import com.cmcu.itstudy.repository.CommunityPostRepository;
 import com.cmcu.itstudy.repository.CommunityPostSaveRepository;
 import com.cmcu.itstudy.repository.UserRepository;
 import com.cmcu.itstudy.service.contract.CommunityPostService;
+import com.cmcu.itstudy.service.contract.NotificationService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -34,8 +41,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
@@ -55,6 +64,10 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     private final CommunityPostCommentRepository commentRepository;
     private final CommunityPostCommentLikeRepository commentLikeRepository;
     private final UserRepository userRepository;
+    private final CommunityPostNotificationMuteRepository notificationMuteRepository;
+    private final NotificationService notificationService;
+    private final CommunityPostReportRepository reportRepository;
+    private final SseService sseService;
 
     public CommunityPostServiceImpl(
             CommunityPostRepository postRepository,
@@ -66,7 +79,11 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             CommunityPollVoteRepository pollVoteRepository,
             CommunityPostCommentRepository commentRepository,
             CommunityPostCommentLikeRepository commentLikeRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            CommunityPostNotificationMuteRepository notificationMuteRepository,
+            NotificationService notificationService,
+            CommunityPostReportRepository reportRepository,
+            SseService sseService
     ) {
         this.postRepository = postRepository;
         this.imageRepository = imageRepository;
@@ -78,6 +95,10 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         this.commentRepository = commentRepository;
         this.commentLikeRepository = commentLikeRepository;
         this.userRepository = userRepository;
+        this.notificationMuteRepository = notificationMuteRepository;
+        this.notificationService = notificationService;
+        this.reportRepository = reportRepository;
+        this.sseService = sseService;
     }
 
     @Override
@@ -177,13 +198,18 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         boolean isLiked = false;
         boolean isSaved = false;
 
+        boolean isMuted = false;
         if (currentUserId != null) {
-            Optional<CommunityPostLike> likeOpt = likeRepository.findByPost_IdAndUser_Id(postId, currentUserId);
-            if (likeOpt.isPresent()) {
-                isLiked = true;
-                currentUserVote = likeOpt.get().getVoteType();
+            try {
+                Optional<CommunityPostLike> likeOpt = likeRepository.findByPost_IdAndUser_Id(postId, currentUserId);
+                if (likeOpt.isPresent()) {
+                    isLiked = true;
+                    currentUserVote = likeOpt.get().getVoteType();
+                }
+                isSaved = saveRepository.findByPost_IdAndUser_Id(postId, currentUserId).isPresent();
+                isMuted = notificationMuteRepository.existsByPost_IdAndUser_Id(postId, currentUserId);
+            } catch (Exception ignored) {
             }
-            isSaved = saveRepository.findByPost_IdAndUser_Id(postId, currentUserId).isPresent();
         }
 
         CommunityPoll poll = pollRepository.findByPost_Id(postId).orElse(null);
@@ -191,7 +217,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 ? pollVoteRepository.findAllByPoll_IdAndUser_Id(poll.getId(), currentUserId)
                 : List.of();
 
-        return CommunityPostMapper.toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes);
+        return CommunityPostMapper.toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, isMuted);
     }
 
     @Override
@@ -213,13 +239,18 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         boolean isLiked = false;
         boolean isSaved = false;
 
+        boolean isMuted = false;
         if (currentUserId != null) {
-            Optional<CommunityPostLike> likeOpt = likeRepository.findByPost_IdAndUser_Id(post.getId(), currentUserId);
-            if (likeOpt.isPresent()) {
-                isLiked = true;
-                currentUserVote = likeOpt.get().getVoteType();
+            try {
+                Optional<CommunityPostLike> likeOpt = likeRepository.findByPost_IdAndUser_Id(post.getId(), currentUserId);
+                if (likeOpt.isPresent()) {
+                    isLiked = true;
+                    currentUserVote = likeOpt.get().getVoteType();
+                }
+                isSaved = saveRepository.findByPost_IdAndUser_Id(post.getId(), currentUserId).isPresent();
+                isMuted = notificationMuteRepository.existsByPost_IdAndUser_Id(post.getId(), currentUserId);
+            } catch (Exception ignored) {
             }
-            isSaved = saveRepository.findByPost_IdAndUser_Id(post.getId(), currentUserId).isPresent();
         }
 
         CommunityPoll poll = pollRepository.findByPost_Id(post.getId()).orElse(null);
@@ -227,13 +258,13 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 ? pollVoteRepository.findAllByPoll_IdAndUser_Id(poll.getId(), currentUserId)
                 : List.of();
 
-        return CommunityPostMapper.toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes);
+        return CommunityPostMapper.toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, isMuted);
     }
 
     @Override
     @Transactional(readOnly = true)
     public long getFeedTotalCount() {
-        return postRepository.count();
+        return postRepository.countByDeletedFalse();
     }
 
     @Override
@@ -348,6 +379,34 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         post.setUpvoteCount(upvotes);
         post.setDownvoteCount(downvotes);
         postRepository.save(post);
+
+        // Real-time SSE broadcast of post vote count
+        Map<String, Object> voteEventData = new HashMap<>();
+        voteEventData.put("postId", postId.toString());
+        voteEventData.put("upvoteCount", upvotes);
+        voteEventData.put("downvoteCount", downvotes);
+        sseService.broadcast("post-voted", voteEventData);
+
+        // Send notification to post author when upvoted
+        if ("UPVOTE".equals(targetVote) && "UPVOTE".equals(resultVote)) {
+            if (!post.getAuthor().getId().equals(userId)) {
+                try {
+                    boolean isMuted = notificationMuteRepository.existsByPost_IdAndUser_Id(post.getId(), post.getAuthor().getId());
+                    if (!isMuted) {
+                        User voter = userRepository.findById(userId).orElse(null);
+                        String voterName = (voter != null && voter.getFullName() != null) ? voter.getFullName() : "Ai đó";
+                        notificationService.createAndPush(
+                                post.getAuthor().getId(),
+                                userId,
+                                NotificationType.POST_UPVOTED,
+                                post.getId().toString(),
+                                "COMMUNITY_POST",
+                                voterName + " đã thích bài viết của bạn."
+                        );
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
 
         return getPostResponseForUser(post, userId);
     }
@@ -506,7 +565,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         List<CommunityPollOption> currentOptions = pollOptionRepository.findByPoll_IdOrderByDisplayOrderAsc(pollId);
 
-        CommunityPollOption newOption = pollOptionRepository.save(CommunityPollOption.builder()
+        pollOptionRepository.save(CommunityPollOption.builder()
                 .poll(poll)
                 .optionText(optionText.trim())
                 .voteCount(0)
@@ -518,6 +577,15 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         return CommunityPostMapper.toPollDto(poll, updatedOptions, userVotes);
     }
 
+    private void sendNotificationIfUnmuted(UUID recipientId, UUID senderId, UUID postId, NotificationType type, String message) {
+        if (recipientId == null || recipientId.equals(senderId)) return;
+        try {
+            if (!notificationMuteRepository.existsByPost_IdAndUser_Id(postId, recipientId)) {
+                notificationService.createAndPush(recipientId, senderId, type, postId.toString(), "COMMUNITY_POST", message);
+            }
+        } catch (Exception ignored) {}
+    }
+
     @Override
     @Transactional
     public PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId) {
@@ -526,7 +594,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         if (Boolean.TRUE.equals(post.getDeleted())) {
             throw new NoSuchElementException("Post not found");
         }
-        if (Boolean.FALSE.equals(post.getAllowComments())) {
+        if (Boolean.TRUE.equals(post.getAllowComments() == null ? Boolean.FALSE : !post.getAllowComments())) {
             throw new IllegalArgumentException("Bài viết này đã tắt tính năng bình luận.");
         }
 
@@ -535,10 +603,11 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         CommunityPostComment.CommunityPostCommentBuilder builder = CommunityPostComment.builder()
                 .post(post)
                 .author(author)
-                .body(body);
+                .body(body != null ? body.trim() : "");
 
+        CommunityPostComment parent = null;
         if (parentCommentId != null) {
-            CommunityPostComment parent = commentRepository.findById(parentCommentId)
+            parent = commentRepository.findById(parentCommentId)
                     .orElseThrow(() -> new NoSuchElementException("Parent comment not found"));
             builder.parent(parent);
             builder.replyToUser(parent.getAuthor());
@@ -547,11 +616,36 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         CommunityPostComment saved = commentRepository.save(builder.build());
 
         // Update denormalized comment count
-        post.setCommentCount(post.getCommentCount() + 1);
+        int currentCount = post.getCommentCount() != null ? post.getCommentCount() : 0;
+        post.setCommentCount(currentCount + 1);
         postRepository.save(post);
 
         int replyCount = 0;
-        return CommunityPostMapper.toCommentResponse(saved, replyCount, false);
+        PostCommentResponseDto commentDto = CommunityPostMapper.toCommentResponse(saved, replyCount, false);
+
+        // 1. Real-time SSE broadcast of the new comment to users viewing this post
+        Map<String, Object> eventData = new HashMap<>();
+        eventData.put("postId", postId.toString());
+        eventData.put("comment", commentDto);
+        sseService.broadcast("new-comment", eventData);
+
+        // 2. Create and push notification to post author or parent comment author
+        User commenter = userRepository.findById(userId).orElse(null);
+        String commenterName = (commenter != null && commenter.getFullName() != null) ? commenter.getFullName() : "Ai đó";
+        String snippet = body.length() > 50 ? body.substring(0, 50) + "..." : body;
+
+        UUID postAuthorId = post.getAuthor().getId();
+        if (parent != null) {
+            UUID parentAuthorId = parent.getAuthor().getId();
+            sendNotificationIfUnmuted(parentAuthorId, userId, post.getId(), NotificationType.COMMENT_REPLIED, commenterName + " đã phản hồi bình luận của bạn: \"" + snippet + "\"");
+            if (!postAuthorId.equals(parentAuthorId)) {
+                sendNotificationIfUnmuted(postAuthorId, userId, post.getId(), NotificationType.POST_COMMENTED, commenterName + " đã bình luận về bài viết của bạn: \"" + snippet + "\"");
+            }
+        } else {
+            sendNotificationIfUnmuted(postAuthorId, userId, post.getId(), NotificationType.POST_COMMENTED, commenterName + " đã bình luận về bài viết của bạn: \"" + snippet + "\"");
+        }
+
+        return commentDto;
     }
 
     @Override
@@ -607,7 +701,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     @Transactional(readOnly = true)
     public List<PostCommentResponseDto> getComments(UUID postId, int page, int size, UUID currentUserId) {
         Page<CommunityPostComment> commentPage = commentRepository
-                .findByPost_IdAndParentIsNullAndDeletedFalseOrderByCreatedAtDesc(postId, PageRequest.of(page, size));
+                .findRootCommentsByPostId(postId, PageRequest.of(page, size));
 
         List<CommunityPostComment> content = commentPage.getContent();
         if (content.isEmpty()) return List.of();
@@ -619,7 +713,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         }
 
         return content.stream().map(c -> {
-            int replyCount = commentRepository.findByParent_IdAndDeletedFalseOrderByCreatedAtAsc(c.getId()).size();
+            int replyCount = (int) commentRepository.countRepliesByParentId(c.getId());
             boolean isLiked = likedCommentIds.contains(c.getId());
             return CommunityPostMapper.toCommentResponse(c, replyCount, isLiked);
         }).collect(Collectors.toList());
@@ -629,7 +723,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     @Transactional(readOnly = true)
     public List<PostCommentResponseDto> getReplies(UUID commentId, UUID currentUserId) {
         List<CommunityPostComment> replies = commentRepository
-                .findByParent_IdAndDeletedFalseOrderByCreatedAtAsc(commentId);
+                .findRepliesByParentId(commentId);
 
         if (replies.isEmpty()) return List.of();
 
@@ -672,9 +766,33 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .build());
             comment.setLikeCount(comment.getLikeCount() + 1);
             isLiked = true;
+
+            // Push notification when comment is liked
+            if (!comment.getAuthor().getId().equals(userId)) {
+                try {
+                    User liker = userRepository.findById(userId).orElse(null);
+                    String likerName = (liker != null && liker.getFullName() != null) ? liker.getFullName() : "Ai đó";
+                    notificationService.createAndPush(
+                            comment.getAuthor().getId(),
+                            userId,
+                            NotificationType.COMMENT_LIKED,
+                            comment.getPost().getId().toString(),
+                            "COMMUNITY_POST",
+                            likerName + " đã thích bình luận của bạn."
+                    );
+                } catch (Exception ignored) {}
+            }
         }
 
         commentRepository.save(comment);
+
+        // Real-time SSE broadcast of comment like count
+        Map<String, Object> commentLikeData = new HashMap<>();
+        commentLikeData.put("commentId", commentId.toString());
+        commentLikeData.put("postId", comment.getPost().getId().toString());
+        commentLikeData.put("likeCount", comment.getLikeCount());
+        sseService.broadcast("comment-liked", commentLikeData);
+
         int replyCount = commentRepository.findByParent_IdAndDeletedFalseOrderByCreatedAtAsc(commentId).size();
         return CommunityPostMapper.toCommentResponse(comment, replyCount, isLiked);
     }
@@ -708,5 +826,167 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         }
 
         return getPostResponseForUser(post, userId);
+    }
+
+    // ================== Report & Moderation ==================
+
+    @Override
+    @Transactional
+    public void reportPost(UUID postId, UUID reporterId, String reasonCode, String detail) {
+        CommunityPost post = postRepository.findById(postId)
+                .orElseThrow(() -> new NoSuchElementException("Bài viết không tồn tại"));
+
+        if (reportRepository.existsByPostIdAndReporterId(postId, reporterId)) {
+            throw new IllegalArgumentException("Bạn đã báo cáo bài viết này rồi.");
+        }
+
+        User reporter = userRepository.findById(reporterId)
+                .orElseThrow(() -> new NoSuchElementException("User không tồn tại"));
+
+        CommunityPostReport report = CommunityPostReport.builder()
+                .post(post)
+                .reporter(reporter)
+                .reasonCode(reasonCode)
+                .detail(detail)
+                .status("PENDING")
+                .build();
+
+        reportRepository.save(report);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<PostReportResponseDto> getReportedPosts(String status, int page, int size) {
+        PageRequest pageRequest = PageRequest.of(page, size);
+        Page<CommunityPostReport> reports;
+        if (status != null && !status.isBlank()) {
+            reports = reportRepository.findAllByStatusOrderByCreatedAtDesc(status.toUpperCase(), pageRequest);
+        } else {
+            reports = reportRepository.findAllByOrderByCreatedAtDesc(pageRequest);
+        }
+
+        return reports.map(r -> {
+            CommunityPost p = r.getPost();
+            User reporter = r.getReporter();
+            User author = p != null ? p.getAuthor() : null;
+            long count = p != null ? reportRepository.countByPostId(p.getId()) : 0L;
+
+            return PostReportResponseDto.builder()
+                    .id(r.getId().toString())
+                    .postId(p != null ? p.getId().toString() : null)
+                    .postTitle(p != null ? p.getTitle() : null)
+                    .postContent(p != null ? p.getContent() : null)
+                    .postAuthorId(author != null ? author.getId().toString() : null)
+                    .postAuthorName(author != null ? author.getFullName() : "Không xác định")
+                    .postAuthorAvatar(author != null ? author.getAvatarUrl() : null)
+                    .reporterId(reporter != null ? reporter.getId().toString() : null)
+                    .reporterName(reporter != null ? reporter.getFullName() : "Không xác định")
+                    .reporterAvatar(reporter != null ? reporter.getAvatarUrl() : null)
+                    .reasonCode(r.getReasonCode())
+                    .detail(r.getDetail())
+                    .status(r.getStatus())
+                    .reportCount(count)
+                    .isPostHidden(p != null && Boolean.TRUE.equals(p.getHidden()))
+                    .createdAt(r.getCreatedAt())
+                    .build();
+        });
+    }
+
+    @Override
+    @Transactional
+    public void resolveReport(UUID reportId, UUID resolverId) {
+        CommunityPostReport report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+        report.setStatus("RESOLVED");
+        reportRepository.save(report);
+    }
+
+    @Override
+    @Transactional
+    public void dismissReport(UUID reportId, UUID resolverId) {
+        CommunityPostReport report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+        report.setStatus("DISMISSED");
+        reportRepository.save(report);
+    }
+
+    @Override
+    @Transactional
+    public void hidePost(UUID postId, UUID moderatorId) {
+        CommunityPost post = postRepository.findById(postId)
+                .orElseThrow(() -> new NoSuchElementException("Bài viết không tồn tại"));
+        post.setHidden(true);
+        postRepository.save(post);
+
+        notificationService.createAndPush(
+                post.getAuthor().getId(),
+                moderatorId,
+                NotificationType.POST_HIDDEN,
+                post.getId().toString(),
+                "COMMUNITY_POST",
+                "Bài viết của bạn đã bị ẩn bởi quản trị viên cộng đồng"
+        );
+    }
+
+    @Override
+    @Transactional
+    public void unhidePost(UUID postId, UUID moderatorId) {
+        CommunityPost post = postRepository.findById(postId)
+                .orElseThrow(() -> new NoSuchElementException("Bài viết không tồn tại"));
+        post.setHidden(false);
+        postRepository.save(post);
+    }
+
+    @Override
+    @Transactional
+    public boolean toggleMutePostNotifications(UUID postId, UUID userId) {
+        CommunityPost post = postRepository.findById(postId)
+                .orElseThrow(() -> new NoSuchElementException("Bài viết không tồn tại"));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NoSuchElementException("Người dùng không tồn tại"));
+
+        boolean exists = false;
+        try {
+            exists = notificationMuteRepository.existsByPost_IdAndUser_Id(postId, userId);
+        } catch (Exception ignored) {
+        }
+
+        if (exists) {
+            try {
+                notificationMuteRepository.deleteByPost_IdAndUser_Id(postId, userId);
+                notificationMuteRepository.flush();
+            } catch (Exception ignored) {
+            }
+            return false;
+        } else {
+            try {
+                notificationMuteRepository.save(CommunityPostNotificationMute.builder()
+                        .post(post)
+                        .user(user)
+                        .build());
+                notificationMuteRepository.flush();
+            } catch (Exception ignored) {
+            }
+            return true;
+        }
+    }
+
+    @Override
+    @Transactional
+    public void moderatorDeletePost(UUID postId, UUID moderatorId) {
+        CommunityPost post = postRepository.findById(postId)
+                .orElseThrow(() -> new NoSuchElementException("Bài viết không tồn tại"));
+        post.setDeleted(true);
+        post.setDeletedAt(LocalDateTime.now());
+        postRepository.save(post);
+
+        notificationService.createAndPush(
+                post.getAuthor().getId(),
+                moderatorId,
+                NotificationType.POST_DELETED,
+                post.getId().toString(),
+                "COMMUNITY_POST",
+                "Bài viết của bạn đã bị xóa bởi quản trị viên cộng đồng"
+        );
     }
 }

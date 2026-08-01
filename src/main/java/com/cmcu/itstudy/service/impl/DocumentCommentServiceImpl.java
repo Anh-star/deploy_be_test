@@ -7,12 +7,14 @@ import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.entity.DocumentComment;
 import com.cmcu.itstudy.entity.DocumentCommentLike;
 import com.cmcu.itstudy.entity.User;
+import com.cmcu.itstudy.enums.NotificationType;
 import com.cmcu.itstudy.mapper.CommentMapper;
 import com.cmcu.itstudy.repository.DocumentCommentLikeRepository;
 import com.cmcu.itstudy.repository.DocumentCommentRepository;
 import com.cmcu.itstudy.repository.DocumentRepository;
 import com.cmcu.itstudy.repository.UserRepository;
 import com.cmcu.itstudy.service.contract.DocumentCommentService;
+import com.cmcu.itstudy.service.contract.NotificationService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -37,17 +39,20 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
     private final DocumentCommentLikeRepository documentCommentLikeRepository;
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     public DocumentCommentServiceImpl(
             DocumentCommentRepository documentCommentRepository,
             DocumentCommentLikeRepository documentCommentLikeRepository,
             DocumentRepository documentRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            NotificationService notificationService
     ) {
         this.documentCommentRepository = documentCommentRepository;
         this.documentCommentLikeRepository = documentCommentLikeRepository;
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
     }
 
     @Override
@@ -142,6 +147,20 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
                 .build());
 
         saved = documentCommentRepository.findByIdWithDocumentAndAuthor(saved.getId()).orElse(saved);
+
+        if (document.getCreatedBy() != null && !userId.equals(document.getCreatedBy().getId())) {
+            User commenter = userRepository.findById(userId).orElse(null);
+            String commenterName = (commenter != null && commenter.getFullName() != null) ? commenter.getFullName() : "Ai đó";
+            notificationService.createAndPush(
+                    document.getCreatedBy().getId(),
+                    userId,
+                    NotificationType.DOCUMENT_COMMENTED,
+                    document.getId().toString(),
+                    "DOCUMENT",
+                    commenterName + " đã bình luận về tài liệu của bạn"
+            );
+        }
+
         return CommentMapper.toCommentResponse(saved, false, 0);
     }
 
@@ -166,6 +185,19 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
         DocumentComment forDto = documentCommentRepository
                 .findByIdWithDocumentAuthorAndReplyTo(saved.getId())
                 .orElse(saved);
+
+        if (parent.getAuthor() != null && !userId.equals(parent.getAuthor().getId())) {
+            User replier = userRepository.findById(userId).orElse(null);
+            String replierName = (replier != null && replier.getFullName() != null) ? replier.getFullName() : "Ai đó";
+            notificationService.createAndPush(
+                    parent.getAuthor().getId(),
+                    userId,
+                    NotificationType.COMMENT_REPLIED,
+                    parent.getDocument().getId().toString(),
+                    "DOCUMENT",
+                    replierName + " đã phản hồi bình luận tài liệu của bạn"
+            );
+        }
 
         return CommentMapper.toCommentResponse(forDto, false, 0);
     }

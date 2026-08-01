@@ -84,11 +84,63 @@ public class DatabaseSeeder implements CommandLineRunner {
                     "ALTER TABLE tbl_community_polls ADD hide_results_before_vote BIT NOT NULL DEFAULT 0;");
             jdbcTemplate.execute("IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_community_polls') AND name = N'hide_voters') " +
                     "ALTER TABLE tbl_community_polls ADD hide_voters BIT NOT NULL DEFAULT 0;");
+            jdbcTemplate.execute("IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_community_posts') AND name = N'is_hidden') " +
+                    "ALTER TABLE tbl_community_posts ADD is_hidden BIT NOT NULL DEFAULT 0;");
+
+            jdbcTemplate.execute("IF OBJECT_ID(N'tbl_community_post_reports', N'U') IS NULL " +
+                    "CREATE TABLE tbl_community_post_reports (" +
+                    "id UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID() PRIMARY KEY, " +
+                    "post_id UNIQUEIDENTIFIER NOT NULL, " +
+                    "reporter_user_id UNIQUEIDENTIFIER NOT NULL, " +
+                    "reason_code NVARCHAR(64) NOT NULL, " +
+                    "detail NVARCHAR(MAX) NULL, " +
+                    "status NVARCHAR(32) NOT NULL DEFAULT 'PENDING', " +
+                    "created_at DATETIME2 NOT NULL DEFAULT GETDATE(), " +
+                    "resolved_at DATETIME2 NULL, " +
+                    "resolved_by_user_id UNIQUEIDENTIFIER NULL, " +
+                    "CONSTRAINT fk_report_post FOREIGN KEY (post_id) REFERENCES tbl_community_posts(id), " +
+                    "CONSTRAINT fk_report_reporter FOREIGN KEY (reporter_user_id) REFERENCES tbl_users(id), " +
+                    "CONSTRAINT fk_report_resolver FOREIGN KEY (resolved_by_user_id) REFERENCES tbl_users(id), " +
+                    "CONSTRAINT uq_one_report_per_user_post UNIQUE (post_id, reporter_user_id));");
+
+            jdbcTemplate.execute("IF OBJECT_ID(N'tbl_notifications', N'U') IS NULL " +
+                    "CREATE TABLE tbl_notifications (" +
+                    "id UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID() PRIMARY KEY, " +
+                    "recipient_user_id UNIQUEIDENTIFIER NOT NULL, " +
+                    "actor_user_id UNIQUEIDENTIFIER NULL, " +
+                    "type NVARCHAR(64) NOT NULL, " +
+                    "reference_id NVARCHAR(255) NULL, " +
+                    "reference_type NVARCHAR(64) NULL, " +
+                    "message NVARCHAR(500) NOT NULL, " +
+                    "is_read BIT NOT NULL DEFAULT 0, " +
+                    "created_at DATETIME2 NOT NULL DEFAULT GETDATE(), " +
+                    "CONSTRAINT fk_notif_recipient FOREIGN KEY (recipient_user_id) REFERENCES tbl_users(id), " +
+                    "CONSTRAINT fk_notif_actor FOREIGN KEY (actor_user_id) REFERENCES tbl_users(id));");
+
+            // Auto-recreate notification mutes table if user_id type is not uniqueidentifier (e.g. varbinary)
+            jdbcTemplate.execute("IF OBJECT_ID(N'tbl_community_post_notification_mutes', N'U') IS NOT NULL " +
+                    "AND EXISTS (SELECT 1 FROM sys.columns c JOIN sys.types t ON c.user_type_id = t.user_type_id " +
+                    "WHERE c.object_id = OBJECT_ID(N'tbl_community_post_notification_mutes') AND c.name = N'user_id' AND t.name <> N'uniqueidentifier') " +
+                    "DROP TABLE tbl_community_post_notification_mutes;");
+
+            jdbcTemplate.execute("IF OBJECT_ID(N'tbl_community_post_notification_mutes', N'U') IS NULL " +
+                    "CREATE TABLE tbl_community_post_notification_mutes (" +
+                    "id UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID() PRIMARY KEY, " +
+                    "post_id UNIQUEIDENTIFIER NOT NULL, " +
+                    "user_id UNIQUEIDENTIFIER NOT NULL, " +
+                    "created_at DATETIME2 NOT NULL DEFAULT GETDATE(), " +
+                    "CONSTRAINT fk_mute_post FOREIGN KEY (post_id) REFERENCES tbl_community_posts(id), " +
+                    "CONSTRAINT fk_mute_user FOREIGN KEY (user_id) REFERENCES tbl_users(id), " +
+                    "CONSTRAINT uq_mute_user_post UNIQUE (post_id, user_id));");
 
             // Ensure Unicode (NVARCHAR) types for Vietnamese text columns
             jdbcTemplate.execute("ALTER TABLE tbl_community_posts ALTER COLUMN content NVARCHAR(MAX) NOT NULL;");
             jdbcTemplate.execute("ALTER TABLE tbl_community_polls ALTER COLUMN question NVARCHAR(500) NOT NULL;");
             jdbcTemplate.execute("ALTER TABLE tbl_community_poll_options ALTER COLUMN option_text NVARCHAR(255) NOT NULL;");
+            jdbcTemplate.execute("UPDATE tbl_community_posts SET allow_comments = 1 WHERE allow_comments IS NULL OR allow_comments = 0;");
+            jdbcTemplate.execute("UPDATE tbl_community_posts SET is_hidden = 0 WHERE is_hidden IS NULL;");
+            jdbcTemplate.execute("UPDATE tbl_community_post_comments SET is_deleted = 0 WHERE is_deleted IS NULL;");
+            jdbcTemplate.execute("UPDATE tbl_community_post_comments SET like_count = 0 WHERE like_count IS NULL;");
         } catch (Exception e) {
             System.err.println("[DatabaseSeeder] Column migration: " + e.getMessage());
         }
@@ -99,6 +151,7 @@ public class DatabaseSeeder implements CommandLineRunner {
         Role contributorRole = seedRole("CONTRIBUTOR", "Contributor User");
         Role moderatorRole = seedRole("USER_MODERATOR", "Moderator User");
         Role contentModeratorRole = seedRole("CONTENT_MODERATOR", "Content Moderator User");
+        Role communityModeratorRole = seedRole("COMMUNITY_MODERATOR", "Community Moderator User");
 
         // 2. Seed Users
         seedUser("user@example.com", "Normal User", userRole);
@@ -106,6 +159,7 @@ public class DatabaseSeeder implements CommandLineRunner {
         seedUser("contributor@example.com", "Contributor User", contributorRole);
         seedUser("moderator@example.com", "Moderator User", moderatorRole);
         seedUser("content_moderator@example.com", "Content Moderator User", contentModeratorRole);
+        seedUser("community_moderator@example.com", "Community Moderator User", communityModeratorRole);
 
         // 3. Seed Categories
         seedCategory("Lập trình Web", "lap-trinh-web", "Tài liệu về phát triển web: HTML, CSS, React, Spring Boot...");
@@ -152,6 +206,9 @@ public class DatabaseSeeder implements CommandLineRunner {
         Permission pConfigRead = seedPermission("SYSTEM_CONFIG_READ", "Read system settings");
         Permission pConfigWrite = seedPermission("SYSTEM_CONFIG_WRITE", "Edit system settings");
 
+        Permission pCommunityMod = seedPermission("COMMUNITY_MODERATION", "Moderate community posts and comments");
+        Permission pMenuCommunityMod = seedPermission("MENU_COMMUNITY_MODERATION", "Access Community Moderation menu");
+
         // Frontend UI Permissions
         Permission pProfileView = seedPermission("profile:view", "View personal profile");
         Permission pUserStatsView = seedPermission("user:statistics:view", "View user statistics");
@@ -181,6 +238,7 @@ public class DatabaseSeeder implements CommandLineRunner {
             pUserRead, pUserWrite, pRoleRead, pRoleWrite, pPermRead, pPermWrite,
             pCatRead, pCatWrite, pTagRead, pTagWrite, pContribRead, pContribWrite,
             pDocRead, pDocWrite, pReportRead, pReportWrite, pConfigRead, pConfigWrite,
+            pCommunityMod, pMenuCommunityMod,
             pMenuDashboard, pMenuAccess, pMenuUsers, pMenuRoles, pMenuPerms,
             pMenuCats, pMenuTags, pMenuContribs, pMenuDocs, pMenuReports, pMenuSettings,
             pProfileView, pUserStatsView, pContribProfileView, pDocManage, pQuizManage,
@@ -208,6 +266,15 @@ public class DatabaseSeeder implements CommandLineRunner {
         );
         for (Permission perm : userModPermissions) {
             seedRolePermission(moderatorRole, perm);
+        }
+
+        // COMMUNITY_MODERATOR gets community moderation permissions + menu + user permissions
+        List<Permission> communityModPermissions = List.of(
+            pCommunityMod, pMenuCommunityMod, pReportRead, pReportWrite,
+            pProfileView, pUserStatsView, pBookmarkView, pHistQuizView, pHistDocView
+        );
+        for (Permission perm : communityModPermissions) {
+            seedRolePermission(communityModeratorRole, perm);
         }
 
         // USER gets user-level permissions
@@ -258,12 +325,19 @@ public class DatabaseSeeder implements CommandLineRunner {
         Menu mUserReports = seedMenu("User Reports", "/admin/reports", null, 7);
         seedMenuPermission(mUserReports, pMenuReports);
 
-        Menu mSettings = seedMenu("Settings", "/admin/config", null, 8);
+        Menu mCommunityMod = seedMenu("Quản lý cộng đồng", "/community-moderator/dashboard", null, 8);
+        seedMenuPermission(mCommunityMod, pMenuCommunityMod);
+
+        Menu mSettings = seedMenu("Settings", "/admin/config", null, 9);
         seedMenuPermission(mSettings, pMenuSettings);
 
-        // User / Community Saved Posts Menu
-        Menu mSavedPosts = seedMenu("Bài viết đã lưu", "/community/saved", null, 9);
-        seedMenuPermission(mSavedPosts, pBookmarkView);
+        // Cleanup any non-admin or duplicate saved posts menus from tbl_menus
+        try {
+            jdbcTemplate.execute("DELETE FROM tbl_menu_permissions WHERE menu_id IN (SELECT id FROM tbl_menus WHERE route = '/community/saved' OR name IN ('Saved Posts', 'Bài viết đã lưu'));");
+            jdbcTemplate.execute("DELETE FROM tbl_menus WHERE route = '/community/saved' OR name IN ('Saved Posts', 'Bài viết đã lưu');");
+        } catch (Exception e) {
+            System.err.println("[DatabaseSeeder] Menu cleanup: " + e.getMessage());
+        }
 
         System.out.println("[DatabaseSeeder] Database seeding completed successfully.");
     }

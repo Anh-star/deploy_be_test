@@ -52,4 +52,21 @@ public interface CommunityPostService {
     void hardDeletePostPhysics(UUID postId);
 
     void hardDeleteCommentPhysics(UUID commentId);
+
+    // Report & Moderation
+    void reportPost(UUID postId, UUID reporterId, String reasonCode, String detail);
+
+    org.springframework.data.domain.Page<com.cmcu.itstudy.dto.community.PostReportResponseDto> getReportedPosts(String status, int page, int size);
+
+    void resolveReport(UUID reportId, UUID resolverId);
+
+    void dismissReport(UUID reportId, UUID resolverId);
+
+    void hidePost(UUID postId, UUID moderatorId);
+
+    void unhidePost(UUID postId, UUID moderatorId);
+
+    boolean toggleMutePostNotifications(UUID postId, UUID userId);
+
+    void moderatorDeletePost(UUID postId, UUID moderatorId);
 }
