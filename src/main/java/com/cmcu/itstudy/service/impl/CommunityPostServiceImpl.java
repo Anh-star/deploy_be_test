@@ -280,6 +280,14 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         post.setDeleted(true);
         post.setDeletedAt(LocalDateTime.now());
         postRepository.save(post);
+
+        List<CommunityPostReport> reports = reportRepository.findByPostId(postId);
+        if (reports != null && !reports.isEmpty()) {
+            for (CommunityPostReport r : reports) {
+                r.setStatus("RESOLVED");
+            }
+            reportRepository.saveAll(reports);
+        }
     }
 
     @Override
@@ -860,22 +868,24 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         PageRequest pageRequest = PageRequest.of(page, size);
         Page<CommunityPostReport> reports;
         if (status != null && !status.isBlank()) {
-            reports = reportRepository.findAllByStatusOrderByCreatedAtDesc(status.toUpperCase(), pageRequest);
+            reports = reportRepository.findByStatusAndPostDeletedFalse(status.toUpperCase(), pageRequest);
         } else {
-            reports = reportRepository.findAllByOrderByCreatedAtDesc(pageRequest);
+            reports = reportRepository.findByPostDeletedFalse(pageRequest);
         }
 
         return reports.map(r -> {
             CommunityPost p = r.getPost();
+            if (p == null || Boolean.TRUE.equals(p.getDeleted())) return null;
+
             User reporter = r.getReporter();
-            User author = p != null ? p.getAuthor() : null;
-            long count = p != null ? reportRepository.countByPostId(p.getId()) : 0L;
+            User author = p.getAuthor();
+            long count = reportRepository.countByPostId(p.getId());
 
             return PostReportResponseDto.builder()
                     .id(r.getId().toString())
-                    .postId(p != null ? p.getId().toString() : null)
-                    .postTitle(p != null ? p.getTitle() : null)
-                    .postContent(p != null ? p.getContent() : null)
+                    .postId(p.getId().toString())
+                    .postTitle(p.getTitle())
+                    .postContent(p.getContent())
                     .postAuthorId(author != null ? author.getId().toString() : null)
                     .postAuthorName(author != null ? author.getFullName() : "Không xác định")
                     .postAuthorAvatar(author != null ? author.getAvatarUrl() : null)
@@ -886,7 +896,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .detail(r.getDetail())
                     .status(r.getStatus())
                     .reportCount(count)
-                    .isPostHidden(p != null && Boolean.TRUE.equals(p.getHidden()))
+                    .isPostHidden(Boolean.TRUE.equals(p.getHidden()))
                     .createdAt(r.getCreatedAt())
                     .build();
         });
@@ -979,6 +989,14 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         post.setDeleted(true);
         post.setDeletedAt(LocalDateTime.now());
         postRepository.save(post);
+
+        List<CommunityPostReport> reports = reportRepository.findByPostId(postId);
+        if (reports != null && !reports.isEmpty()) {
+            for (CommunityPostReport r : reports) {
+                r.setStatus("RESOLVED");
+            }
+            reportRepository.saveAll(reports);
+        }
 
         notificationService.createAndPush(
                 post.getAuthor().getId(),
