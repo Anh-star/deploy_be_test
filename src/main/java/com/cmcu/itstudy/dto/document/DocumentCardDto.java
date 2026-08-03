@@ -39,4 +39,26 @@ public class DocumentCardDto {
     private String documentUrl;
     /** Primary file storage path (Supabase object key) when a DocumentFile row exists. */
     private String storagePath;
+
+/**
+ * Whether the document is monetised. Sourced directly from
+ * {@code Document#isPaid} via the list mapping. Pricing-lock flag and
+ * successful purchase count are intentionally omitted in this sub-phase
+ * to avoid N+1 queries against {@code PaymentRepository}.
+ */
+private Boolean isPaid;
+
+/**
+ * Integer VND price the buyer pays. {@code 0L} for free documents.
+ * Sourced directly from {@code Document#price}.
+ */
+private Long price;
+
+/**
+ * True iff at least one non-owner buyer has successfully paid for this
+ * document. Sourced from a single bulk query against
+ * {@code PaymentRepository#findDistinctDocumentIdsWithSuccessfulBuyer}
+ * for the whole page, then per-card membership check.
+ */
+private Boolean pricingLocked;
 }

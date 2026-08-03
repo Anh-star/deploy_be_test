@@ -23,8 +23,15 @@ public class DocumentUpdateRequestDto {
 
     /**
      * Minimum price for a paid document, in VND. Integer Long; no decimals.
+     *
+     * <p>Used by the service-side update guard. This DTO does NOT enforce the
+     * floor at the validator level (see {@link #isPriceValid()}) because legacy
+     * documents priced below 3,000 VND under the previous 2,222 VND minimum
+     * must still round-trip their existing price through a metadata-only PUT.
+     * The pricing-changed-vs-minimum rule lives in
+     * {@code DocumentServiceImpl#updateDocument}.
      */
-    public static final long MIN_PAID_DOCUMENT_PRICE = 2000L;
+    public static final long MIN_PAID_DOCUMENT_PRICE = 3000L;
 
     @NotBlank(message = "Title cannot be empty")
     @Size(min = 15, max = 255, message = "Title must be between 15 and 255 characters")
@@ -62,25 +69,36 @@ public class DocumentUpdateRequestDto {
     private Boolean isPaid;
 
     /**
-     * Integer VND price. Nullable only for free documents; paid documents must provide
-     * a value meeting {@link #MIN_PAID_DOCUMENT_PRICE}. The full-replacement update
-     * also accepts a positive value: when {@code isPaid=false} the service normalizes
-     * the stored price to 0.
+     * Integer VND price. Nullable only for free documents; paid documents must
+     * provide a strictly positive value. The structural validator
+     * {@link #isPriceValid()} does NOT enforce the create-side
+     * {@link #MIN_PAID_DOCUMENT_PRICE} floor — legacy prices below 3,000 VND
+     * must keep round-tripping on a metadata-only PUT, and the service-side
+     * guard in {@code DocumentServiceImpl#updateDocument} decides whether a
+     * request actually changes pricing and therefore must meet the minimum.
      */
     private Long price;
 
     /**
-     * Cross-field invariant (mirrors {@code DocumentCreateRequestDto#isPriceValid}).
-     * The update path is a full replacement, so the same rule as create applies.
+     * Cross-field structural invariant only:
+     * <ul>
+     *   <li>Free document ({@code isPaid == false}): {@code price} must be null or 0.</li>
+     *   <li>Paid document ({@code isPaid == true}): {@code price} must be a positive Long.</li>
+     * </ul>
+     * The 3,000 VND floor is checked by the service layer once the request is
+     * compared against the existing document's pricing.
      */
-    @AssertTrue(message = "isPaid/price combination is invalid: free document requires price null or 0; paid document requires price >= 2,000 VND")
+    @AssertTrue(message = "Dữ liệu hình thức và giá bán tài liệu không hợp lệ.")
     public boolean isPriceValid() {
         if (isPaid == null) {
             return false;
         }
         if (Boolean.FALSE.equals(isPaid)) {
+            // Free document: price must be null or zero (no negative, no stray amount).
             return price == null || price == 0L;
         }
-        return price != null && price >= MIN_PAID_DOCUMENT_PRICE;
+        // Paid document: price must be a strictly positive Long. The minimum is
+        // checked in the service after we know whether the request changes pricing.
+        return price != null && price > 0L;
     }
 }
