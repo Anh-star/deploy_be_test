@@ -31,6 +31,10 @@ build/
 
 ### VS Code ###
 .vscode/
-# src/main/resources/application.properties
+# Scripts & Database Seeder
+src/main/java/com/cmcu/itstudy/config/DatabaseSeeder.java
+*.ps1
+*.sh
+*.bat
 run-local.ps1
 run-server.ps1
