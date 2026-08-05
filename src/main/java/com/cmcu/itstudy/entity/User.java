@@ -41,13 +41,13 @@ public class User {
     @Column(name = "password", nullable = false, length = 255)
     private String password;
 
-    @Column(name = "full_name", length = 255)
+    @Column(name = "full_name", length = 255, columnDefinition = "nvarchar(255)")
     private String fullName;
 
     @Column(name = "phone", length = 32)
     private String phone;
 
-    @Column(name = "bio", length = 2000)
+    @Column(name = "bio", length = 2000, columnDefinition = "nvarchar(2000)")
     private String bio;
 
     @Column(name = "avatar", length = 2048)

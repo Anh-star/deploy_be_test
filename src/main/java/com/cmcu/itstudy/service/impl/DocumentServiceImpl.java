@@ -40,19 +40,22 @@ public class DocumentServiceImpl implements DocumentService {
     private final TagRepository tagRepository;
     private final DocumentFileRepository documentFileRepository;
     private final PaymentRepository paymentRepository;
+    private final DocumentReportRepository documentReportRepository;
 
     public DocumentServiceImpl(DocumentRepository documentRepository,
                                DocumentTagRepository documentTagRepository,
                                CategoryRepository categoryRepository,
                                TagRepository tagRepository,
                                DocumentFileRepository documentFileRepository,
-                               PaymentRepository paymentRepository) {
+                               PaymentRepository paymentRepository,
+                               DocumentReportRepository documentReportRepository) {
         this.documentRepository = documentRepository;
         this.documentTagRepository = documentTagRepository;
         this.categoryRepository = categoryRepository;
         this.tagRepository = tagRepository;
         this.documentFileRepository = documentFileRepository;
         this.paymentRepository = paymentRepository;
+        this.documentReportRepository = documentReportRepository;
     }
 
     @Transactional(readOnly = true)
@@ -611,4 +614,88 @@ public class DocumentServiceImpl implements DocumentService {
         }
     }
 
+    @Transactional
+    @Override
+    public void reportDocument(UUID documentId, User reporter, com.cmcu.itstudy.dto.document.DocumentReportRequestDto requestDto) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new NoSuchElementException("Tài liệu không tồn tại"));
+
+        if (documentReportRepository.existsByDocumentIdAndReporterId(documentId, reporter.getId())) {
+            throw new IllegalArgumentException("Bạn đã báo cáo tài liệu này rồi");
+        }
+
+        DocumentReport report = DocumentReport.builder()
+                .document(document)
+                .reporter(reporter)
+                .reasonCode(requestDto.getReasonCode())
+                .detail(requestDto.getDetail() != null ? requestDto.getDetail().trim() : "")
+                .status("PENDING")
+                .build();
+
+        documentReportRepository.save(report);
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public org.springframework.data.domain.Page<com.cmcu.itstudy.dto.document.DocumentReportResponseDto> getReportedDocuments(String status, int page, int size) {
+        PageRequest pageRequest = PageRequest.of(page, size);
+        Slice<DocumentReport> reportsSlice;
+        org.springframework.data.domain.Page<DocumentReport> reports;
+
+        if (StringUtils.hasText(status)) {
+            reports = documentReportRepository.findByStatusAndDocumentDeletedFalse(status.toUpperCase(), pageRequest);
+        } else {
+            reports = documentReportRepository.findByDocumentDeletedFalse(pageRequest);
+        }
+
+        return reports.map(r -> {
+            Document doc = r.getDocument();
+            User reporter = r.getReporter();
+            User author = doc != null ? doc.getCreatedBy() : null;
+            long count = doc != null ? documentReportRepository.countByDocumentId(doc.getId()) : 0L;
+
+            return com.cmcu.itstudy.dto.document.DocumentReportResponseDto.builder()
+                    .id(r.getId() != null ? r.getId().toString() : null)
+                    .documentId(doc != null ? doc.getId().toString() : null)
+                    .documentTitle(doc != null ? doc.getTitle() : "Tài liệu không tồn tại")
+                    .documentAuthorId(author != null ? author.getId().toString() : null)
+                    .documentAuthorName(author != null ? author.getFullName() : "Không xác định")
+                    .documentAuthorAvatar(author != null ? author.getAvatarUrl() : null)
+                    .reporterId(reporter != null ? reporter.getId().toString() : null)
+                    .reporterName(reporter != null ? reporter.getFullName() : "Không xác định")
+                    .reporterAvatar(reporter != null ? reporter.getAvatarUrl() : null)
+                    .reasonCode(r.getReasonCode())
+                    .detail(r.getDetail())
+                    .status(r.getStatus())
+                    .reportCount(count)
+                    .documentStatus(doc != null && doc.getStatus() != null ? doc.getStatus().name() : null)
+                    .createdAt(r.getCreatedAt())
+                    .resolvedAt(r.getResolvedAt())
+                    .build();
+        });
+    }
+
+    @Transactional
+    @Override
+    public void resolveReport(UUID reportId, User resolver) {
+        DocumentReport report = documentReportRepository.findById(reportId)
+                .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+        report.setStatus("RESOLVED");
+        report.setResolvedAt(LocalDateTime.now());
+        report.setResolvedBy(resolver);
+        documentReportRepository.save(report);
+    }
+
+    @Transactional
+    @Override
+    public void dismissReport(UUID reportId, User resolver) {
+        DocumentReport report = documentReportRepository.findById(reportId)
+                .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+        report.setStatus("DISMISSED");
+        report.setResolvedAt(LocalDateTime.now());
+        report.setResolvedBy(resolver);
+        documentReportRepository.save(report);
+    }
+
 }
+

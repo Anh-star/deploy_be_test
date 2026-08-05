@@ -40,7 +40,7 @@ public class Menu {
     @Column(name = "id", columnDefinition = "uniqueidentifier")
     private UUID id;
 
-    @Column(name = "name", nullable = false, length = 150)
+    @Column(name = "name", nullable = false, length = 150, columnDefinition = "nvarchar(150)")
     private String name;
 
     @Column(name = "route", length = 255)

@@ -20,7 +20,10 @@ public class CommentResponse {
     private String authorName;
     private String authorAvatar;
     private Integer likeCount;
+    private Integer upvoteCount;
+    private Integer downvoteCount;
     private Boolean isLiked;
+    private String userVote;
     private Integer replyCount;
     private String replyToUserName;
     private LocalDateTime createdAt;

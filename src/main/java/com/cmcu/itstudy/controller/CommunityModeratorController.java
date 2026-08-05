@@ -20,7 +20,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/community/moderation")
-@PreAuthorize("hasRole('COMMUNITY_MODERATOR') or hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('COMMUNITY_MODERATOR', 'ADMIN')")
 public class CommunityModeratorController {
 
     private final CommunityPostService communityPostService;
@@ -29,14 +29,18 @@ public class CommunityModeratorController {
         this.communityPostService = communityPostService;
     }
 
+    private UUID getUserId(UserDetailsImpl currentUser) {
+        return (currentUser != null && currentUser.getUser() != null) ? currentUser.getUser().getId() : null;
+    }
+
     @GetMapping("/reports")
     public ResponseEntity<ApiResponse<Page<PostReportResponseDto>>> getReportedPosts(
-            @RequestParam(required = false) String status,
+            @RequestParam(required = false, defaultValue = "PENDING") String status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
-        Page<PostReportResponseDto> reports = communityPostService.getReportedPosts(status, page, size);
-        return ResponseEntity.ok(ApiResponse.success(reports, "Lấy danh sách báo cáo bài viết thành công"));
+        Page<PostReportResponseDto> data = communityPostService.getReportedPosts(status, page, size);
+        return ResponseEntity.ok(ApiResponse.success(data, "Lấy danh sách báo cáo thành công"));
     }
 
     @PutMapping("/reports/{reportId}/resolve")
@@ -44,25 +48,37 @@ public class CommunityModeratorController {
             @PathVariable UUID reportId,
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
-        communityPostService.resolveReport(reportId, currentUser.getUser().getId());
-        return ResponseEntity.ok(ApiResponse.success(null, "Đã đánh dấu xử lý báo cáo"));
+        communityPostService.resolveReport(reportId, getUserId(currentUser));
+        return ResponseEntity.ok(ApiResponse.success(null, "Đã xử lý báo cáo"));
     }
 
     @PutMapping("/reports/{reportId}/dismiss")
     public ResponseEntity<ApiResponse<Void>> dismissReport(
             @PathVariable UUID reportId,
+            @RequestParam(required = false) String reason,
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
-        communityPostService.dismissReport(reportId, currentUser.getUser().getId());
+        communityPostService.dismissReport(reportId, getUserId(currentUser), reason);
         return ResponseEntity.ok(ApiResponse.success(null, "Đã bỏ qua báo cáo"));
+    }
+
+    @PutMapping("/posts/{postId}/dismiss-reports")
+    public ResponseEntity<ApiResponse<Void>> dismissReportByPostId(
+            @PathVariable UUID postId,
+            @RequestParam(required = false) String reason,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        communityPostService.dismissReportByPostId(postId, getUserId(currentUser), reason);
+        return ResponseEntity.ok(ApiResponse.success(null, "Đã bỏ qua các báo cáo của bài viết"));
     }
 
     @PutMapping("/posts/{postId}/hide")
     public ResponseEntity<ApiResponse<Void>> hidePost(
             @PathVariable UUID postId,
+            @RequestParam(required = false) String reason,
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
-        communityPostService.hidePost(postId, currentUser.getUser().getId());
+        communityPostService.hidePost(postId, getUserId(currentUser), reason);
         return ResponseEntity.ok(ApiResponse.success(null, "Đã ẩn bài viết"));
     }
 
@@ -71,16 +87,17 @@ public class CommunityModeratorController {
             @PathVariable UUID postId,
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
-        communityPostService.unhidePost(postId, currentUser.getUser().getId());
+        communityPostService.unhidePost(postId, getUserId(currentUser));
         return ResponseEntity.ok(ApiResponse.success(null, "Đã hiện lại bài viết"));
     }
 
     @DeleteMapping("/posts/{postId}")
     public ResponseEntity<ApiResponse<Void>> moderatorDeletePost(
             @PathVariable UUID postId,
+            @RequestParam(required = false) String reason,
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
-        communityPostService.moderatorDeletePost(postId, currentUser.getUser().getId());
+        communityPostService.moderatorDeletePost(postId, getUserId(currentUser), reason);
         return ResponseEntity.ok(ApiResponse.success(null, "Đã xóa bài viết"));
     }
 }

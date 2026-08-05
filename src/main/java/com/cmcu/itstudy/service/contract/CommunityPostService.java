@@ -47,6 +47,8 @@ public interface CommunityPostService {
 
     PostCommentResponseDto toggleLikeComment(UUID commentId, UUID userId);
 
+    PostCommentResponseDto voteComment(UUID commentId, UUID userId, String voteType);
+
     CommunityPostResponseDto updatePost(UUID postId, UUID userId, String content, List<String> imageUrls);
 
     void hardDeletePostPhysics(UUID postId);
@@ -60,13 +62,15 @@ public interface CommunityPostService {
 
     void resolveReport(UUID reportId, UUID resolverId);
 
-    void dismissReport(UUID reportId, UUID resolverId);
+    void dismissReport(UUID reportId, UUID resolverId, String reason);
 
-    void hidePost(UUID postId, UUID moderatorId);
+    void dismissReportByPostId(UUID postId, UUID resolverId, String reason);
+
+    void hidePost(UUID postId, UUID moderatorId, String reason);
 
     void unhidePost(UUID postId, UUID moderatorId);
 
     boolean toggleMutePostNotifications(UUID postId, UUID userId);
 
-    void moderatorDeletePost(UUID postId, UUID moderatorId);
+    void moderatorDeletePost(UUID postId, UUID moderatorId, String reason);
 }

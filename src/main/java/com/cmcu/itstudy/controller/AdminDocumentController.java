@@ -20,6 +20,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.cmcu.itstudy.dto.document.DocumentReportResponseDto;
+import com.cmcu.itstudy.service.contract.DocumentService;
+import org.springframework.data.domain.Page;
+
 import java.util.UUID;
 
 @RestController
@@ -27,9 +31,11 @@ import java.util.UUID;
 public class AdminDocumentController {
 
     private final AdminDocumentService adminDocumentService;
+    private final DocumentService documentService;
 
-    public AdminDocumentController(AdminDocumentService adminDocumentService) {
+    public AdminDocumentController(AdminDocumentService adminDocumentService, DocumentService documentService) {
         this.adminDocumentService = adminDocumentService;
+        this.documentService = documentService;
     }
 
     @GetMapping("/pending")
@@ -60,6 +66,45 @@ public class AdminDocumentController {
         adminDocumentService.updateDocumentStatus(id, request, moderator);
         return ResponseEntity.ok(ApiResponse.success(
                 MessageResponseDto.builder().message("Document status updated").build(),
+                "OK"
+        ));
+    }
+
+    @GetMapping("/reports")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
+    public ResponseEntity<ApiResponse<Page<DocumentReportResponseDto>>> getReportedDocuments(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        Page<DocumentReportResponseDto> data = documentService.getReportedDocuments(status, page, size);
+        return ResponseEntity.ok(ApiResponse.success(data, "Reported documents"));
+    }
+
+    @PatchMapping("/reports/{reportId}/resolve")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
+    public ResponseEntity<ApiResponse<MessageResponseDto>> resolveReport(
+            @PathVariable("reportId") UUID reportId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        User resolver = currentUser.getUser();
+        documentService.resolveReport(reportId, resolver);
+        return ResponseEntity.ok(ApiResponse.success(
+                MessageResponseDto.builder().message("Đã xử lý báo cáo thành công").build(),
+                "OK"
+        ));
+    }
+
+    @PatchMapping("/reports/{reportId}/dismiss")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
+    public ResponseEntity<ApiResponse<MessageResponseDto>> dismissReport(
+            @PathVariable("reportId") UUID reportId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        User resolver = currentUser.getUser();
+        documentService.dismissReport(reportId, resolver);
+        return ResponseEntity.ok(ApiResponse.success(
+                MessageResponseDto.builder().message("Đã bỏ qua báo cáo").build(),
                 "OK"
         ));
     }

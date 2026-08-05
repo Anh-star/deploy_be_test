@@ -7,14 +7,17 @@ import com.cmcu.itstudy.enums.NotificationType;
 import com.cmcu.itstudy.repository.NotificationRepository;
 import com.cmcu.itstudy.repository.UserRepository;
 import com.cmcu.itstudy.service.contract.NotificationService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Objects;
 import java.util.UUID;
 
+@Slf4j
 @Service
 public class NotificationServiceImpl implements NotificationService {
 
@@ -33,7 +36,7 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void createAndPush(
             UUID recipientId,
             UUID actorId,
@@ -42,33 +45,52 @@ public class NotificationServiceImpl implements NotificationService {
             String referenceType,
             String message
     ) {
-        // Do not notify self
+        // Do not notify self (except for moderation status notifications)
         if (actorId != null && Objects.equals(recipientId, actorId)) {
-            return;
+            if (type != NotificationType.REPORT_DISMISSED &&
+                type != NotificationType.POST_HIDDEN &&
+                type != NotificationType.POST_DELETED) {
+                return;
+            }
         }
 
-        User recipient = userRepository.findById(recipientId).orElse(null);
-        if (recipient == null) {
-            return;
+        try {
+            User recipient = userRepository.findById(recipientId).orElse(null);
+            if (recipient == null) {
+                return;
+            }
+
+            User actor = actorId != null ? userRepository.findById(actorId).orElse(null) : null;
+
+            String safeMessage = message;
+            if (safeMessage != null && safeMessage.length() > 450) {
+                safeMessage = safeMessage.substring(0, 447) + "...";
+            }
+
+            Notification notification = Notification.builder()
+                    .recipient(recipient)
+                    .actor(actor)
+                    .type(type)
+                    .referenceId(referenceId)
+                    .referenceType(referenceType)
+                    .message(safeMessage)
+                    .read(false)
+                    .build();
+
+            Notification saved = notificationRepository.save(notification);
+            log.info("[NOTIFICATION] Saved notification ID: {} for recipientId: {}, type: {}", saved.getId(), recipientId, type);
+            NotificationResponseDto dto = mapToDto(saved);
+
+            // Real-time push via SSE
+            try {
+                sseService.pushEvent(recipientId, "notification", dto);
+                log.info("[NOTIFICATION] Pushed SSE event to recipientId: {}", recipientId);
+            } catch (Exception e) {
+                log.warn("Failed to push SSE notification to user {}: {}", recipientId, e.getMessage());
+            }
+        } catch (Exception e) {
+            log.error("Failed to create and push notification: {}", e.getMessage(), e);
         }
-
-        User actor = actorId != null ? userRepository.findById(actorId).orElse(null) : null;
-
-        Notification notification = Notification.builder()
-                .recipient(recipient)
-                .actor(actor)
-                .type(type)
-                .referenceId(referenceId)
-                .referenceType(referenceType)
-                .message(message)
-                .read(false)
-                .build();
-
-        Notification saved = notificationRepository.save(notification);
-        NotificationResponseDto dto = mapToDto(saved);
-
-        // Real-time push via SSE
-        sseService.pushEvent(recipientId, "notification", dto);
     }
 
     @Override

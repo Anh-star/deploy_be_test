@@ -34,7 +34,7 @@ public class Author {
     @EqualsAndHashCode.Include
     private UUID id;
 
-    @Column(name = "name", nullable = false, length = 255)
+    @Column(name = "name", nullable = false, length = 255, columnDefinition = "nvarchar(255)")
     private String name;
 
     @Column(name = "slug", length = 255, unique = true)

@@ -40,7 +40,7 @@ public class Quiz {
     @EqualsAndHashCode.Include
     private UUID id;
 
-    @Column(name = "title", nullable = false, length = 255)
+    @Column(name = "title", nullable = false, length = 255, columnDefinition = "nvarchar(255)")
     private String title;
 
     @Column(name = "description", columnDefinition = "NVARCHAR(MAX)")

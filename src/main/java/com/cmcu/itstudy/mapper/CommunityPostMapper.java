@@ -39,7 +39,7 @@ public final class CommunityPostMapper {
             CommunityPoll poll,
             List<CommunityPollVote> userPollVotes
     ) {
-        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, false, 0L, false);
+        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, false, false, 0L, false);
     }
 
     public static CommunityPostResponseDto toPostResponse(
@@ -52,7 +52,7 @@ public final class CommunityPostMapper {
             List<CommunityPollVote> userPollVotes,
             Boolean isMuted
     ) {
-        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, false, 0L, isMuted);
+        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, false, false, 0L, isMuted);
     }
 
     public static CommunityPostResponseDto toPostResponse(
@@ -66,7 +66,7 @@ public final class CommunityPostMapper {
             Boolean isReported,
             Long reportCount
     ) {
-        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, isReported, reportCount, false);
+        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, isReported, false, reportCount, false);
     }
 
     public static CommunityPostResponseDto toPostResponse(
@@ -78,6 +78,7 @@ public final class CommunityPostMapper {
             CommunityPoll poll,
             List<CommunityPollVote> userPollVotes,
             Boolean isReported,
+            Boolean isReportDismissed,
             Long reportCount,
             Boolean isMuted
     ) {
@@ -131,6 +132,7 @@ public final class CommunityPostMapper {
                 .allowComments(post.getAllowComments() != null ? post.getAllowComments() : true)
                 .isHidden(post.getHidden() != null ? post.getHidden() : false)
                 .isReported(isReported != null ? isReported : false)
+                .isReportDismissed(isReportDismissed != null ? isReportDismissed : false)
                 .isMuted(isMuted != null ? isMuted : false)
                 .reportCount(reportCount != null ? reportCount : 0L)
                 .createdAt(post.getCreatedAt())
@@ -187,6 +189,15 @@ public final class CommunityPostMapper {
             Integer replyCount,
             Boolean isLiked
     ) {
+        return toCommentResponse(comment, replyCount, isLiked, isLiked != null && isLiked ? "UPVOTE" : null);
+    }
+
+    public static PostCommentResponseDto toCommentResponse(
+            CommunityPostComment comment,
+            Integer replyCount,
+            Boolean isLiked,
+            String userVote
+    ) {
         if (comment == null) return null;
 
         String authorName = comment.getAuthor() != null ? comment.getAuthor().getFullName() : null;
@@ -195,6 +206,10 @@ public final class CommunityPostMapper {
         String replyToUserName = comment.getReplyToUser() != null ? comment.getReplyToUser().getFullName() : null;
         String parentCommentId = comment.getParent() != null ? uuidToString(comment.getParent().getId()) : null;
 
+        int upvotes = comment.getUpvoteCount() != null ? comment.getUpvoteCount() : (comment.getLikeCount() != null ? comment.getLikeCount() : 0);
+        int downvotes = comment.getDownvoteCount() != null ? comment.getDownvoteCount() : 0;
+        int netScore = upvotes - downvotes;
+
         return PostCommentResponseDto.builder()
                 .id(uuidToString(comment.getId()))
                 .parentCommentId(parentCommentId)
@@ -202,10 +217,13 @@ public final class CommunityPostMapper {
                 .authorName(authorName)
                 .authorAvatar(authorAvatar)
                 .body(comment.getBody())
-                .likeCount(comment.getLikeCount())
+                .likeCount(netScore)
+                .upvoteCount(upvotes)
+                .downvoteCount(downvotes)
                 .replyCount(replyCount)
                 .replyToUserName(replyToUserName)
-                .isLiked(isLiked)
+                .isLiked("UPVOTE".equalsIgnoreCase(userVote))
+                .userVote(userVote)
                 .createdAt(comment.getCreatedAt())
                 .build();
     }

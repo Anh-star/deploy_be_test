@@ -18,4 +18,6 @@ public interface DocumentCommentService {
     CommentResponse replyComment(UUID parentCommentId, String body, UUID userId);
 
     CommentLikeToggleResponseDto toggleLike(UUID commentId, UUID userId);
+
+    CommentLikeToggleResponseDto voteComment(UUID commentId, UUID userId, String voteType);
 }

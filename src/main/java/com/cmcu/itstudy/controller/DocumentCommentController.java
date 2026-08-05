@@ -87,7 +87,19 @@ public class DocumentCommentController {
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
         UUID userId = currentUser.getUser().getId();
-        CommentLikeToggleResponseDto data = documentCommentService.toggleLike(commentId, userId);
+        CommentLikeToggleResponseDto data = documentCommentService.voteComment(commentId, userId, "UPVOTE");
         return ResponseEntity.ok(ApiResponse.success(data, "Like updated"));
+    }
+
+    @PostMapping("/comments/{id}/vote")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<CommentLikeToggleResponseDto>> voteComment(
+            @PathVariable("id") UUID commentId,
+            @RequestParam(name = "type", defaultValue = "UPVOTE") String voteType,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        CommentLikeToggleResponseDto data = documentCommentService.voteComment(commentId, userId, voteType);
+        return ResponseEntity.ok(ApiResponse.success(data, "Comment vote updated"));
     }
 }

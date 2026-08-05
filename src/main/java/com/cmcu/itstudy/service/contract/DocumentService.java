@@ -25,4 +25,13 @@ public interface DocumentService {
     List<DocumentCardDto> getMyDocuments(User currentUser);
 
     MyDocumentDetailDto getMyDocumentDetail(UUID documentId, User currentUser);
+
+    void reportDocument(UUID documentId, User reporter, com.cmcu.itstudy.dto.document.DocumentReportRequestDto requestDto);
+
+    org.springframework.data.domain.Page<com.cmcu.itstudy.dto.document.DocumentReportResponseDto> getReportedDocuments(String status, int page, int size);
+
+    void resolveReport(UUID reportId, User resolver);
+
+    void dismissReport(UUID reportId, User resolver);
 }
+

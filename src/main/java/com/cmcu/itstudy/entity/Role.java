@@ -36,7 +36,7 @@ public class Role {
     @Column(name = "id", columnDefinition = "uniqueidentifier")
     private UUID id;
 
-    @Column(name = "name", nullable = false, length = 100, unique = true)
+    @Column(name = "name", nullable = false, length = 100, unique = true, columnDefinition = "nvarchar(100)")
     private String name;
 
     @Column(name = "description", columnDefinition = "nvarchar(500)")

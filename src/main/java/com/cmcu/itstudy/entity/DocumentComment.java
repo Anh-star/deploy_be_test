@@ -85,10 +85,20 @@ public class DocumentComment {
     private String body;
 
     @Column(name = "is_pinned", nullable = false)
-    private Boolean pinned;
+    @Builder.Default
+    private Boolean pinned = Boolean.FALSE;
 
     @Column(name = "like_count", nullable = false)
-    private Integer likeCount;
+    @Builder.Default
+    private Integer likeCount = 0;
+
+    @Column(name = "upvote_count")
+    @Builder.Default
+    private Integer upvoteCount = 0;
+
+    @Column(name = "downvote_count")
+    @Builder.Default
+    private Integer downvoteCount = 0;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
@@ -97,7 +107,8 @@ public class DocumentComment {
     private LocalDateTime updatedAt;
 
     @Column(name = "is_deleted", nullable = false)
-    private Boolean deleted;
+    @Builder.Default
+    private Boolean deleted = Boolean.FALSE;
 
     @OneToMany(mappedBy = "comment", fetch = FetchType.LAZY)
     @ToString.Exclude
@@ -115,6 +126,12 @@ public class DocumentComment {
         }
         if (this.likeCount == null) {
             this.likeCount = 0;
+        }
+        if (this.upvoteCount == null) {
+            this.upvoteCount = 0;
+        }
+        if (this.downvoteCount == null) {
+            this.downvoteCount = 0;
         }
         if (this.deleted == null) {
             this.deleted = Boolean.FALSE;

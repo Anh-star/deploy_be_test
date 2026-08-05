@@ -14,6 +14,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.cmcu.itstudy.dto.common.MessageResponseDto;
+import com.cmcu.itstudy.dto.document.DocumentReportRequestDto;
+import com.cmcu.itstudy.entity.User;
+import com.cmcu.itstudy.service.contract.DocumentService;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+
 import java.util.UUID;
 
 @RestController
@@ -21,9 +29,11 @@ import java.util.UUID;
 public class DocumentController {
 
     private final DocumentQueryService documentQueryService;
+    private final DocumentService documentService;
 
-    public DocumentController(DocumentQueryService documentQueryService) {
+    public DocumentController(DocumentQueryService documentQueryService, DocumentService documentService) {
         this.documentQueryService = documentQueryService;
+        this.documentService = documentService;
     }
 
     @GetMapping("/documents/{id}")
@@ -65,5 +75,22 @@ public ResponseEntity<ApiResponse<DocumentDetailResponseDto>> getDocumentDetail(
     ) {
         QuizListPageResponseDto data = documentQueryService.getQuizzesByDocument(documentId, page, size);
         return ResponseEntity.ok(ApiResponse.success(data, "Document quizzes"));
+    }
+
+    @PostMapping("/documents/{id}/report")
+    public ResponseEntity<ApiResponse<MessageResponseDto>> reportDocument(
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody DocumentReportRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        if (currentUser == null) {
+            return ResponseEntity.status(401).body(ApiResponse.failure("Bạn chưa đăng nhập"));
+        }
+        User reporter = currentUser.getUser();
+        documentService.reportDocument(id, reporter, request);
+        return ResponseEntity.ok(ApiResponse.success(
+                MessageResponseDto.builder().message("Gửi báo cáo tài liệu thành công").build(),
+                "OK"
+        ));
     }
 }

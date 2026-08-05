@@ -84,10 +84,20 @@ public class CommunityPostComment {
     private String body;
 
     @Column(name = "like_count", nullable = false)
-    private Integer likeCount;
+    @Builder.Default
+    private Integer likeCount = 0;
+
+    @Column(name = "upvote_count")
+    @Builder.Default
+    private Integer upvoteCount = 0;
+
+    @Column(name = "downvote_count")
+    @Builder.Default
+    private Integer downvoteCount = 0;
 
     @Column(name = "is_deleted", nullable = false)
-    private Boolean deleted;
+    @Builder.Default
+    private Boolean deleted = Boolean.FALSE;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
@@ -110,6 +120,8 @@ public class CommunityPostComment {
         this.createdAt = now;
         this.updatedAt = now;
         if (this.likeCount == null) this.likeCount = 0;
+        if (this.upvoteCount == null) this.upvoteCount = 0;
+        if (this.downvoteCount == null) this.downvoteCount = 0;
         if (this.deleted == null) this.deleted = Boolean.FALSE;
     }
 

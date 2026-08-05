@@ -55,7 +55,7 @@ public class Document {
     @JsonIgnore
     private Category category;
 
-    @Column(name = "title", nullable = false, length = 255)
+    @Column(name = "title", nullable = false, length = 255, columnDefinition = "nvarchar(255)")
     private String title;
 
     @Column(name = "slug", nullable = false, length = 300, unique = true)
@@ -73,7 +73,7 @@ public class Document {
     @Column(name = "file_url", nullable = false, length = 500)
     private String fileUrl;
 
-    @Column(name = "file_name", length = 255)
+    @Column(name = "file_name", length = 255, columnDefinition = "nvarchar(255)")
     private String fileName;
 
     @Enumerated(EnumType.STRING)

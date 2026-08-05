@@ -26,6 +26,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -75,17 +76,25 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
                 ? Map.of()
                 : toReplyCountMap(documentCommentRepository.countDirectRepliesByParentIds(rootIds));
 
-        Set<UUID> likedIds = new HashSet<>();
+        Map<UUID, String> userVoteMap = new HashMap<>();
         if (currentUserId != null && !rootIds.isEmpty()) {
-            likedIds.addAll(documentCommentLikeRepository.findLikedCommentIds(rootIds, currentUserId));
+            List<DocumentCommentLike> likes = documentCommentLikeRepository.findAllByCommentIdInAndUserId(rootIds, currentUserId);
+            for (DocumentCommentLike l : likes) {
+                userVoteMap.put(l.getComment().getId(), l.getVoteType() != null ? l.getVoteType() : "UPVOTE");
+            }
         }
 
         List<CommentResponse> content = roots.stream()
-                .map(c -> CommentMapper.toCommentResponse(
-                        c,
-                        currentUserId != null && likedIds.contains(c.getId()),
-                        replyCounts.getOrDefault(c.getId(), 0)
-                ))
+                .map(c -> {
+                    String userVote = userVoteMap.get(c.getId());
+                    boolean isLiked = "UPVOTE".equalsIgnoreCase(userVote);
+                    return CommentMapper.toCommentResponse(
+                            c,
+                            isLiked,
+                            replyCounts.getOrDefault(c.getId(), 0),
+                            userVote
+                    );
+                })
                 .collect(Collectors.toList());
 
         long totalComment = documentCommentRepository.countByDocumentId(documentId);
@@ -116,77 +125,95 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
                 ? Map.of()
                 : toReplyCountMap(documentCommentRepository.countDirectRepliesByParentIds(replyIds));
 
-        Set<UUID> likedIds = new HashSet<>();
+        Map<UUID, String> userVoteMap = new HashMap<>();
         if (currentUserId != null && !replyIds.isEmpty()) {
-            likedIds.addAll(documentCommentLikeRepository.findLikedCommentIds(replyIds, currentUserId));
+            List<DocumentCommentLike> likes = documentCommentLikeRepository.findAllByCommentIdInAndUserId(replyIds, currentUserId);
+            for (DocumentCommentLike l : likes) {
+                userVoteMap.put(l.getComment().getId(), l.getVoteType() != null ? l.getVoteType() : "UPVOTE");
+            }
         }
 
         return replies.stream()
-                .map(c -> CommentMapper.toCommentResponse(
-                        c,
-                        currentUserId != null && likedIds.contains(c.getId()),
-                        replyCounts.getOrDefault(c.getId(), 0)
-                ))
+                .map(c -> {
+                    String userVote = userVoteMap.get(c.getId());
+                    boolean isLiked = "UPVOTE".equalsIgnoreCase(userVote);
+                    return CommentMapper.toCommentResponse(
+                            c,
+                            isLiked,
+                            replyCounts.getOrDefault(c.getId(), 0),
+                            userVote
+                    );
+                })
                 .collect(Collectors.toList());
     }
 
     @Override
     @Transactional
     public CommentResponse createComment(UUID documentId, String body, UUID userId) {
-        Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new NoSuchElementException("Document not found"));
-        if (Boolean.TRUE.equals(document.getDeleted())) {
-            throw new NoSuchElementException("Document not found");
-        }
+        User author = userRepository.findById(userId)
+                .orElseThrow(() -> new NoSuchElementException("User not found"));
 
-        User author = userRepository.getReferenceById(userId);
         DocumentComment saved = documentCommentRepository.save(DocumentComment.builder()
-                .document(document)
+                .document(Document.builder().id(documentId).build())
                 .author(author)
                 .body(body)
+                .likeCount(0)
+                .upvoteCount(0)
+                .downvoteCount(0)
+                .deleted(false)
+                .pinned(false)
                 .build());
 
         saved = documentCommentRepository.findByIdWithDocumentAndAuthor(saved.getId()).orElse(saved);
 
-        if (document.getCreatedBy() != null && !userId.equals(document.getCreatedBy().getId())) {
+        if (saved.getDocument() != null && saved.getDocument().getCreatedBy() != null) {
+            UUID ownerId = saved.getDocument().getCreatedBy().getId();
             User commenter = userRepository.findById(userId).orElse(null);
             String commenterName = (commenter != null && commenter.getFullName() != null) ? commenter.getFullName() : "Ai đó";
-            notificationService.createAndPush(
-                    document.getCreatedBy().getId(),
-                    userId,
-                    NotificationType.DOCUMENT_COMMENTED,
-                    document.getId().toString(),
-                    "DOCUMENT",
-                    commenterName + " đã bình luận về tài liệu của bạn"
-            );
+            if (!ownerId.equals(userId)) {
+                notificationService.createAndPush(
+                        ownerId,
+                        userId,
+                        NotificationType.DOCUMENT_COMMENTED,
+                        documentId.toString(),
+                        "DOCUMENT",
+                        commenterName + " đã bình luận về tài liệu của bạn."
+                );
+            }
         }
 
-        return CommentMapper.toCommentResponse(saved, false, 0);
+        return CommentMapper.toCommentResponse(saved, false, 0, null);
     }
 
     @Override
     @Transactional
     public CommentResponse replyComment(UUID parentCommentId, String body, UUID userId) {
-        DocumentComment parent = documentCommentRepository.findByIdWithDocumentAndAuthor(parentCommentId)
+        DocumentComment parent = documentCommentRepository.findById(parentCommentId)
                 .orElseThrow(() -> new NoSuchElementException("Comment not found"));
         if (Boolean.TRUE.equals(parent.getDeleted())) {
             throw new NoSuchElementException("Comment not found");
         }
 
-        User author = userRepository.getReferenceById(userId);
-        DocumentComment saved = documentCommentRepository.save(DocumentComment.builder()
+        User author = userRepository.findById(userId)
+                .orElseThrow(() -> new NoSuchElementException("User not found"));
+
+        DocumentComment reply = DocumentComment.builder()
                 .document(parent.getDocument())
+                .author(author)
                 .parent(parent)
                 .replyToUser(parent.getAuthor())
-                .author(author)
                 .body(body)
-                .build());
+                .likeCount(0)
+                .upvoteCount(0)
+                .downvoteCount(0)
+                .deleted(false)
+                .pinned(false)
+                .build();
 
-        DocumentComment forDto = documentCommentRepository
-                .findByIdWithDocumentAuthorAndReplyTo(saved.getId())
-                .orElse(saved);
+        DocumentComment saved = documentCommentRepository.save(reply);
+        DocumentComment forDto = documentCommentRepository.findByIdWithDocumentAndAuthor(saved.getId()).orElse(saved);
 
-        if (parent.getAuthor() != null && !userId.equals(parent.getAuthor().getId())) {
+        if (parent.getAuthor() != null && !parent.getAuthor().getId().equals(userId)) {
             User replier = userRepository.findById(userId).orElse(null);
             String replierName = (replier != null && replier.getFullName() != null) ? replier.getFullName() : "Ai đó";
             notificationService.createAndPush(
@@ -195,16 +222,24 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
                     NotificationType.COMMENT_REPLIED,
                     parent.getDocument().getId().toString(),
                     "DOCUMENT",
-                    replierName + " đã phản hồi bình luận tài liệu của bạn"
+                    replierName + " đã phản hồi bình luận của bạn."
             );
         }
 
-        return CommentMapper.toCommentResponse(forDto, false, 0);
+        return CommentMapper.toCommentResponse(forDto, false, 0, null);
     }
 
     @Override
     @Transactional
     public CommentLikeToggleResponseDto toggleLike(UUID commentId, UUID userId) {
+        return voteComment(commentId, userId, "UPVOTE");
+    }
+
+    @Override
+    @Transactional
+    public CommentLikeToggleResponseDto voteComment(UUID commentId, UUID userId, String voteType) {
+        String targetVote = ("DOWNVOTE".equalsIgnoreCase(voteType)) ? "DOWNVOTE" : "UPVOTE";
+
         DocumentComment comment = documentCommentRepository.findById(commentId)
                 .orElseThrow(() -> new NoSuchElementException("Comment not found"));
         if (Boolean.TRUE.equals(comment.getDeleted())) {
@@ -212,31 +247,67 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
         }
 
         User userRef = userRepository.getReferenceById(userId);
-        var existing = documentCommentLikeRepository.findByComment_IdAndUser_Id(commentId, userId);
+        Optional<DocumentCommentLike> existing = documentCommentLikeRepository.findByComment_IdAndUser_Id(commentId, userId);
+
+        int upvotes = comment.getUpvoteCount() != null ? comment.getUpvoteCount() : (comment.getLikeCount() != null ? Math.max(0, comment.getLikeCount()) : 0);
+        int downvotes = comment.getDownvoteCount() != null ? comment.getDownvoteCount() : 0;
+
+        String resultVote = null;
 
         if (existing.isPresent()) {
-            documentCommentLikeRepository.delete(existing.get());
-            documentCommentLikeRepository.flush();
-            int next = Math.max(0, comment.getLikeCount() - 1);
-            comment.setLikeCount(next);
-            documentCommentRepository.save(comment);
-            return CommentLikeToggleResponseDto.builder()
-                    .likeCount(next)
-                    .isLiked(false)
-                    .build();
+            DocumentCommentLike currentLike = existing.get();
+            String currentVoteType = currentLike.getVoteType() != null ? currentLike.getVoteType() : "UPVOTE";
+
+            if (currentVoteType.equalsIgnoreCase(targetVote)) {
+                // Toggle off
+                documentCommentLikeRepository.delete(currentLike);
+                documentCommentLikeRepository.flush();
+                if ("UPVOTE".equals(targetVote)) {
+                    upvotes = Math.max(0, upvotes - 1);
+                } else {
+                    downvotes = Math.max(0, downvotes - 1);
+                }
+                resultVote = null;
+            } else {
+                // Switch vote type
+                currentLike.setVoteType(targetVote);
+                documentCommentLikeRepository.save(currentLike);
+                if ("UPVOTE".equals(targetVote)) {
+                    upvotes = upvotes + 1;
+                    downvotes = Math.max(0, downvotes - 1);
+                } else {
+                    downvotes = downvotes + 1;
+                    upvotes = Math.max(0, upvotes - 1);
+                }
+                resultVote = targetVote;
+            }
+        } else {
+            // New vote
+            documentCommentLikeRepository.save(DocumentCommentLike.builder()
+                    .comment(comment)
+                    .user(userRef)
+                    .voteType(targetVote)
+                    .build());
+
+            if ("UPVOTE".equals(targetVote)) {
+                upvotes = upvotes + 1;
+            } else {
+                downvotes = downvotes + 1;
+            }
+            resultVote = targetVote;
         }
 
-        documentCommentLikeRepository.save(DocumentCommentLike.builder()
-                .comment(comment)
-                .user(userRef)
-                .build());
-        int next = comment.getLikeCount() + 1;
-        comment.setLikeCount(next);
+        comment.setUpvoteCount(upvotes);
+        comment.setDownvoteCount(downvotes);
+        comment.setLikeCount(upvotes - downvotes);
         documentCommentRepository.save(comment);
 
         return CommentLikeToggleResponseDto.builder()
-                .likeCount(next)
-                .isLiked(true)
+                .likeCount(upvotes - downvotes)
+                .upvoteCount(upvotes)
+                .downvoteCount(downvotes)
+                .isLiked("UPVOTE".equals(resultVote))
+                .userVote(resultVote)
                 .build();
     }
 

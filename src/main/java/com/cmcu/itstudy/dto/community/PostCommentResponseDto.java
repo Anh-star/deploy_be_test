@@ -22,8 +22,11 @@ public class PostCommentResponseDto {
     private String authorAvatar;
     private String body;
     private Integer likeCount;
+    private Integer upvoteCount;
+    private Integer downvoteCount;
     private Integer replyCount;
     private String replyToUserName;
     private Boolean isLiked;
+    private String userVote;
     private LocalDateTime createdAt;
 }

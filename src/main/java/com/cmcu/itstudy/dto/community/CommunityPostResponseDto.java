@@ -36,6 +36,7 @@ public class CommunityPostResponseDto {
     private Boolean allowComments;
     private Boolean isHidden;
     private Boolean isReported;
+    private Boolean isReportDismissed;
     private Boolean isMuted;
     private Long reportCount;
     private LocalDateTime createdAt;

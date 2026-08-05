@@ -43,13 +43,13 @@ public class Category {
     @EqualsAndHashCode.Include
     private UUID id;
 
-    @Column(name = "name", nullable = false, length = 150, unique = true)
+    @Column(name = "name", nullable = false, length = 150, unique = true, columnDefinition = "nvarchar(150)")
     private String name;
 
     @Column(name = "slug", nullable = false, length = 180, unique = true)
     private String slug;
 
-    @Column(name = "description", length = 500)
+    @Column(name = "description", length = 500, columnDefinition = "nvarchar(500)")
     private String description;
 
     @ManyToOne(fetch = FetchType.LAZY)

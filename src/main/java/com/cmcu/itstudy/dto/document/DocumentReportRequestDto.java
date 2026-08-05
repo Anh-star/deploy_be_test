@@ -1,5 +1,6 @@
 package com.cmcu.itstudy.dto.document;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -11,11 +12,10 @@ import lombok.Setter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CommentLikeToggleResponseDto {
+public class DocumentReportRequestDto {
 
-    private Integer likeCount;
-    private Integer upvoteCount;
-    private Integer downvoteCount;
-    private Boolean isLiked;
-    private String userVote;
+    @NotBlank(message = "Reason code is required")
+    private String reasonCode;
+
+    private String detail;
 }

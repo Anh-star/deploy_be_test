@@ -34,7 +34,7 @@ public class Tag {
     @EqualsAndHashCode.Include
     private UUID id;
 
-    @Column(name = "name", nullable = false, length = 100, unique = true)
+    @Column(name = "name", nullable = false, length = 100, unique = true, columnDefinition = "nvarchar(100)")
     private String name;
 
     @Column(name = "slug", nullable = false, length = 120, unique = true)

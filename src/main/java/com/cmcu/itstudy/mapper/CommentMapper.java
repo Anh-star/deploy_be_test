@@ -11,19 +11,31 @@ public final class CommentMapper {
     }
 
     public static CommentResponse toCommentResponse(DocumentComment comment, Boolean isLiked, Integer replyCount) {
+        return toCommentResponse(comment, isLiked, replyCount, isLiked != null && isLiked ? "UPVOTE" : null);
+    }
+
+    public static CommentResponse toCommentResponse(DocumentComment comment, Boolean isLiked, Integer replyCount, String userVote) {
         if (comment == null) {
             return null;
         }
         String authorName = comment.getAuthor() != null ? comment.getAuthor().getFullName() : null;
         String authorAvatar = comment.getAuthor() != null ? comment.getAuthor().getAvatarUrl() : null;
         String replyToUserName = comment.getReplyToUser() != null ? comment.getReplyToUser().getFullName() : null;
+
+        int upvotes = comment.getUpvoteCount() != null ? comment.getUpvoteCount() : (comment.getLikeCount() != null ? comment.getLikeCount() : 0);
+        int downvotes = comment.getDownvoteCount() != null ? comment.getDownvoteCount() : 0;
+        int netScore = upvotes - downvotes;
+
         return CommentResponse.builder()
                 .id(uuidToString(comment.getId()))
                 .body(comment.getBody())
                 .authorName(authorName)
                 .authorAvatar(authorAvatar)
-                .likeCount(comment.getLikeCount())
-                .isLiked(isLiked)
+                .likeCount(netScore)
+                .upvoteCount(upvotes)
+                .downvoteCount(downvotes)
+                .isLiked("UPVOTE".equalsIgnoreCase(userVote))
+                .userVote(userVote)
                 .replyCount(replyCount)
                 .replyToUserName(replyToUserName)
                 .createdAt(comment.getCreatedAt())

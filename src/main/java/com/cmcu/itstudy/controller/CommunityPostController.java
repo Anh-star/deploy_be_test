@@ -142,11 +142,14 @@ public class CommunityPostController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<CommunityPostResponseDto>> votePost(
             @PathVariable UUID postId,
-            @RequestBody VotePostRequestDto request,
+            @RequestBody(required = false) VotePostRequestDto request,
+            @RequestParam(name = "voteType", required = false) String paramVoteType,
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
         UUID userId = currentUser.getUser().getId();
-        String voteType = (request != null && request.getVoteType() != null) ? request.getVoteType() : "UPVOTE";
+        String voteType = (request != null && request.getVoteType() != null)
+                ? request.getVoteType()
+                : (paramVoteType != null ? paramVoteType : "UPVOTE");
         CommunityPostResponseDto data = communityPostService.votePost(postId, userId, voteType);
         return ResponseEntity.ok(ApiResponse.success(data, "Post voted"));
     }
@@ -266,8 +269,20 @@ public class CommunityPostController {
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
         UUID userId = currentUser.getUser().getId();
-        PostCommentResponseDto data = communityPostService.toggleLikeComment(commentId, userId);
+        PostCommentResponseDto data = communityPostService.voteComment(commentId, userId, "UPVOTE");
         return ResponseEntity.ok(ApiResponse.success(data, "Comment like toggled"));
+    }
+
+    @PostMapping("/comments/{commentId}/vote")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<PostCommentResponseDto>> voteComment(
+            @PathVariable UUID commentId,
+            @RequestParam(name = "type", defaultValue = "UPVOTE") String voteType,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        PostCommentResponseDto data = communityPostService.voteComment(commentId, userId, voteType);
+        return ResponseEntity.ok(ApiResponse.success(data, "Comment vote updated"));
     }
 
     @PutMapping("/{postId}")

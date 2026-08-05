@@ -58,11 +58,15 @@ public class CommunityPostCommentLike {
     @JsonIgnore
     private User user;
 
+    @Column(name = "vote_type", length = 10)
+    private String voteType; // "UPVOTE" or "DOWNVOTE"
+
     @Column(name = "liked_at", nullable = false)
     private LocalDateTime likedAt;
 
     @PrePersist
     void prePersist() {
         this.likedAt = LocalDateTime.now();
+        if (this.voteType == null) this.voteType = "UPVOTE";
     }
 }
