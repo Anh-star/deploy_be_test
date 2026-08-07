@@ -4,11 +4,18 @@ import com.cmcu.itstudy.dto.admin.document.AdminPendingDocumentsPageResponseDto;
 import com.cmcu.itstudy.dto.admin.document.DocumentAdminDetailDto;
 import com.cmcu.itstudy.dto.admin.document.DocumentAdminStatusPatchRequestDto;
 import com.cmcu.itstudy.dto.document.DocumentCardDto;
+import com.cmcu.itstudy.dto.document.DocumentPreviewArtifactStatusDto;
+import com.cmcu.itstudy.dto.document.DocumentPreviewStatusDto;
 import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.entity.DocumentFile;
+import com.cmcu.itstudy.entity.DocumentPreviewArtifact;
 import com.cmcu.itstudy.entity.User;
+import com.cmcu.itstudy.enums.AllowedDocumentFileType;
+import com.cmcu.itstudy.enums.DocumentPreviewArtifactKind;
 import com.cmcu.itstudy.enums.DocumentStatus;
+import com.cmcu.itstudy.handle.PreviewNotReadyException;
 import com.cmcu.itstudy.repository.DocumentFileRepository;
+import com.cmcu.itstudy.repository.DocumentPreviewArtifactRepository;
 import com.cmcu.itstudy.repository.DocumentRepository;
 import com.cmcu.itstudy.service.contract.AdminDocumentService;
 import org.springframework.data.domain.Page;
@@ -17,9 +24,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -28,11 +38,20 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
 
     private final DocumentRepository documentRepository;
     private final DocumentFileRepository documentFileRepository;
+    private final DocumentPreviewArtifactRepository artifactRepository;
+    private final DocumentPreviewArtifactFactory artifactFactory;
+    private final Clock clock;
 
     public AdminDocumentServiceImpl(DocumentRepository documentRepository,
-                                    DocumentFileRepository documentFileRepository) {
+                                    DocumentFileRepository documentFileRepository,
+                                    DocumentPreviewArtifactRepository artifactRepository,
+                                    DocumentPreviewArtifactFactory artifactFactory,
+                                    Clock clock) {
         this.documentRepository = documentRepository;
         this.documentFileRepository = documentFileRepository;
+        this.artifactRepository = artifactRepository;
+        this.artifactFactory = Objects.requireNonNull(artifactFactory, "artifactFactory");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     @Override
@@ -159,12 +178,184 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
             }
             document.setRejectReason(request.getRejectReason().trim());
         } else {
+            // APPROVED:
+            //
+            // (a) Idempotent preview artifact bootstrap, joining the
+            //     caller's REQUIRED transaction via MANDATORY propagation.
+            //     The factory enforces all guards itself:
+            //       * file is DOC or DOCX;
+            //       * paid documents get FULL + LIMITED;
+            //       * free documents get FULL only;
+            //       * non-Office files are a no-op;
+            //       * existing FULL/LIMITED rows are NOT duplicated.
+            //     We pass document.isPaid() (NOT a hard-coded true), so a
+            //     free DOCX is correctly given just one FULL and a paid
+            //     DOCX is given FULL + LIMITED.
+            ensurePreviewArtifactsPresent(document);
+
+            // (b) Guard Office documents until FULL preview is READY.
+            guardOfficePreviewReady(documentId);
             document.setRejectReason(null);
-            document.setPublishedAt(LocalDateTime.now());
+            document.setPublishedAt(LocalDateTime.now(clock));
         }
 
         document.setStatus(target);
         document.setUpdatedBy(moderator);
         documentRepository.save(document);
+    }
+
+    /**
+     * Ensures the preview-artifact set for the given document's primary
+     * {@link DocumentFile} is initialised.
+     *
+     * <p>This is the approval-side safety net for the preview pipeline.
+     * In normal operation the upload/bind path already calls
+     * {@link DocumentPreviewArtifactFactory#bootstrapInsideTransaction(
+     * DocumentFile, boolean)} with the correct {@code paid} flag, but if
+     * that earlier bootstrap failed silently (network error, partial
+     * rollback, manual DB intervention), a moderator must still be able
+     * to rescue the document by re-issuing the bootstrap here. The
+     * factory is idempotent: an existing
+     * {@code (documentFileId, artifactKind, sourceChecksumSha256,
+     * variantVersion)} row is never duplicated.</p>
+     *
+     * <p>The {@code paid} flag is taken from
+     * {@link Document#getIsPaid()} &mdash; never hard-coded &mdash; so
+     * the artifact set matches the document's actual pricing shape:</p>
+     *
+     * <ul>
+     *   <li>free DOC / DOCX &rarr; exactly one FULL artifact;</li>
+     *   <li>paid DOC / DOCX &rarr; one FULL plus one LIMITED artifact;</li>
+     *   <li>non-Office files &rarr; no-op inside the factory.</li>
+     * </ul>
+     *
+     * <p>This method never throws for missing primary files or unknown
+     * extensions; the factory's own guards handle the rejection logic
+     * and we let the existing {@link #guardOfficePreviewReady(UUID)}
+     * raise a meaningful error if the artifact is still not READY.</p>
+     *
+     * @param document the document being approved
+     */
+    private void ensurePreviewArtifactsPresent(Document document) {
+        if (document == null) {
+            return;
+        }
+        Optional<DocumentFile> primaryFile =
+                documentFileRepository.findByDocumentIdAndPrimaryTrue(document.getId());
+        if (primaryFile.isEmpty()) {
+            return;
+        }
+        boolean paid = Boolean.TRUE.equals(document.getIsPaid());
+        artifactFactory.bootstrapInsideTransaction(primaryFile.get(), paid);
+    }
+
+    /**
+     * Enforces the server-side rule: a DOC/DOCX document may not be
+     * approved unless its FULL preview artifact is READY.
+     *
+     * <p>This method re-reads the current artifact state within the same
+     * transaction that performs the approval, eliminating the race where
+     * a frontend read of READY is followed by a state change before the
+     * approval PATCH arrives.
+     *
+     * <p>Non-Office documents are not subject to this guard and pass
+     * through without any check.</p>
+     *
+     * @param documentId the document UUID being approved
+     * @throws PreviewNotReadyException when the document is Office and the
+     *         FULL artifact is not READY
+     */
+    private void guardOfficePreviewReady(UUID documentId) {
+        DocumentPreviewStatusDto previewStatus = getDocumentPreviewStatus(documentId);
+        if (!previewStatus.isOfficeDocument()) {
+            return;
+        }
+        DocumentPreviewArtifactStatusDto status = previewStatus.getFullStatus();
+        if (status != DocumentPreviewArtifactStatusDto.READY) {
+            throw new PreviewNotReadyException(
+                    "Bản xem trước DOC/DOCX chưa sẵn sàng để phê duyệt.");
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DocumentPreviewStatusDto getDocumentPreviewStatus(UUID documentId) {
+        Document document = documentRepository.findByIdAndDeletedFalse(documentId)
+                .orElseThrow(() -> new NoSuchElementException("Document not found: " + documentId));
+
+        Optional<DocumentFile> primaryFile =
+                documentFileRepository.findByDocumentIdAndPrimaryTrue(documentId);
+
+        if (primaryFile.isEmpty()) {
+            return DocumentPreviewStatusDto.builder()
+                    .officeDocument(false)
+                    .build();
+        }
+
+        String ext = primaryFile.get().getFileExtension();
+        AllowedDocumentFileType fileType =
+                AllowedDocumentFileType.fromExtension(ext).orElse(null);
+
+        boolean isOffice = (fileType == AllowedDocumentFileType.DOC
+                || fileType == AllowedDocumentFileType.DOCX);
+
+        if (!isOffice) {
+            return DocumentPreviewStatusDto.builder()
+                    .officeDocument(false)
+                    .build();
+        }
+
+        Optional<DocumentPreviewArtifact> artifact =
+                artifactRepository.findFirstByDocumentFileIdAndArtifactKindOrderByCreatedAtDescIdDesc(
+                        primaryFile.get().getId(),
+                        DocumentPreviewArtifactKind.FULL);
+
+        if (artifact.isEmpty()) {
+            return DocumentPreviewStatusDto.builder()
+                    .officeDocument(true)
+                    .fullStatus(DocumentPreviewArtifactStatusDto.PENDING)
+                    .build();
+        }
+
+        DocumentPreviewArtifact a = artifact.get();
+        return DocumentPreviewStatusDto.builder()
+                .officeDocument(true)
+                .fullStatus(mapStatus(a.getStatus()))
+                .lastError(boundLastError(a.getLastError()))
+                .attemptCount(a.getAttemptCount())
+                .maxAttempts(a.getMaxAttempts())
+                .pageCount(a.getTotalPages())
+                .build();
+    }
+
+    private static DocumentPreviewArtifactStatusDto mapStatus(
+            com.cmcu.itstudy.enums.DocumentPreviewArtifactStatus status) {
+        if (status == null) {
+            return null;
+        }
+        return switch (status) {
+            case PENDING -> DocumentPreviewArtifactStatusDto.PENDING;
+            case PROCESSING -> DocumentPreviewArtifactStatusDto.PROCESSING;
+            case READY -> DocumentPreviewArtifactStatusDto.READY;
+            case RETRY -> DocumentPreviewArtifactStatusDto.RETRY;
+            case DEAD -> DocumentPreviewArtifactStatusDto.DEAD;
+        };
+    }
+
+    /**
+     * Bounds the error message so no internal path, stack trace, or
+     * credential fragment is exposed to the frontend.
+     */
+    private static String boundLastError(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        // Truncate to 120 characters — enough to surface a clear
+        // operational code or short message; not enough for a stack dump.
+        String trimmed = raw.trim();
+        if (trimmed.length() <= 120) {
+            return trimmed;
+        }
+        return trimmed.substring(0, 120) + "…";
     }
 }

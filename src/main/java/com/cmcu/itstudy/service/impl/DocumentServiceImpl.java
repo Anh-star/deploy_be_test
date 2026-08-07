@@ -11,6 +11,7 @@ import com.cmcu.itstudy.enums.PaymentStatus;
 import com.cmcu.itstudy.handle.DocumentPricingLockedException;
 import com.cmcu.itstudy.repository.*;
 import com.cmcu.itstudy.service.contract.DocumentService;
+import com.cmcu.itstudy.service.contract.TransactionalDocumentCrudService;
 import com.cmcu.itstudy.util.SlugUtils;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
@@ -40,19 +41,22 @@ public class DocumentServiceImpl implements DocumentService {
     private final TagRepository tagRepository;
     private final DocumentFileRepository documentFileRepository;
     private final PaymentRepository paymentRepository;
+    private final TransactionalDocumentCrudService transactionalDocumentCrudService;
 
     public DocumentServiceImpl(DocumentRepository documentRepository,
                                DocumentTagRepository documentTagRepository,
                                CategoryRepository categoryRepository,
                                TagRepository tagRepository,
                                DocumentFileRepository documentFileRepository,
-                               PaymentRepository paymentRepository) {
+                               PaymentRepository paymentRepository,
+                               TransactionalDocumentCrudService transactionalDocumentCrudService) {
         this.documentRepository = documentRepository;
         this.documentTagRepository = documentTagRepository;
         this.categoryRepository = categoryRepository;
         this.tagRepository = tagRepository;
         this.documentFileRepository = documentFileRepository;
         this.paymentRepository = paymentRepository;
+        this.transactionalDocumentCrudService = transactionalDocumentCrudService;
     }
 
     @Transactional(readOnly = true)
@@ -80,90 +84,36 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional
     public DocumentCardDto createDocument(DocumentCreateRequestDto documentCreateRequestDto, User currentUser) {
-        // 1. Find or create Category
-        Category category = categoryRepository.findByName(documentCreateRequestDto.getCategory())
-                .orElseThrow(() -> new NoSuchElementException("Category not found: " + documentCreateRequestDto.getCategory()));
-
-        // 2. Create Document entity
-        Document document = Document.builder()
-                .title(documentCreateRequestDto.getTitle())
-                .slug(SlugUtils.resolveSlug(documentCreateRequestDto.getTitle(), documentCreateRequestDto.getTitle())) // Generate slug from title
-                .description(documentCreateRequestDto.getDescription())
-                .fileUrl(documentCreateRequestDto.getDocumentUrl())
-                .fileName(documentCreateRequestDto.getFileName())
-                .fileSize(documentCreateRequestDto.getFileSizeBytes())
-                .thumbnailUrl(documentCreateRequestDto.getThumbnailUrl())
-                .category(category) // Link to Category
-                .createdBy(currentUser) // Set creator
-                .updatedBy(currentUser) // Set initial updater
-                .status(DocumentStatus.PENDING) // Default status
-                .viewCount(0L)
-                .downloadCount(0L)
-                .bookmarkCount(0L)
-                .deleted(false)
-                .isPaid(documentCreateRequestDto.getIsPaid())
-                .price(resolveDocumentPrice(
-                        Boolean.TRUE.equals(documentCreateRequestDto.getIsPaid()),
-                        documentCreateRequestDto.getPrice()))
-                .build();
-
-        // Set file type based on extension or frontend hint (more robust to check extension from fileName)
-        String fileName = document.getFileName();
-        if (fileName != null && !fileName.isEmpty()) {
-            String lowerCaseFileName = fileName.toLowerCase();
-            if (lowerCaseFileName.endsWith(".pdf")) {
-                document.setFileType(FileType.PDF);
-            } else if (lowerCaseFileName.endsWith(".doc") || lowerCaseFileName.endsWith(".docx")) {
-                document.setFileType(FileType.DOC);
-            } else if (lowerCaseFileName.endsWith(".ppt") || lowerCaseFileName.endsWith(".pptx")) {
-                document.setFileType(FileType.PPT);
-            } else {
-                document.setFileType(FileType.OTHER);
-            }
-        } else {
-             document.setFileType(FileType.OTHER); // Default if no name
+        // Phase C1: fail-closed legacy entry point.
+        //
+        // The legacy public method is kept only for backward-compatible
+        // free-only callers. The paid create flow MUST go through
+        // {@link com.cmcu.itstudy.service.contract.DocumentCommandRouter},
+        // which composes the non-transactional
+        // {@link com.cmcu.itstudy.service.contract.PaidDocumentUploadOrchestrator}
+        // and the transactional binder in the correct order.
+        //
+        // This guard prevents a paid request from being routed into the
+        // free transactional path, where it would skip the
+        // Supabase object-info verification AND the atomic pending bind,
+        // AND the row would be marked APPROVED-shaped without going
+        // through the binder. The router already rejects this at the
+        // HTTP edge, but defense-in-depth here protects any internal
+        // caller that still uses this entry point.
+        if (documentCreateRequestDto == null) {
+            throw new IllegalArgumentException("documentCreateRequestDto must not be null");
         }
-
-
-        // 3. Save document to get ID and persist associations
-        Document savedDocument = documentRepository.save(document);
-
-        // 4. Handle Tags and DocumentTag associations
-        Set<DocumentTag> documentTags = new HashSet<>();
-        for (String tagName : documentCreateRequestDto.getTags()) {
-            String tagSlug = SlugUtils.resolveSlug(tagName, tagName);
-            Tag tag = tagRepository.findBySlug(tagSlug)
-                    .orElseGet(() -> { // Create tag if not exists
-                        Tag newTag = Tag.builder()
-                                .name(tagName)
-                                .slug(tagSlug)
-                                .build();
-                        return tagRepository.save(newTag);
-                    });
-
-            DocumentTag documentTag = DocumentTag.builder()
-                    .documentId(savedDocument.getId())
-                    .tagId(tag.getId())
-                    .document(savedDocument) // Set back-reference for entity graph loading
-                    .tag(tag) // Set back-reference for entity graph loading
-                    .createdAt(LocalDateTime.now())
-                    .build();
-            documentTags.add(documentTag);
+        if (Boolean.TRUE.equals(documentCreateRequestDto.getIsPaid())
+                || documentCreateRequestDto.getUploadId() != null) {
+            throw new IllegalArgumentException(
+                    "Paid create must be routed through DocumentCommandRouter; "
+                            + "this legacy entry point only accepts free-shape requests");
         }
-        savedDocument.setDocumentTags(documentTags); // Set associations
-        // Note: DocumentTag will be saved via cascade or explicit save if needed. JPA typically handles this if configured.
-        // For safety, we can explicitly save them if cascade is not set up correctly.
-        documentTagRepository.saveAll(documentTags);
-
-        DocumentFile primaryFile = documentFileRepository.save(buildPrimaryDocumentFile(
-                savedDocument,
-                documentCreateRequestDto.getStoragePath(),
-                documentCreateRequestDto.getDocumentUrl(),
-                documentCreateRequestDto.getFileName(),
-                documentCreateRequestDto.getFileSizeBytes()
-        ));
-
-        return mapToDocumentCardDto(savedDocument, currentUser, primaryFile);
+        // Free branch — unchanged. Delegates into the dedicated free
+        // transactional service so the controller and the router share
+        // exactly one free-create code path.
+        return transactionalDocumentCrudService.createFreeDocument(
+                documentCreateRequestDto, currentUser);
     }
 
     @Override

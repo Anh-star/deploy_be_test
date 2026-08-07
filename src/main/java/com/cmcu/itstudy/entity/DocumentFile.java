@@ -45,6 +45,9 @@ public class DocumentFile {
     @JsonIgnore
     private Document document;
 
+    @Column(name = "storage_bucket", length = 100)
+    private String storageBucket;
+
     @Column(name = "storage_path", nullable = false, length = 1000)
     private String storagePath;
 

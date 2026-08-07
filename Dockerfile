@@ -14,11 +14,26 @@ RUN mvn clean package -DskipTests -B
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
+# Phase O1: install LibreOffice writer and Vietnamese-capable fonts so
+# the office preview converter can produce PDF previews inside the
+# container. fontconfig + fonts-noto-core cover Vietnamese diacritics;
+# fonts-liberation and fonts-dejavu-core give LibreOffice a baseline
+# metric-compatible fallback. The conversion is performed at runtime,
+# never during image build, so no document files are baked in.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+        libreoffice-writer \
+        fontconfig \
+        fonts-noto-core \
+        fonts-liberation \
+        fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy the built JAR from build stage
 COPY --from=build /app/target/*.jar app.jar
 
-# Render assigns a port dynamically via the PORT env var. 
-# Spring Boot automatically binds to server.port if specified, 
+# Render assigns a port dynamically via the PORT env var.
+# Spring Boot automatically binds to server.port if specified,
 # but we configure it explicitly here too.
 EXPOSE 8080
 ENV PORT=8080

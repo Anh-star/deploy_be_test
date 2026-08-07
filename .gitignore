@@ -31,6 +31,14 @@ build/
 
 ### VS Code ###
 .vscode/
-# src/main/resources/application.properties
+# Local-only application config (real secrets must NOT live in tracked files).
+# See src/main/resources/application-local.example.properties for the env-var
+# contract. application.properties itself IS tracked (with placeholders only).
+src/main/resources/application-local.properties
+src/test/resources/application-local-test.properties
 run-local.ps1
-run-server.ps1
+run-server.ps1scripts/
+.rules/
+worker-check.ps1
+src/main/resources/application.properties
+src/main/resources/application-*.properties

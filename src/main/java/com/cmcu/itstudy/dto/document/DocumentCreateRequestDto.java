@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.util.List;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -55,11 +56,22 @@ public class DocumentCreateRequestDto {
     @NotEmpty(message = "Tags cannot be empty")
     private List<String> tags;
 
-    @NotBlank(message = "Document URL cannot be empty")
-    private String documentUrl;
-
-    @NotBlank(message = "Storage path cannot be empty")
+    /**
+     * Storage path of the uploaded file in the public bucket.
+     *
+     * <p>For a FREE document ({@code isPaid == false}) this MUST be a
+     * non-blank string. The unconditional Bean Validation has been
+     * removed (Phase C1) so a PAID create can send {@code null} / blank
+     * and supply an {@code uploadId} instead. The cross-field invariant
+     * is enforced by {@link #isPaidUploadShapeValid()}.
+     */
     private String storagePath;
+
+    /**
+     * Public URL for the uploaded file (source of truth for free docs).
+     * Same conditional validation rules as {@link #storagePath}.
+     */
+    private String documentUrl;
 
     @NotBlank(message = "Thumbnail URL cannot be empty")
     private String thumbnailUrl;
@@ -72,6 +84,19 @@ public class DocumentCreateRequestDto {
 
     @NotNull(message = "isPaid flag cannot be null")
     private Boolean isPaid;
+
+    /**
+     * Optional {@code uploadId} that ties this create to a previously
+     * issued Supabase signed-upload-target for a paid document.
+     *
+     * <p>For a PAID document ({@code isPaid == true}) this MUST be
+     * non-null. For a FREE document this MUST be {@code null}. The
+     * cross-field invariant is enforced by {@link #isPaidUploadShapeValid()}.
+     *
+     * <p>The {@code uploadId} is never echoed back to the client in the
+     * response and is never logged.
+     */
+    private UUID uploadId;
 
     /**
      * Price in integer VND. Nullable for free documents. Rejected when negative
@@ -101,5 +126,42 @@ public class DocumentCreateRequestDto {
         }
         // Paid document: price must be present, non-negative, and meet minimum.
         return price != null && price >= MIN_PAID_DOCUMENT_PRICE;
+    }
+
+    /**
+     * Cross-field invariant (Phase C1):
+     * <ul>
+     *   <li>FREE ({@code isPaid == false}): {@code uploadId} MUST be null,
+     *       {@code documentUrl} MUST be non-blank, {@code storagePath}
+     *       MUST be non-blank.</li>
+     *   <li>PAID ({@code isPaid == true}): {@code uploadId} MUST be
+     *       non-null; {@code documentUrl} and {@code storagePath} MUST
+     *       be null / blank because the authoritative paths are stored
+     *       on {@link com.cmcu.itstudy.entity.PendingStorageUpload}
+     *       and copied to the {@link com.cmcu.itstudy.entity.DocumentFile}
+     *       inside the binder transaction.</li>
+     * </ul>
+     * Clients that try to mix shapes (e.g. paid request with URL/path)
+     * are rejected with HTTP 400 here before any remote call.
+     */
+    @AssertTrue(message = "Dữ liệu hình thức và định danh upload chưa hợp lệ.")
+    public boolean isPaidUploadShapeValid() {
+        if (isPaid == null) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(isPaid)) {
+            if (uploadId == null) {
+                return false;
+            }
+            return isNullOrBlank(documentUrl) && isNullOrBlank(storagePath);
+        }
+        // Free path: no uploadId, authoritative URL/path required.
+        return uploadId == null
+                && !isNullOrBlank(documentUrl)
+                && !isNullOrBlank(storagePath);
+    }
+
+    private static boolean isNullOrBlank(String s) {
+        return s == null || s.trim().isEmpty();
     }
 }

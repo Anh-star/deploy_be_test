@@ -35,6 +35,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -100,22 +101,35 @@ public class DocumentOperationsServiceImpl implements DocumentOperationsService 
                 .orElseThrow(() -> new NoSuchElementException("Document not found"));
 
         User user = null;
-        boolean alreadyViewed = false;
         if (userId != null) {
             user = userRepository.findById(userId).orElse(null);
-            if (user != null && documentViewRepository.existsByDocumentAndUser(document, user)) {
-                alreadyViewed = true;
-            }
         }
 
-        if (!alreadyViewed) {
-            DocumentView view = DocumentView.builder()
-                    .document(document)
-                    .user(user)
-                    .build();
-            documentViewRepository.save(view);
+        if (user != null) {
+            var existingView = documentViewRepository.findByDocumentAndUser(document, user);
+            if (existingView.isPresent()) {
+                DocumentView view = existingView.get();
+                view.setViewedAt(LocalDateTime.now());
+                documentViewRepository.save(view);
+            } else {
+                DocumentView view = DocumentView.builder()
+                        .document(document)
+                        .user(user)
+                        .build();
+                documentViewRepository.save(view);
 
-            document.setViewCount(document.getViewCount() != null ? document.getViewCount() + 1 : 1L);
+                document.setViewCount(document.getViewCount() != null ? document.getViewCount() + 1 : 1L);
+            }
+        } else {
+            if (!documentViewRepository.existsByDocumentAndUser(document, null)) {
+                DocumentView view = DocumentView.builder()
+                        .document(document)
+                        .user(null)
+                        .build();
+                documentViewRepository.save(view);
+
+                document.setViewCount(document.getViewCount() != null ? document.getViewCount() + 1 : 1L);
+            }
         }
 
         document.setLastViewedAt(LocalDateTime.now());
@@ -189,7 +203,7 @@ public class DocumentOperationsServiceImpl implements DocumentOperationsService 
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
 
-        return documentCardEnrichmentService.toEnrichedCardDtos(documents, userId);
+        return documentCardEnrichmentService.toEnrichedCardDtosWithLastViewedAt(documents, userId);
     }
 
     private Specification<Document> buildSpecification(DocumentListRequestDto request) {

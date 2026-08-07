@@ -53,29 +53,59 @@ public class MenuServiceImpl implements MenuService {
             return List.of();
         }
 
-        Set<Menu> visibleMenus = new LinkedHashSet<>(allowedMenus);
+        // Step 1 — collect the nodes the user has direct
+        // permission for. These are the only "navigable" leaves.
+        Set<UUID> allowedIds = allowedMenus.stream()
+                .map(Menu::getId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        // Step 2 — walk the parent chain and add every
+        // ancestor as a STRUCTURAL wrapper. The user does
+        // NOT have direct permission for these; the
+        // frontend renders them as collapsible groups only
+        // when the user has at least one navigable
+        // descendant.
+        Set<Menu> wrappers = new LinkedHashSet<>();
         for (Menu menu : allowedMenus) {
             Menu current = menu.getParent();
-            while (current != null) {
-                visibleMenus.add(current);
+            while (current != null && !allowedIds.contains(current.getId())) {
+                wrappers.add(current);
                 current = current.getParent();
             }
         }
 
+        // Step 3 — assemble the visible set: navigable
+        // leaves + wrapper ancestors. Wrappers are kept even
+        // when their tree contains no surviving leaves, so
+        // the frontend has enough context to decide whether
+        // to hoist the leaves or drop the empty group.
+        Set<Menu> visibleMenus = new LinkedHashSet<>(allowedMenus);
+        visibleMenus.addAll(wrappers);
+
         List<Menu> sortedMenus = visibleMenus.stream()
-                .sorted(Comparator.comparing(Menu::getDisplayOrder, Comparator.nullsLast(Integer::compareTo)))
+                .sorted(Comparator.comparing(Menu::getDisplayOrder,
+                        Comparator.nullsLast(Integer::compareTo)))
                 .toList();
 
         Map<UUID, Menu> menuById = sortedMenus.stream()
-                .collect(Collectors.toMap(Menu::getId, menu -> menu, (left, right) -> left, LinkedHashMap::new));
+                .collect(Collectors.toMap(Menu::getId,
+                        menu -> menu, (left, right) -> left, LinkedHashMap::new));
 
+        // Step 4 — build the DTOs and tag wrappers.
         Map<UUID, MenuDto> dtoById = new LinkedHashMap<>();
         for (Menu menu : sortedMenus) {
-            MenuDto menuDto = MenuMapper.toMenuDtoWithoutChildren(menu);
-            menuDto.setChildren(new ArrayList<>());
-            dtoById.put(menu.getId(), menuDto);
+            MenuDto dto = wrappers.contains(menu)
+                    ? MenuMapper.toWrapperDto(menu)
+                    : MenuMapper.toMenuDtoWithoutChildren(menu);
+            dto.setChildren(new ArrayList<>());
+            dtoById.put(menu.getId(), dto);
         }
 
+        // Step 5 — arrange by parent. Wrappers with no
+        // surviving children fall to the "root" bucket but
+        // stay flagged as wrappers, so the frontend can
+        // either hoist their leaves or drop the empty group
+        // entirely.
         List<MenuDto> roots = new ArrayList<>();
         for (Menu menu : sortedMenus) {
             MenuDto currentDto = dtoById.get(menu.getId());

@@ -30,4 +30,5 @@ public class DocumentCardResponseDto {
     private Boolean isBookmarked;
     private FileTypeDto fileType;
     private List<String> tags;
+    private LocalDateTime lastViewedAt;
 }

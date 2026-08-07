@@ -5,6 +5,7 @@ import com.cmcu.itstudy.dto.admin.document.DocumentAdminDetailDto;
 import com.cmcu.itstudy.dto.admin.document.DocumentAdminStatusPatchRequestDto;
 import com.cmcu.itstudy.dto.common.ApiResponse;
 import com.cmcu.itstudy.dto.common.MessageResponseDto;
+import com.cmcu.itstudy.dto.document.DocumentPreviewStatusDto;
 import com.cmcu.itstudy.entity.User;
 import com.cmcu.itstudy.security.UserDetailsImpl;
 import com.cmcu.itstudy.service.contract.AdminDocumentService;
@@ -62,5 +63,23 @@ public class AdminDocumentController {
                 MessageResponseDto.builder().message("Document status updated").build(),
                 "OK"
         ));
+    }
+
+    /**
+     * Returns the async Office-to-PDF preview status for a document.
+     * Used by the frontend moderator review page to decide when to enable
+     * the approve button for Office documents.
+     *
+     * <p>The response identifies whether the document is an Office file
+     * and, if so, what the current worker-managed FULL artifact status is.
+     * Supabase storage paths and credentials are never exposed.</p>
+     */
+    @GetMapping("/{id}/preview-status")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
+    public ResponseEntity<ApiResponse<DocumentPreviewStatusDto>> getDocumentPreviewStatus(
+            @PathVariable("id") UUID id
+    ) {
+        DocumentPreviewStatusDto data = adminDocumentService.getDocumentPreviewStatus(id);
+        return ResponseEntity.ok(ApiResponse.success(data, "Document preview status"));
     }
 }
