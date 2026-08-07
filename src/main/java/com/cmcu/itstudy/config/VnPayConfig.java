@@ -2,7 +2,7 @@ package com.cmcu.itstudy.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
-
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URLEncoder;
@@ -18,6 +18,11 @@ import java.util.TreeMap;
 import java.util.Calendar;
 
 @Configuration
+@ConditionalOnProperty(
+        name = "payment.vnpay.enabled",
+        havingValue = "true",
+        matchIfMissing = false
+)
 public class VnPayConfig {
 
     @Value("${vnp.tmnCode}")
