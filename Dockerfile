@@ -1,16 +1,21 @@
 # Stage 1: Build the application
+
 FROM maven:3.9.6-eclipse-temurin-17 AS build
 WORKDIR /app
 
 # Copy pom.xml and download dependencies (cached layer)
+
 COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
 # Copy src and build the package
+
 COPY src ./src
 RUN mvn clean package -DskipTests -B
 
+
 # Stage 2: Run the application
+
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
@@ -20,21 +25,31 @@ WORKDIR /app
 # fonts-liberation and fonts-dejavu-core give LibreOffice a baseline
 # metric-compatible fallback. The conversion is performed at runtime,
 # never during image build, so no document files are baked in.
+
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
-        libreoffice-writer \
-        fontconfig \
-        fonts-noto-core \
-        fonts-liberation \
-        fonts-dejavu-core \
+       libreoffice-writer \
+       fontconfig \
+       fonts-noto-core \
+       fonts-liberation \
+       fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
+# Verify that LibreOffice is installed and the soffice executable exists.
+# This will also make the Render build fail immediately if LibreOffice
+# was not installed correctly.
+RUN which soffice && soffice --version
+
+# LibreOffice headless mode needs a writable HOME directory.
+ENV HOME=/tmp
+
 # Copy the built JAR from build stage
+
 COPY --from=build /app/target/*.jar app.jar
 
 # Render assigns a port dynamically via the PORT env var.
-# Spring Boot automatically binds to server.port if specified,
-# but we configure it explicitly here too.
+# Keep the existing application port configuration.
+
 EXPOSE 8080
 ENV PORT=8080
 
