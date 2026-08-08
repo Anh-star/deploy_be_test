@@ -140,8 +140,14 @@ public class ContributorWithdrawalServiceImpl implements ContributorWithdrawalSe
                             "CRITICAL: Payout profile not configured while creating withdrawal. sellerId={}",
                             sellerId
                     );
-                    return new IllegalStateException("Payout profile is not configured");
+                    return new IllegalArgumentException(
+                            "Payout profile is not configured"
+                    );
                 });
+
+        // Guard: profile must be complete before a withdrawal can be created.
+        // Source of truth — rejects invalid legacy profiles too.
+        assertPayoutProfileValid(profile);
 
         sellerBalanceService.reserveAvailableToLocked(sellerId, amount);
 
@@ -195,6 +201,38 @@ public class ContributorWithdrawalServiceImpl implements ContributorWithdrawalSe
         return trimmed;
     }
 
+    /**
+     * Guard: payout profile must be complete and well-formed before a
+     * withdrawal can be created. Mirrors the validation applied on upsert
+     * (see SellerPayoutProfileUpdateRequestDto) so legacy invalid profiles
+     * are also rejected. Throws IllegalArgumentException → HTTP 400 via
+     * the project's GlobalExceptionHandler.
+     */
+    private static void assertPayoutProfileValid(SellerPayoutProfile profile) {
+        if (profile == null) {
+            throw new IllegalArgumentException(
+                    "Payout profile is not configured"
+            );
+        }
+        if (isBlank(profile.getBankCode())
+                || isBlank(profile.getBankName())
+                || isBlank(profile.getBankAccountHolderName())) {
+            throw new IllegalArgumentException(
+                    "Payout profile is incomplete. Please complete your payout profile before creating a withdrawal request."
+            );
+        }
+        String account = profile.getBankAccountNumber();
+        if (account == null || !account.trim().matches("^[0-9]{7,19}$")) {
+            throw new IllegalArgumentException(
+                    "Payout profile bank account number is invalid. Please update your payout profile before creating a withdrawal request."
+            );
+        }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
     private static String maskBankAccountNumber(String accountNumber) {
         if (accountNumber == null || accountNumber.isBlank()) {
             return MASK_ALL;
@@ -216,10 +254,8 @@ public class ContributorWithdrawalServiceImpl implements ContributorWithdrawalSe
                 .status(withdrawalRequest.getStatus())
                 .bankCode(withdrawalRequest.getBankCode())
                 .bankName(withdrawalRequest.getBankName())
-                .maskedBankAccountNumber(
-                        maskBankAccountNumber(
-                                withdrawalRequest.getBankAccountNumber()
-                        )
+                .bankAccountNumber(
+                        withdrawalRequest.getBankAccountNumber()
                 )
                 .bankAccountHolderName(withdrawalRequest.getBankAccountHolderName())
                 .sellerNote(withdrawalRequest.getSellerNote())
@@ -239,6 +275,22 @@ public class ContributorWithdrawalServiceImpl implements ContributorWithdrawalSe
         return adminNote.trim();
     }
 
+    /**
+     * Expose the processing / transaction note to the contributor only when
+     * the withdrawal is PAID. PENDING and REJECTED return null so we never
+     * leak moderator scratch notes mid-flow.
+     */
+    private static String resolveProcessingNote(WithdrawalRequest withdrawal) {
+        if (withdrawal.getStatus() != WithdrawalStatus.PAID) {
+            return null;
+        }
+        String adminNote = withdrawal.getAdminNote();
+        if (adminNote == null || adminNote.isBlank()) {
+            return null;
+        }
+        return adminNote.trim();
+    }
+
     private static ContributorWithdrawalHistoryItemDto toHistoryItemDto(
             WithdrawalRequest withdrawal
     ) {
@@ -249,14 +301,11 @@ public class ContributorWithdrawalServiceImpl implements ContributorWithdrawalSe
                 .status(withdrawal.getStatus())
                 .bankCode(withdrawal.getBankCode())
                 .bankName(withdrawal.getBankName())
-                .maskedBankAccountNumber(
-                        maskBankAccountNumber(
-                                withdrawal.getBankAccountNumber()
-                        )
-                )
+                .bankAccountNumber(withdrawal.getBankAccountNumber())
                 .bankAccountHolderName(withdrawal.getBankAccountHolderName())
                 .sellerNote(withdrawal.getSellerNote())
                 .rejectionReason(resolveRejectionReason(withdrawal))
+                .adminNote(resolveProcessingNote(withdrawal))
                 .createdAt(withdrawal.getCreatedAt())
                 .updatedAt(withdrawal.getUpdatedAt())
                 .approvedAt(withdrawal.getApprovedAt())
@@ -276,14 +325,11 @@ public class ContributorWithdrawalServiceImpl implements ContributorWithdrawalSe
                 .status(withdrawal.getStatus())
                 .bankCode(withdrawal.getBankCode())
                 .bankName(withdrawal.getBankName())
-                .maskedBankAccountNumber(
-                        maskBankAccountNumber(
-                                withdrawal.getBankAccountNumber()
-                        )
-                )
+                .bankAccountNumber(withdrawal.getBankAccountNumber())
                 .bankAccountHolderName(withdrawal.getBankAccountHolderName())
                 .sellerNote(withdrawal.getSellerNote())
                 .rejectionReason(resolveRejectionReason(withdrawal))
+                .adminNote(resolveProcessingNote(withdrawal))
                 .createdAt(withdrawal.getCreatedAt())
                 .updatedAt(withdrawal.getUpdatedAt())
                 .approvedAt(withdrawal.getApprovedAt())

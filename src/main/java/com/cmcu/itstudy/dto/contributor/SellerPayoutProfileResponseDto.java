@@ -18,7 +18,7 @@ public class SellerPayoutProfileResponseDto {
     private boolean configured;
     private String bankCode;
     private String bankName;
-    private String maskedBankAccountNumber;
+    private String bankAccountNumber;
     private String bankAccountHolderName;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

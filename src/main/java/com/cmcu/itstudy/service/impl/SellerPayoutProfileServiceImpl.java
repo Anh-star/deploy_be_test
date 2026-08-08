@@ -60,9 +60,8 @@ public class SellerPayoutProfileServiceImpl implements SellerPayoutProfileServic
 
         String bankCode = normalizeRequired(request.getBankCode(), "bankCode");
         String bankName = normalizeRequired(request.getBankName(), "bankName");
-        String bankAccountNumber = normalizeRequired(
-                request.getBankAccountNumber(),
-                "bankAccountNumber"
+        String bankAccountNumber = normalizeBankAccountNumber(
+                request.getBankAccountNumber()
         );
         String bankAccountHolderName = normalizeRequired(
                 request.getBankAccountHolderName(),
@@ -117,6 +116,27 @@ public class SellerPayoutProfileServiceImpl implements SellerPayoutProfileServic
         return trimmed;
     }
 
+    /**
+     * Bank account numbers are digits-only, length 7 to 19.
+     * Used only for bankAccountNumber; other fields keep normalizeRequired().
+     * Defense in depth: even though the DTO already has @Pattern, we re-validate
+     * here so any direct call path that bypasses @Valid still enforces the rule.
+     */
+    private String normalizeBankAccountNumber(String value) {
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    "bankAccountNumber is required"
+            );
+        }
+        String trimmed = value.trim();
+        if (!trimmed.matches("^[0-9]{7,19}$")) {
+            throw new IllegalArgumentException(
+                    "bankAccountNumber must contain 7 to 19 digits"
+            );
+        }
+        return trimmed;
+    }
+
     private String maskBankAccountNumber(String accountNumber) {
         if (accountNumber == null || accountNumber.isBlank()) {
             return MASK_ALL;
@@ -134,7 +154,7 @@ public class SellerPayoutProfileServiceImpl implements SellerPayoutProfileServic
                 .configured(true)
                 .bankCode(profile.getBankCode())
                 .bankName(profile.getBankName())
-                .maskedBankAccountNumber(maskBankAccountNumber(profile.getBankAccountNumber()))
+                .bankAccountNumber(profile.getBankAccountNumber())
                 .bankAccountHolderName(profile.getBankAccountHolderName())
                 .createdAt(profile.getCreatedAt())
                 .updatedAt(profile.getUpdatedAt())

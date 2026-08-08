@@ -23,10 +23,11 @@ public class ContributorWithdrawalHistoryItemDto {
     private WithdrawalStatus status;
     private String bankCode;
     private String bankName;
-    private String maskedBankAccountNumber;
+    private String bankAccountNumber;
     private String bankAccountHolderName;
     private String sellerNote;
     private String rejectionReason;
+    private String adminNote;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime approvedAt;
