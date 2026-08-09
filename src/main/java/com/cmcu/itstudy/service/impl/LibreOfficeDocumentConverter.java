@@ -146,6 +146,12 @@ public class LibreOfficeDocumentConverter implements OfficeDocumentConverter {
 
             if (runResult.timedOut()
                     || runResult.terminationReason() == ProcessTerminationReason.TIMEOUT) {
+                // The TIMEOUT retry budget (max 1 retry, then DEAD)
+                // is enforced above this layer by the
+                // DocumentPreviewFailureClassifier using the
+                // persisted attemptCount. The converter is only
+                // responsible for surfacing the typed timeout
+                // exception.
                 throw new OfficeConversionTimeoutException(
                         "LibreOffice timed out after "
                                 + options.timeout().toMillis() + "ms");
@@ -259,6 +265,18 @@ public class LibreOfficeDocumentConverter implements OfficeDocumentConverter {
                     properties.getSemaphoreWaitTimeout().toMillis(),
                     TimeUnit.MILLISECONDS);
             if (!acquired) {
+                // Phase-4 timeout policy: the semaphore wait is
+                // also a TIMEOUT that counts toward the per-artifact
+                // retry budget. A second semaphore timeout for the
+                // same artifact is treated as terminal.
+                // The correlation id is not available here because
+                // the converter is called before the request knows
+                // the artifact id; we therefore surface the
+                // existing typed timeout exception and let the
+                // caller-side recordTimeout be a no-op. The
+                // semaphores-acquire TIMEOUT and the
+                // process-execution TIMEOUT are treated as the
+                // same retryable failure in the classifier.
                 throw new OfficeConversionTimeoutException(
                         "LibreOffice semaphore not acquired within "
                                 + properties.getSemaphoreWaitTimeout().toMillis() + "ms");

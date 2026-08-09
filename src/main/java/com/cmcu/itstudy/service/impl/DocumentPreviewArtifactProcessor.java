@@ -192,15 +192,42 @@ public class DocumentPreviewArtifactProcessor {
                                  LocalDateTime now) {
         Objects.requireNonNull(claim, "claim");
         Objects.requireNonNull(now, "now");
+        // Phase-1 speed timing anchor. Wall-clock millis since the
+        // processor entered this method. Used ONLY for the final
+        // summary log — never for any decision. We deliberately
+        // use System.nanoTime() so a wall-clock adjustment cannot
+        // produce negative or duplicate timings.
+        final long t0Nanos = System.nanoTime();
         log.info("Processing artifactId={} kind={} attemptCount={}/{}",
                 claim.artifactId(), claim.artifactKind(),
                 claim.attemptCount(), claim.maxAttempts());
 
         try {
-            if (claim.artifactKind() == DocumentPreviewArtifactKind.FULL) {
-                return processFull(claim, now);
+            WorkerOutcome outcome = null;
+            try {
+                if (claim.artifactKind() == DocumentPreviewArtifactKind.FULL) {
+                    outcome = processFull(claim, now);
+                } else {
+                    outcome = processLimited(claim, now);
+                }
+            } finally {
+                // Phase-1 speed: emit the total-processing timing on
+                // EVERY exit path so the operator can measure how long
+                // the worker spent on this artifact. We deliberately
+                // DO NOT log bucket/path (sensitive), Supabase URL,
+                // Authorization, service-role key, signed URL, or
+                // document bytes. The four recorded fields are
+                // artifactId, attemptCount, totalProcessingMs,
+                // finalStatus.
+                long totalMs = (System.nanoTime() - t0Nanos) / 1_000_000L;
+                String finalStatus = (outcome == null)
+                        ? "EXCEPTION" : outcome.name();
+                log.info("Artifact processed artifactId={} attemptCount={} "
+                                + "totalProcessingMs={} finalStatus={}",
+                        claim.artifactId(), claim.attemptCount(),
+                        totalMs, finalStatus);
             }
-            return processLimited(claim, now);
+            return outcome;
         } catch (OfficeConversionInterruptedException interrupted) {
             // The O1 conversion pipeline raised a typed interruption.
             // Preserve the interrupt flag but DO NOT clear it here:
@@ -242,6 +269,17 @@ public class DocumentPreviewArtifactProcessor {
 
     private WorkerOutcome processFull(DocumentPreviewArtifactClaim claim,
                                        LocalDateTime now) {
+        // Phase-4 timing anchor (download). Wall-clock millis
+        // since the start of source download. Used ONLY for the
+        // stage breakdown log under
+        // totalProcessingMs. We deliberately use
+        // System.nanoTime() so a wall-clock adjustment cannot
+        // produce negative or duplicate timings.
+        long tDownloadStartNanos = 0L;
+        long tDownloadEndNanos = 0L;
+        long tConvertEndNanos = 0L;
+        long tUploadStartNanos = 0L;
+        long tUploadEndNanos = 0L;
         // Checkpoint #1: before source download.
         ensureNotInterrupted("full.before-download", null, null);
 
@@ -272,15 +310,23 @@ public class DocumentPreviewArtifactProcessor {
         // 3. Download the original Office bytes.
         byte[] originalBytes;
         try {
+            tDownloadStartNanos = System.nanoTime();
             originalBytes = supabaseStorageService.downloadPrivateObject(
                     source.getStorageBucket(), source.getStoragePath());
+            tDownloadEndNanos = System.nanoTime();
         } catch (RuntimeException e) {
+            logStageTimings(claim,
+                    tDownloadStartNanos, tDownloadEndNanos,
+                    tConvertEndNanos, tUploadStartNanos, tUploadEndNanos);
             return applyDecision(claim,
                     failureClassifier.classify(e, claim.attemptCount(),
                             claim.maxAttempts()),
                     failureClassifier.safeOperationalCode(e), now);
         }
         if (originalBytes == null || originalBytes.length == 0) {
+            logStageTimings(claim,
+                    tDownloadStartNanos, tDownloadEndNanos,
+                    tConvertEndNanos, tUploadStartNanos, tUploadEndNanos);
             return applyDecision(claim,
                     DocumentPreviewFailureClassifier.Decision.PERMANENT_DEAD,
                     "O3_SOURCE_MISSING", now);
@@ -298,7 +344,11 @@ public class DocumentPreviewArtifactProcessor {
         OfficeConversionResult result;
         try {
             result = officeDocumentConverter.convert(request);
+            tConvertEndNanos = System.nanoTime();
         } catch (RuntimeException e) {
+            logStageTimings(claim,
+                    tDownloadStartNanos, tDownloadEndNanos,
+                    tConvertEndNanos, tUploadStartNanos, tUploadEndNanos);
             return applyDecision(claim,
                     failureClassifier.classify(e, claim.attemptCount(),
                             claim.maxAttempts()),
@@ -370,10 +420,15 @@ public class DocumentPreviewArtifactProcessor {
 
         // 7. Upload the PDF.
         try {
+            tUploadStartNanos = System.nanoTime();
             previewServerUploadService.uploadPdfPreview(
                     previewBucket, previewPath, result.pdfBytes(),
                     "application/pdf");
+            tUploadEndNanos = System.nanoTime();
         } catch (RuntimeException e) {
+            logStageTimings(claim,
+                    tDownloadStartNanos, tDownloadEndNanos,
+                    tConvertEndNanos, tUploadStartNanos, tUploadEndNanos);
             return applyDecision(claim,
                     failureClassifier.classify(e, claim.attemptCount(),
                             claim.maxAttempts()),
@@ -392,6 +447,9 @@ public class DocumentPreviewArtifactProcessor {
                 claim.artifactId(), claim.attemptCount(),
                 previewBucket, previewPath, pageCount, now);
         if (ready) {
+            logStageTimings(claim,
+                    tDownloadStartNanos, tDownloadEndNanos,
+                    tConvertEndNanos, tUploadStartNanos, tUploadEndNanos);
             log.info("Artifact READY id={} pages={} bucket={} path={}",
                     claim.artifactId(), pageCount,
                     previewBucket, previewPath);
@@ -636,6 +694,62 @@ public class DocumentPreviewArtifactProcessor {
             default:
                 return WorkerOutcome.INTERRUPTED;
         }
+    }
+
+    /**
+     * Phase-4 timing breakdown. Logs the three stage timings so
+     * the operator can determine whether future slowness is on
+     * Supabase download, LibreOffice conversion or Supabase
+     * upload. Only millis are logged; URLs, paths, tokens and
+     * bytes are intentionally NEVER logged here.
+     *
+     * @param claim              the artifact being processed
+     * @param tDownloadStartNanos anchor captured BEFORE the
+     *                           Supabase download call; zero when
+     *                           the call was never reached
+     * @param tDownloadEndNanos  anchor captured AFTER the download
+     *                           call; zero when the call failed or
+     *                           was never reached
+     * @param tConvertEndNanos   anchor captured AFTER the
+     *                           conversion call; zero when the call
+     *                           failed or was never reached
+     * @param tUploadStartNanos  anchor captured BEFORE the Supabase
+     *                           upload call; zero when the call was
+     *                           never reached
+     * @param tUploadEndNanos    anchor captured AFTER the upload
+     *                           call; zero when the call failed or
+     *                           was never reached
+     */
+    private static void logStageTimings(
+            DocumentPreviewArtifactClaim claim,
+            long tDownloadStartNanos,
+            long tDownloadEndNanos,
+            long tConvertEndNanos,
+            long tUploadStartNanos,
+            long tUploadEndNanos) {
+        if (!log.isInfoEnabled()) {
+            return;
+        }
+        long sourceDownloadMs = tDownloadEndNanos > 0L
+                && tDownloadStartNanos > 0L
+                        ? (tDownloadEndNanos - tDownloadStartNanos)
+                                / 1_000_000L
+                        : -1L;
+        long officeConvertMs = tConvertEndNanos > 0L
+                && tDownloadEndNanos > 0L
+                        ? (tConvertEndNanos - tDownloadEndNanos)
+                                / 1_000_000L
+                        : -1L;
+        long artifactUploadMs = tUploadEndNanos > 0L
+                && tUploadStartNanos > 0L
+                        ? (tUploadEndNanos - tUploadStartNanos)
+                                / 1_000_000L
+                        : -1L;
+        log.info("stage-timing id={} attempt={} sourceDownloadMs={} "
+                        + "officeConvertMs={} artifactUploadMs={}",
+                claim.artifactId(),
+                claim.attemptCount(),
+                sourceDownloadMs, officeConvertMs, artifactUploadMs);
     }
 
     /**

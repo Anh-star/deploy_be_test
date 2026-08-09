@@ -22,7 +22,10 @@ import com.cmcu.itstudy.service.contract.PaidDocumentPreviewService.DocumentRequ
 import com.cmcu.itstudy.service.contract.PaidDocumentPreviewService.PreviewResult;
 import com.cmcu.itstudy.service.contract.PaidDocumentPreviewService.RendererKind;
 import com.cmcu.itstudy.service.contract.PreviewAccessDecisionService;
+import com.cmcu.itstudy.service.contract.SupabaseStorageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -43,7 +46,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
-
 /**
  * Secure paid preview endpoint.
  *
@@ -105,6 +107,7 @@ public class DocumentPreviewController {
     private final DocumentPreviewStateService previewStateService;
     private final PreviewAccessDecisionService accessDecisionService;
     private final DocumentPreviewArtifactDeliveryService deliveryService;
+    private final SupabaseStorageService storageService;
     private final ObjectMapper objectMapper;
 
     public DocumentPreviewController(DocumentPreviewSnapshotService snapshotService,
@@ -113,6 +116,7 @@ public class DocumentPreviewController {
                                      DocumentPreviewStateService previewStateService,
                                      PreviewAccessDecisionService accessDecisionService,
                                      DocumentPreviewArtifactDeliveryService deliveryService,
+                                     SupabaseStorageService storageService,
                                      ObjectMapper objectMapper) {
         this.snapshotService = snapshotService;
         this.previewService = previewService;
@@ -120,6 +124,7 @@ public class DocumentPreviewController {
         this.previewStateService = previewStateService;
         this.accessDecisionService = accessDecisionService;
         this.deliveryService = deliveryService;
+        this.storageService = storageService;
         this.objectMapper = objectMapper;
     }
 
@@ -226,6 +231,23 @@ public class DocumentPreviewController {
         // cases. For non-Office documents we may still call
         // previewService.buildPreview because the original PDF is
         // already the canonical preview.
+        //
+        // Free-document short-circuit: when the document is free
+        // (isPaid=false) and the access decision has resolved to
+        // FULL, stream the original PDF bytes directly from the
+        // primary DocumentFile's storage bucket/path. This matches
+        // the documented contract at PaidDocumentPreviewServiceImpl
+        // ("the controller short-circuits free documents before
+        // invoking this service") and avoids the defensive
+        // PREVIEW_UNAVAILABLE gate that would otherwise return
+        // "Free documents use the existing public preview pipeline".
+        if (Boolean.FALSE.equals(snapshot.isPaid())
+                && authorizedMode == PreviewMode.FULL
+                && org.springframework.util.StringUtils.hasText(snapshot.bucket())
+                && org.springframework.util.StringUtils.hasText(snapshot.path())) {
+            return buildFreeOwnerPdfResponse(snapshot);
+        }
+
         PreviewResult result;
         try {
             result = previewService.buildPreview(request);
@@ -471,6 +493,120 @@ public class DocumentPreviewController {
             headers.set(HEADER_TOTAL_PAGES, String.valueOf(result.totalPages()));
         }
         return ResponseEntity.status(HttpStatus.OK).headers(headers).body(result.bytes());
+    }
+
+    /**
+     * Free non-Office PDF short-circuit. Streams the original PDF
+     * bytes from the {@code DocumentFile.storageBucket} /
+     * {@code DocumentFile.storagePath} pair resolved by the
+     * snapshot service.
+     *
+     * <p>This branch only fires when ALL of the following hold:</p>
+     * <ul>
+     *   <li>{@code snapshot.isPaid() == false} &mdash; the
+     *       defensive paid/free gate at
+     *       {@code PaidDocumentPreviewServiceImpl.buildPreview} would
+     *       otherwise return
+     *       {@code "Free documents use the existing public preview pipeline"};</li>
+     *   <li>{@code authorizedMode == PreviewMode.FULL} &mdash; the
+     *       metadata-only
+     *       {@link DocumentPreviewSnapshotService} has already
+     *       confirmed the viewer is owner / approver / super-admin
+     *       / approved-public / owner-purchased. A LOCKED or null
+     *       decision never reaches this branch.</li>
+     *   <li>the snapshot's bucket / path are non-blank &mdash;
+     *       the primary {@code DocumentFile} row exists and is
+     *       linked to a known storage object.</li>
+     * </ul>
+     *
+     * <p>Failure semantics mirror the existing paid-preview path:</p>
+     * <ul>
+     *   <li>{@link StorageObjectNotFoundException} &mdash; the
+     *       primary file's storage object is missing. Return a
+     *       safe LOCKED payload with reason
+     *       {@code PREVIEW_UNAVAILABLE} and the Vietnamese
+     *       "Tài liệu chưa được liên kết với kho lưu trữ"
+     *       message.</li>
+     *   <li>{@link SignedUploadTargetFailedException} &mdash;
+     *       storage transport failure. Return a safe LOCKED payload
+     *       with the Vietnamese "Không thể tải tài liệu từ kho
+     *       lưu trữ" message.</li>
+     *   <li>{@link PreviewFileTooLargeException} &mdash; let the
+     *       global exception handler emit HTTP 413 with its
+     *       generic message. Storage credentials, signed URLs, and
+     *       bucket / path are never echoed back.</li>
+     *   <li>Non-Empty-or-missing PDF magic, blank bytes, or
+     *       PDFBox parse failure &mdash; return a safe LOCKED
+     *       payload with the "Tài liệu trống" / "Không thể tạo
+     *       bản xem trước" messages.</li>
+     * </ul>
+     *
+     * <p>This branch MUST NOT be invoked for paid documents and
+     * MUST NOT be invoked when the access decision is LOCKED or
+     * null. The precondition gating above enforces that.</p>
+     *
+     * @param snapshot the immutable preview snapshot for the
+     *                 document. Both bucket and path are guaranteed
+     *                 non-blank by the caller.
+     * @return 200 {@code application/pdf} with the original bytes
+     *         and the standard preview headers, or a safe LOCKED
+     *         JSON payload on storage failure.
+     */
+    private ResponseEntity<byte[]> buildFreeOwnerPdfResponse(
+            DocumentPreviewSnapshot snapshot) {
+        byte[] pdfBytes;
+        try {
+            pdfBytes = storageService.downloadPrivateObject(
+                    snapshot.bucket(), snapshot.path());
+        } catch (StorageObjectNotFoundException e) {
+            return buildLockedResponse(PreviewResult.locked(
+                    com.cmcu.itstudy.dto.document.PreviewLockedReason.PREVIEW_UNAVAILABLE,
+                    "Tài liệu chưa được liên kết với kho lưu trữ"));
+        } catch (SignedUploadTargetFailedException e) {
+            log.warn("Storage back-end refused free-PDF preview generation");
+            return buildLockedResponse(PreviewResult.locked(
+                    com.cmcu.itstudy.dto.document.PreviewLockedReason.PREVIEW_UNAVAILABLE,
+                    "Không thể tải tài liệu từ kho lưu trữ"));
+        }
+        if (pdfBytes == null || pdfBytes.length == 0) {
+            return buildLockedResponse(PreviewResult.locked(
+                    com.cmcu.itstudy.dto.document.PreviewLockedReason.PREVIEW_UNAVAILABLE,
+                    "Tài liệu trống"));
+        }
+        if (!isPdfMagic(pdfBytes)) {
+            return buildLockedResponse(PreviewResult.locked(
+                    com.cmcu.itstudy.dto.document.PreviewLockedReason.PREVIEW_UNAVAILABLE,
+                    "Không thể tạo bản xem trước"));
+        }
+        int pageCount = safeCountPages(pdfBytes);
+        if (pageCount <= 0) {
+            return buildLockedResponse(PreviewResult.locked(
+                    com.cmcu.itstudy.dto.document.PreviewLockedReason.PREVIEW_UNAVAILABLE,
+                    "Không thể tạo bản xem trước"));
+        }
+        return buildPdfResponse(PreviewResult.full(pdfBytes, pageCount,
+                RendererKind.PDF));
+    }
+
+    private static boolean isPdfMagic(byte[] bytes) {
+        byte[] magic = new byte[]{0x25, 0x50, 0x44, 0x46, 0x2D};
+        if (bytes.length < magic.length) {
+            return false;
+        }
+        for (int i = 0; i < magic.length; i++) {
+            if (bytes[i] != magic[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static int safeCountPages(byte[] bytes) {
+        try (PDDocument document = Loader.loadPDF(bytes)) {
+            return document.getNumberOfPages();
+        } catch (java.io.IOException ioe) {
+            return -1;
+        }
     }
 
     private ResponseEntity<byte[]> buildDocxResponse(PreviewResult result) {

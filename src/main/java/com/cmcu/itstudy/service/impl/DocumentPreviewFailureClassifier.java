@@ -6,6 +6,7 @@ import com.cmcu.itstudy.handle.OfficeConversionInvalidOutputException;
 import com.cmcu.itstudy.handle.OfficeConversionOutputTooLargeException;
 import com.cmcu.itstudy.handle.OfficeConversionRetryableException;
 import com.cmcu.itstudy.handle.OfficeConversionTerminalException;
+import com.cmcu.itstudy.handle.OfficeConversionTimeoutException;
 import com.cmcu.itstudy.handle.OfficeConversionUnsupportedFormatException;
 import com.cmcu.itstudy.handle.PreviewUploadTooLargeException;
 import com.cmcu.itstudy.handle.SignedUploadTargetFailedException;
@@ -115,10 +116,46 @@ public class DocumentPreviewFailureClassifier {
             return Decision.PERMANENT_DEAD;
         }
 
+        // Final-cleanup TIMEOUT policy: a TIMEOUT on the second
+        // attempt for the same artifact is terminal, regardless of
+        // the remaining maxAttempts budget. The first TIMEOUT
+        // (attemptCount == 1) is retryable so the worker gets one
+        // retry for a slow conversion; the second TIMEOUT
+        // (attemptCount == 2) marks DEAD.
+        //
+        // Decision is keyed off the persisted claimedAttemptCount
+        // passed by the worker; no in-memory counter is required
+        // so a JVM restart does not silently widen the retry
+        // budget.
+        if (isOfficeTimeoutExhausted(throwable, claimedAttemptCount)) {
+            return Decision.PERMANENT_DEAD;
+        }
+
         boolean hasBudget = claimedAttemptCount < maxAttempts;
         return hasBudget
                 ? Decision.RETRYABLE
                 : Decision.BUDGET_EXHAUSTED_RETRYABLE;
+    }
+
+    /**
+     * Phase-final TIMEOUT policy: a TIMEOUT becomes terminal as
+     * soon as the worker is processing the second attempt for the
+     * same artifact.
+     *
+     * @param throwable          the exception that aborted the
+     *                           attempt
+     * @param claimedAttemptCount the attempt count AFTER the claim
+     *                           SQL incremented it (always {@code >= 1})
+     * @return {@code true} when the throwable is a LibreOffice
+     *         timeout AND the worker is on its second or later
+     *         attempt for this artifact
+     */
+    private static boolean isOfficeTimeoutExhausted(Throwable throwable,
+                                                    int claimedAttemptCount) {
+        if (!(throwable instanceof OfficeConversionTimeoutException)) {
+            return false;
+        }
+        return claimedAttemptCount >= 2;
     }
 
     /**

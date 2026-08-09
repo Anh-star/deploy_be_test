@@ -50,8 +50,16 @@ public class OfficePreviewProperties {
     /**
      * Wall-clock budget for a single DOC / DOCX to PDF conversion.
      * The runner triggers graceful termination after this duration.
+     *
+     * <p>Default 90 seconds. The previous 30-second default was tuned
+     * for small DOCX files; large DOCX (≈ 5–6 MB, ≈ 100+ pages) can
+     * exceed 30 seconds on a cold-start LibreOffice. Operators can
+     * override per environment via the env name
+     * {@code APP_PREVIEW_OFFICE_CONVERSION_TIMEOUT}. The validate()
+     * bound is {@code >= 1s} to prevent misconfiguration from
+     * disabling the timeout entirely.</p>
      */
-    private Duration conversionTimeout = Duration.ofSeconds(30);
+    private Duration conversionTimeout = Duration.ofSeconds(90);
 
     /**
      * Grace period given to a process tree after {@code destroy()} is
