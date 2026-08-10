@@ -9,6 +9,7 @@ import com.cmcu.itstudy.entity.DocumentFile;
 import com.cmcu.itstudy.entity.DocumentTag;
 import com.cmcu.itstudy.entity.Tag;
 import com.cmcu.itstudy.entity.User;
+import com.cmcu.itstudy.enums.AllowedDocumentFileType;
 import com.cmcu.itstudy.enums.DocumentStatus;
 import com.cmcu.itstudy.enums.FileType;
 import com.cmcu.itstudy.repository.CategoryRepository;
@@ -16,12 +17,14 @@ import com.cmcu.itstudy.repository.DocumentFileRepository;
 import com.cmcu.itstudy.repository.DocumentRepository;
 import com.cmcu.itstudy.repository.DocumentTagRepository;
 import com.cmcu.itstudy.repository.TagRepository;
+import com.cmcu.itstudy.service.contract.QuizGenerationService;
 import com.cmcu.itstudy.service.contract.TransactionalDocumentCrudService;
 import com.cmcu.itstudy.util.SlugUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
@@ -56,6 +59,8 @@ public class TransactionalDocumentCrudServiceImpl implements TransactionalDocume
     private final DocumentFileRepository documentFileRepository;
     private final DocumentPreviewArtifactFactory artifactFactory;
     private final SupabaseProperties supabaseProperties;
+    private final QuizGenerationService quizGenerationService;
+    private final Clock clock;
 
     public TransactionalDocumentCrudServiceImpl(
             DocumentRepository documentRepository,
@@ -64,7 +69,9 @@ public class TransactionalDocumentCrudServiceImpl implements TransactionalDocume
             TagRepository tagRepository,
             DocumentFileRepository documentFileRepository,
             DocumentPreviewArtifactFactory artifactFactory,
-            SupabaseProperties supabaseProperties) {
+            SupabaseProperties supabaseProperties,
+            QuizGenerationService quizGenerationService,
+            Clock clock) {
         this.documentRepository = documentRepository;
         this.documentTagRepository = documentTagRepository;
         this.categoryRepository = categoryRepository;
@@ -72,6 +79,8 @@ public class TransactionalDocumentCrudServiceImpl implements TransactionalDocume
         this.documentFileRepository = documentFileRepository;
         this.artifactFactory = artifactFactory;
         this.supabaseProperties = supabaseProperties;
+        this.quizGenerationService = quizGenerationService;
+        this.clock = clock;
     }
 
     /**
@@ -96,7 +105,15 @@ public class TransactionalDocumentCrudServiceImpl implements TransactionalDocume
         boolean paid = Boolean.TRUE.equals(request.getIsPaid());
         Document document = Document.builder()
                 .title(request.getTitle())
-                .slug(SlugUtils.resolveSlug(request.getTitle(), request.getTitle()))
+                // Globally-unique slug resolver. Existence check is
+                // delegated to a lambda so this service stays free of any
+                // direct repository knowledge of the slug uniqueness
+                // rules. Soft-deleted rows still occupy their slug
+                // (tbl_documents.slug is a plain UNIQUE), so a fresh
+                // create with the same title gets a suffixed slug.
+                .slug(SlugUtils.resolveUniqueSlug(
+                        request.getTitle(),
+                        documentRepository::existsBySlug))
                 .description(request.getDescription())
                 .fileUrl(request.getDocumentUrl())
                 .fileName(request.getFileName())
@@ -146,6 +163,30 @@ public class TransactionalDocumentCrudServiceImpl implements TransactionalDocume
                 request.getDocumentUrl(),
                 request.getFileName(),
                 request.getFileSizeBytes()));
+
+        // 4.1. Phase QUIZ-AI-2B: persist the upload-time AI quiz intent
+        //       as a tbl_quiz_generations row inside this same REQUIRED
+        //       transaction. The boolean + integer pair was already
+        //       validated by the DTO @AssertTrue and @Min/@Max. PDF →
+        //       QUEUED; DOC/DOCX → WAITING_SOURCE; PPT/PPTX rejected.
+        //       No n8n call, no signed URL, no scheduler.
+        if (Boolean.TRUE.equals(request.getGenerateQuiz())) {
+            AllowedDocumentFileType quizFileType =
+                    AllowedDocumentFileType.fromExtension(primaryFile.getFileExtension())
+                            .orElseThrow(() -> new IllegalArgumentException(
+                                    QuizGenerationServiceImpl.UNSUPPORTED_AUTO_QUIZ_MESSAGE));
+            if (quizFileType == AllowedDocumentFileType.PPT
+                    || quizFileType == AllowedDocumentFileType.PPTX) {
+                throw new IllegalArgumentException(
+                        QuizGenerationServiceImpl.UNSUPPORTED_AUTO_QUIZ_MESSAGE);
+            }
+            quizGenerationService.enqueueForDocument(
+                    savedDocument.getId(),
+                    primaryFile.getId(),
+                    quizFileType,
+                    request.getQuizQuestionCount(),
+                    LocalDateTime.now(clock));
+        }
 
         // 5. Bootstrap a FRESH-Office preview artifact (DOC / DOCX only).
         //    The factory joins the existing REQUIRED transaction via

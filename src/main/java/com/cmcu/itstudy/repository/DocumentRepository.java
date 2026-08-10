@@ -22,6 +22,25 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @EntityGraph(attributePaths = {"category", "createdBy"})
     Optional<Document> findByIdAndDeletedFalse(UUID id);
 
+    /**
+     * Slug existence check used by the unique-slug resolver.
+     *
+     * <p>This lookup is INTENTIONALLY not filtered by {@code deleted = false}.
+     * The {@code tbl_documents.slug} column carries a plain UNIQUE constraint
+     * in the schema, so a soft-deleted row still occupies its slug — a fresh
+     * create with the same title must therefore generate a suffixed slug
+     * rather than recycle the soft-deleted one's. Per the bug-fix brief the
+     * DB constraint is NOT being redesigned in this phase.
+     */
+    boolean existsBySlug(String slug);
+
+    /**
+     * Slug existence check that excludes the supplied document id. Used by
+     * the update path so a document whose title is unchanged does not collide
+     * with its own existing slug row.
+     */
+    boolean existsBySlugAndIdNot(String slug, UUID id);
+
     @EntityGraph(attributePaths = {"category", "createdBy"})
     @Query("select d from Document d where d.status = :status and d.deleted = false order by d.createdAt desc")
     Page<Document> findPendingPageWithCategoryAndCreator(@Param("status") DocumentStatus status, Pageable pageable);

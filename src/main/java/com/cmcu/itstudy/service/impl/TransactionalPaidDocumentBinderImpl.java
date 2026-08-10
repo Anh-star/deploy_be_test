@@ -10,6 +10,7 @@ import com.cmcu.itstudy.entity.DocumentTag;
 import com.cmcu.itstudy.entity.PendingStorageUpload;
 import com.cmcu.itstudy.entity.Tag;
 import com.cmcu.itstudy.entity.User;
+import com.cmcu.itstudy.enums.AllowedDocumentFileType;
 import com.cmcu.itstudy.enums.DocumentStatus;
 import com.cmcu.itstudy.enums.PendingUploadStatus;
 import com.cmcu.itstudy.handle.PendingUploadAlreadyBoundException;
@@ -24,6 +25,7 @@ import com.cmcu.itstudy.repository.DocumentTagRepository;
 import com.cmcu.itstudy.repository.PendingStorageUploadRepository;
 import com.cmcu.itstudy.repository.TagRepository;
 import com.cmcu.itstudy.repository.UserRepository;
+import com.cmcu.itstudy.service.contract.QuizGenerationService;
 import com.cmcu.itstudy.service.contract.TransactionalDocumentCrudService;
 import com.cmcu.itstudy.service.contract.TransactionalPaidDocumentBinder;
 import com.cmcu.itstudy.util.SlugUtils;
@@ -80,6 +82,7 @@ public class TransactionalPaidDocumentBinderImpl implements TransactionalPaidDoc
     private final EntityManager entityManager;
     private final Clock clock;
     private final DocumentPreviewArtifactFactory artifactFactory;
+    private final QuizGenerationService quizGenerationService;
 
     public TransactionalPaidDocumentBinderImpl(
             DocumentRepository documentRepository,
@@ -92,7 +95,8 @@ public class TransactionalPaidDocumentBinderImpl implements TransactionalPaidDoc
             TransactionalDocumentCrudService transactionalDocumentCrudService,
             EntityManager entityManager,
             Clock clock,
-            DocumentPreviewArtifactFactory artifactFactory) {
+            DocumentPreviewArtifactFactory artifactFactory,
+            QuizGenerationService quizGenerationService) {
         this.documentRepository = documentRepository;
         this.documentTagRepository = documentTagRepository;
         this.categoryRepository = categoryRepository;
@@ -104,6 +108,7 @@ public class TransactionalPaidDocumentBinderImpl implements TransactionalPaidDoc
         this.entityManager = entityManager;
         this.clock = clock;
         this.artifactFactory = artifactFactory;
+        this.quizGenerationService = quizGenerationService;
     }
 
     @Override
@@ -177,7 +182,15 @@ public class TransactionalPaidDocumentBinderImpl implements TransactionalPaidDoc
 
         Document document = Document.builder()
                 .title(metadata.getTitle())
-                .slug(SlugUtils.resolveSlug(metadata.getTitle(), metadata.getTitle()))
+                // Globally-unique slug resolver. Existence check is
+                // delegated to a lambda so the binder stays free of any
+                // direct repository knowledge of the slug uniqueness
+                // rules. Soft-deleted rows still occupy their slug
+                // (tbl_documents.slug is a plain UNIQUE), so a fresh
+                // paid create with the same title gets a suffixed slug.
+                .slug(SlugUtils.resolveUniqueSlug(
+                        metadata.getTitle(),
+                        documentRepository::existsBySlug))
                 .description(metadata.getDescription())
                 .fileUrl(null) // paid files never expose fileUrl
                 .fileName(pending.getExpectedFileName())
@@ -234,6 +247,23 @@ public class TransactionalPaidDocumentBinderImpl implements TransactionalPaidDoc
                 pending.getExpectedFileName(),
                 verified.sizeBytes());
         documentFileRepository.save(primaryFile);
+
+        // 6.05. Phase QUIZ-AI-2B: persist the upload-time AI quiz intent
+        //       as a tbl_quiz_generations row inside this same REQUIRED
+        //       transaction. The boolean + integer pair was already
+        //       validated by the DTO @AssertTrue and @Min/@Max. PDF →
+        //       QUEUED; DOC/DOCX → WAITING_SOURCE; PPT/PPTX rejected.
+        //       No n8n call, no signed URL, no scheduler.
+        if (Boolean.TRUE.equals(metadata.getGenerateQuiz())) {
+            AllowedDocumentFileType quizFileType = resolvePaidQuizFileType(
+                    primaryFile, pending);
+            quizGenerationService.enqueueForDocument(
+                    savedDocument.getId(),
+                    primaryFile.getId(),
+                    quizFileType,
+                    metadata.getQuizQuestionCount(),
+                    now);
+        }
 
         // 6.1. Bootstrap a FRESH-Office preview artifact (DOC / DOCX only).
         //       The factory joins the binder's REQUIRED transaction via
@@ -348,5 +378,46 @@ public class TransactionalPaidDocumentBinderImpl implements TransactionalPaidDoc
             return com.cmcu.itstudy.enums.FileType.PPT;
         }
         return com.cmcu.itstudy.enums.FileType.OTHER;
+    }
+
+    /**
+     * Resolves the {@link AllowedDocumentFileType} for the quiz-generation
+     * enqueue on the paid path. The verified MIME is the authoritative
+     * signal for paid uploads; the on-disk extension is a secondary
+     * fallback when the extension column is already populated on the
+     * freshly-built primary file.
+     *
+     * <p>Only PDF / DOC / DOCX are accepted for Auto Quiz; PPT / PPTX
+     * (and any other type) throw {@link IllegalArgumentException} carrying
+     * the shared Vietnamese message from
+     * {@link QuizGenerationServiceImpl#UNSUPPORTED_AUTO_QUIZ_MESSAGE}. The
+     * binder transaction rolls back cleanly. The exception is the
+     * project's existing 400 mapping for an unsupported file type; no new
+     * exception hierarchy is introduced in Phase 2B.
+     */
+    private static AllowedDocumentFileType resolvePaidQuizFileType(
+            DocumentFile primaryFile,
+            PendingStorageUpload pending) {
+        java.util.Optional<AllowedDocumentFileType> fromMime =
+                AllowedDocumentFileType.fromMimeType(pending.getExpectedMimeType());
+        if (fromMime.isPresent()) {
+            AllowedDocumentFileType t = fromMime.get();
+            if (t == AllowedDocumentFileType.PPT
+                    || t == AllowedDocumentFileType.PPTX) {
+                throw new IllegalArgumentException(
+                        QuizGenerationServiceImpl.UNSUPPORTED_AUTO_QUIZ_MESSAGE);
+            }
+            return t;
+        }
+        AllowedDocumentFileType fromExt =
+                AllowedDocumentFileType.fromExtension(primaryFile.getFileExtension())
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                QuizGenerationServiceImpl.UNSUPPORTED_AUTO_QUIZ_MESSAGE));
+        if (fromExt == AllowedDocumentFileType.PPT
+                || fromExt == AllowedDocumentFileType.PPTX) {
+            throw new IllegalArgumentException(
+                    QuizGenerationServiceImpl.UNSUPPORTED_AUTO_QUIZ_MESSAGE);
+        }
+        return fromExt;
     }
 }

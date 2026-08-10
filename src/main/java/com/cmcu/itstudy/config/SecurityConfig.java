@@ -57,6 +57,10 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/auth/me"
+                        ).authenticated()
+                        .requestMatchers(
                                 "/api/auth/login",
                                 "/api/auth/register",
                                 "/api/auth/refresh",

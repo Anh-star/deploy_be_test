@@ -11,6 +11,7 @@ import com.cmcu.itstudy.enums.PaymentStatus;
 import com.cmcu.itstudy.handle.DocumentPricingLockedException;
 import com.cmcu.itstudy.repository.*;
 import com.cmcu.itstudy.service.contract.DocumentService;
+import com.cmcu.itstudy.service.contract.QuizGenerationService;
 import com.cmcu.itstudy.service.contract.TransactionalDocumentCrudService;
 import com.cmcu.itstudy.util.SlugUtils;
 import org.springframework.data.domain.PageRequest;
@@ -42,6 +43,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentFileRepository documentFileRepository;
     private final PaymentRepository paymentRepository;
     private final TransactionalDocumentCrudService transactionalDocumentCrudService;
+    private final QuizGenerationService quizGenerationService;
 
     public DocumentServiceImpl(DocumentRepository documentRepository,
                                DocumentTagRepository documentTagRepository,
@@ -49,7 +51,8 @@ public class DocumentServiceImpl implements DocumentService {
                                TagRepository tagRepository,
                                DocumentFileRepository documentFileRepository,
                                PaymentRepository paymentRepository,
-                               TransactionalDocumentCrudService transactionalDocumentCrudService) {
+                               TransactionalDocumentCrudService transactionalDocumentCrudService,
+                               QuizGenerationService quizGenerationService) {
         this.documentRepository = documentRepository;
         this.documentTagRepository = documentTagRepository;
         this.categoryRepository = categoryRepository;
@@ -57,6 +60,7 @@ public class DocumentServiceImpl implements DocumentService {
         this.documentFileRepository = documentFileRepository;
         this.paymentRepository = paymentRepository;
         this.transactionalDocumentCrudService = transactionalDocumentCrudService;
+        this.quizGenerationService = quizGenerationService;
     }
 
     @Transactional(readOnly = true)
@@ -204,10 +208,20 @@ public class DocumentServiceImpl implements DocumentService {
         // 2. Update Document entity fields
         existingDocument.setTitle(documentUpdateRequestDto.getTitle());
         existingDocument.setDescription(documentUpdateRequestDto.getDescription());
-        // Only update slug if it's provided and different, or if title changed significantly.
-        // For now, let's regenerate slug if title changes.
+        // Slug regeneration policy on update:
+        //   • Title unchanged → keep the current slug verbatim so public URLs
+        //     and any external references remain stable. A metadata-only
+        //     round-trip must NOT rewrite slug = base to slug = base-2.
+        //   • Title changed  → derive a fresh unique slug from the new title,
+        //     excluding THIS document id from the existence check so the row
+        //     does not collide with its own previous slug (relevant when a
+        //     suffix was previously added and the user is now re-editing).
+        //     Soft-deleted rows still occupy their slug, so the same
+        //     suffix-chain rule applies as on create.
         if (!existingDocument.getTitle().equals(documentUpdateRequestDto.getTitle())) {
-            existingDocument.setSlug(SlugUtils.resolveSlug(documentUpdateRequestDto.getTitle(), documentUpdateRequestDto.getTitle()));
+            existingDocument.setSlug(SlugUtils.resolveUniqueSlug(
+                    documentUpdateRequestDto.getTitle(),
+                    candidate -> documentRepository.existsBySlugAndIdNot(candidate, existingDocument.getId())));
         }
         existingDocument.setFileUrl(documentUpdateRequestDto.getDocumentUrl());
         existingDocument.setFileName(documentUpdateRequestDto.getFileName());
@@ -296,11 +310,18 @@ public class DocumentServiceImpl implements DocumentService {
             throw new SecurityException("User does not have permission to delete this document.");
         }
 
-        // Perform soft delete
+        // Perform soft delete. Sample a single 'now' so the document
+        // row and the quiz-generation cancel below stay consistent.
+        LocalDateTime now = LocalDateTime.now();
         document.setDeleted(true);
-        document.setDeletedAt(LocalDateTime.now());
+        document.setDeletedAt(now);
         document.setDeletedBy(currentUser);
         documentRepository.save(document);
+
+        // Phase QUIZ-AI-2B: cancel any active quiz-generation row
+        // attached to this document inside the same transaction.
+        // No network call; the cancel is purely a status flip.
+        quizGenerationService.cancelForDocument(documentId, now);
     }
 
     @Transactional(readOnly = true)
