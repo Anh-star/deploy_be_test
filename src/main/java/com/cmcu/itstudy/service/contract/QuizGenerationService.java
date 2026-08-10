@@ -70,4 +70,41 @@ public interface QuizGenerationService {
      * </ul>
      */
     void cancelForDocument(UUID documentId, LocalDateTime now);
+
+    /**
+     * Phase 2C: promote a {@code WAITING_SOURCE} generation to
+     * {@code QUEUED} once its canonical FULL preview PDF artifact
+     * becomes {@code READY}.
+     *
+     * <p>This method is the source-ready bridge: it is called from a
+     * {@link org.springframework.transaction.support.TransactionSynchronization}
+     * callback that fires <em>after</em> the FULL preview artifact's
+     * {@code markReady} transaction commits. This guarantees the
+     * READY state is durable before the generation is promoted.
+     *
+     * <p>Transition rules:
+     * <ul>
+     *   <li>{@code WAITING_SOURCE} → {@code QUEUED}; {@code status=QUEUED},
+     *       {@code updatedAt=now}. All other fields ({@code requestedQuestionCount},
+     *       {@code attempts}, {@code requestedAt}, {@code documentId},
+     *       {@code documentFileId}) are preserved.</li>
+     *   <li>{@code QUEUED} → no-op (idempotent).</li>
+     *   <li>{@code PROCESSING}, {@code READY}, {@code FAILED},
+     *       {@code CANCELLED} → no-op.</li>
+     *   <li>No row → no-op.</li>
+     * </ul>
+     *
+     * <p>The {@code documentFileId} is a belt-and-suspenders safety
+     * guard: the READY signal carries the artifact's
+     * {@code documentFileId}; if a {@code QuizGeneration} exists for
+     * {@code documentId} but is anchored to a different
+     * {@code documentFileId}, the transition is skipped to prevent
+     * cross-document pollution in future multi-file scenarios.
+     *
+     * @param documentId     the document whose generation should be promoted
+     * @param documentFileId the primary file that is now READY; must match
+     *                       the generation's stored {@code documentFileId}
+     * @param now           caller-supplied timestamp
+     */
+    void queueWhenSourceReady(UUID documentId, UUID documentFileId, LocalDateTime now);
 }

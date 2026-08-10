@@ -9,12 +9,15 @@ import com.cmcu.itstudy.repository.DocumentFileRepository;
 import com.cmcu.itstudy.repository.DocumentRepository;
 import com.cmcu.itstudy.repository.QuizGenerationRepository;
 import com.cmcu.itstudy.service.contract.QuizGenerationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -61,6 +64,9 @@ public class QuizGenerationServiceImpl implements QuizGenerationService {
         this.documentRepository = documentRepository;
         this.documentFileRepository = documentFileRepository;
     }
+
+    private static final Logger log =
+            LoggerFactory.getLogger(QuizGenerationServiceImpl.class);
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
@@ -189,5 +195,55 @@ public class QuizGenerationServiceImpl implements QuizGenerationService {
         }
 
         quizGenerationRepository.saveAndFlush(generation);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void queueWhenSourceReady(UUID documentId,
+                                      UUID documentFileId,
+                                      LocalDateTime now) {
+        if (documentId == null) {
+            throw new IllegalArgumentException("documentId must not be null");
+        }
+        if (documentFileId == null) {
+            throw new IllegalArgumentException("documentFileId must not be null");
+        }
+        if (now == null) {
+            throw new IllegalArgumentException("now must not be null");
+        }
+
+        // Phase 2C E2E FIX: replace the entity-load-then-mutate approach
+        // with a single atomic conditional UPDATE.  This bypasses:
+        //   - lazy-loading the DocumentFile association (which previously
+        //     emitted a SELECT and could leave the row in a stale proxy
+        //     state when the proxy's id compared unequal);
+        //   - Hibernate dirty-tracking (which could fail to flush an
+        //     UPDATE if the managed entity's snapshot matched the
+        //     intended new state);
+        //   - SELECT-then-UPDATE non-atomicity (a concurrent CANCELLED
+        //     could land between the SELECT and the UPDATE).
+        //
+        // The atomic UPDATE below updates at most one row.  The WHERE
+        // clause pins:
+        //   - document_id       must match
+        //   - document_file_id  must match
+        //   - status            must be WAITING_SOURCE
+        // so QUEUED / PROCESSING / READY / FAILED / CANCELLED are all
+        // impossible to overwrite, and CANCELLED is therefore
+        // guaranteed to never resurrect.
+        //
+        // All other columns (requested_question_count, attempts,
+        // requested_at, processing_at, ready_at, failed_at,
+        // cancelled_at, last_error, ...) are preserved because they
+        // are absent from the SET clause.
+        int affected = quizGenerationRepository.promoteWaitingSourceToQueued(
+                documentId, documentFileId,
+                QuizGenerationStatus.WAITING_SOURCE, now);
+
+        // Diagnostic logging for human E2E verification.  Does NOT
+        // dump entity bodies, sensitive fields, or SQL.
+        log.info(
+                "quiz-source-ready documentId={} documentFileId={} affectedRows={}",
+                documentId, documentFileId, affected);
     }
 }

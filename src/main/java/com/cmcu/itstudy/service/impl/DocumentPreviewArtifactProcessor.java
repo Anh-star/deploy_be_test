@@ -19,6 +19,7 @@ import com.cmcu.itstudy.service.contract.DocumentPreviewServerUploadService;
 import com.cmcu.itstudy.service.contract.OfficeDocumentConverter;
 import com.cmcu.itstudy.service.contract.OfficePdfValidationService;
 import com.cmcu.itstudy.service.contract.PaidPdfPageRuleService;
+import com.cmcu.itstudy.service.contract.QuizGenerationService;
 import com.cmcu.itstudy.service.contract.StorageCleanupTaskService;
 import com.cmcu.itstudy.service.contract.SupabaseStorageService;
 import org.apache.pdfbox.Loader;
@@ -128,6 +129,7 @@ public class DocumentPreviewArtifactProcessor {
     private final SupabaseProperties supabaseProperties;
     private final Clock clock;
     private final DocumentPreviewArtifactReadySignal readySignal;
+    private final QuizGenerationService quizGenerationService;
 
     @Autowired
     public DocumentPreviewArtifactProcessor(
@@ -148,7 +150,8 @@ public class DocumentPreviewArtifactProcessor {
             PaidPdfPageRuleService pageRuleService,
             SupabaseProperties supabaseProperties,
             Clock clock,
-            DocumentPreviewArtifactReadySignal readySignal) {
+            DocumentPreviewArtifactReadySignal readySignal,
+            QuizGenerationService quizGenerationService) {
         this.claimRepository = Objects.requireNonNull(claimRepository,
                 "claimRepository");
         this.artifactRepository = Objects.requireNonNull(artifactRepository,
@@ -178,6 +181,8 @@ public class DocumentPreviewArtifactProcessor {
                 "supabaseProperties");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.readySignal = Objects.requireNonNull(readySignal, "readySignal");
+        this.quizGenerationService = Objects.requireNonNull(
+                quizGenerationService, "quizGenerationService");
     }
 
     /**
@@ -442,7 +447,38 @@ public class DocumentPreviewArtifactProcessor {
         // can enqueue cleanup.
         ensureNotInterrupted("full.after-upload", previewBucket, previewPath);
 
-        // 8. Guarded markReady.
+        // Phase 2C: bridge coordinates are captured here so they are
+        // available after markReady returns. The actual bridge call fires
+        // AFTER markReady's REQUIRES_NEW transaction has committed.
+        //
+        // Phase 2C E2E wiring fix: source is a DocumentFile, so
+        // source.getId() returns the DocumentFile's id (a primary key
+        // of the tbl_document_files row), NOT the parent Document's id.
+        // The bridge MUST receive the parent Document's id, so we
+        // resolve it via a tiny dedicated projection query that
+        // returns just the parent Document id as a UUID. This avoids
+        // touching the LAZY DocumentFile.document association from
+        // a NOT_SUPPORTED transactional context (which would throw
+        // LazyInitializationException).
+        //
+        // The resolution is wrapped in a defensive Optional chain: a
+        // missing DocumentFile row or a broken document_id FK must
+        // NEVER crash the preview pipeline. The bridge is best-effort;
+        // if the resolution fails we simply skip it (the natural
+        // worker poll will retry on a future cycle).
+        final UUID docFileId = claim.documentFileId();
+        final UUID documentId =
+                documentFileRepository.findDocumentIdByDocumentFileId(
+                                docFileId)
+                        .orElse(null);
+        if (documentId == null) {
+            log.warn("Phase 2C: cannot resolve parent Document.id for "
+                    + "DocumentFile.id={}; skipping the source-ready bridge.",
+                    docFileId);
+        }
+        final LocalDateTime ts = now;
+
+        // 8. Guarded markReady — runs in its own REQUIRES_NEW transaction.
         boolean ready = claimRepository.markReady(
                 claim.artifactId(), claim.attemptCount(),
                 previewBucket, previewPath, pageCount, now);
@@ -463,6 +499,23 @@ public class DocumentPreviewArtifactProcessor {
             } catch (RuntimeException ignored) {
                 // Wake-up is best-effort.
             }
+
+            // Phase 2C: execute the source-ready bridge. Direct call — no
+            // @Transactional on queueWhenSourceReady. The call is best-effort:
+            // if it throws, the generation stays in WAITING_SOURCE and the
+            // natural worker poll will eventually pick it up on a future cycle.
+            // The bridge is skipped entirely when documentId could not be
+            // resolved (broken FK / missing DocumentFile row).
+            if (documentId != null) {
+                try {
+                    quizGenerationService.queueWhenSourceReady(documentId, docFileId, ts);
+                } catch (RuntimeException e) {
+                    log.warn(
+                            "Source-ready bridge failed for documentId={} docFileId={}",
+                            documentId, docFileId, e);
+                }
+            }
+
             return WorkerOutcome.READY;
         }
         log.warn("Artifact markReady lost ownership id={}; scheduling cleanup",
