@@ -20,6 +20,7 @@ import com.cmcu.itstudy.repository.MenuPermissionRepository;
 import com.cmcu.itstudy.repository.RolePermissionRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +30,12 @@ import java.util.Optional;
 import java.util.List;
 
 @Component
+@ConditionalOnProperty(
+        prefix = "app.database.seeder",
+        name = "enabled",
+        havingValue = "true",
+        matchIfMissing = true
+)
 public class DatabaseSeeder implements CommandLineRunner {
 
     private final UserRepository userRepository;

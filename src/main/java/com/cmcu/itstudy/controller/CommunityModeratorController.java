@@ -1,6 +1,7 @@
 package com.cmcu.itstudy.controller;
 
 import com.cmcu.itstudy.dto.common.ApiResponse;
+import com.cmcu.itstudy.dto.community.CommunityModerationStatsDto;
 import com.cmcu.itstudy.dto.community.PostReportResponseDto;
 import com.cmcu.itstudy.security.UserDetailsImpl;
 import com.cmcu.itstudy.service.contract.CommunityPostService;
@@ -33,13 +34,22 @@ public class CommunityModeratorController {
         return (currentUser != null && currentUser.getUser() != null) ? currentUser.getUser().getId() : null;
     }
 
+    @GetMapping("/stats")
+    public ResponseEntity<ApiResponse<CommunityModerationStatsDto>> getModerationStats() {
+        CommunityModerationStatsDto data = communityPostService.getModerationStats();
+        return ResponseEntity.ok(ApiResponse.success(data, "Lấy thống kê kiểm duyệt thành công"));
+    }
+
     @GetMapping("/reports")
     public ResponseEntity<ApiResponse<Page<PostReportResponseDto>>> getReportedPosts(
             @RequestParam(required = false, defaultValue = "PENDING") String status,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) java.time.LocalDateTime startDate,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME) java.time.LocalDateTime endDate,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
-        Page<PostReportResponseDto> data = communityPostService.getReportedPosts(status, page, size);
+        Page<PostReportResponseDto> data = communityPostService.getReportedPosts(status, keyword, startDate, endDate, page, size);
         return ResponseEntity.ok(ApiResponse.success(data, "Lấy danh sách báo cáo thành công"));
     }
 
@@ -85,9 +95,10 @@ public class CommunityModeratorController {
     @PutMapping("/posts/{postId}/unhide")
     public ResponseEntity<ApiResponse<Void>> unhidePost(
             @PathVariable UUID postId,
+            @RequestParam(required = false) String reason,
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
-        communityPostService.unhidePost(postId, getUserId(currentUser));
+        communityPostService.unhidePost(postId, getUserId(currentUser), reason);
         return ResponseEntity.ok(ApiResponse.success(null, "Đã hiện lại bài viết"));
     }
 

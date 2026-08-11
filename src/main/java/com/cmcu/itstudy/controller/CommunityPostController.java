@@ -76,6 +76,36 @@ public class CommunityPostController {
         return ResponseEntity.ok(ApiResponse.success(result, "Feed"));
     }
 
+    @GetMapping("/user/{authorId}")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getUserPosts(
+            @PathVariable UUID authorId,
+            @RequestParam(name = "page", defaultValue = "0") @Min(0) int page,
+            @RequestParam(name = "size", defaultValue = "10") int size,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser != null ? currentUser.getUser().getId() : null;
+        List<CommunityPostResponseDto> posts = communityPostService.getUserPosts(authorId, page, size, userId);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("content", posts);
+        result.put("page", page);
+        result.put("size", size);
+        result.put("totalElements", posts.size());
+
+        return ResponseEntity.ok(ApiResponse.success(result, "User posts"));
+    }
+
+    @PostMapping("/{postId}/pin")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<CommunityPostResponseDto>> togglePin(
+            @PathVariable UUID postId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        CommunityPostResponseDto data = communityPostService.togglePinPost(postId, userId);
+        return ResponseEntity.ok(ApiResponse.success(data, Boolean.TRUE.equals(data.getIsPinned()) ? "Đã ghim bài viết" : "Đã bỏ ghim bài viết"));
+    }
+
     @GetMapping("/saved")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getSavedPosts(

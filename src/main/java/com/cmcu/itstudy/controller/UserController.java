@@ -50,4 +50,12 @@ public class UserController {
         UserInfoDto data = userProfileService.updateProfile(currentUser, request);
         return ResponseEntity.ok(ApiResponse.success(data, "Cập nhật hồ sơ thành công"));
     }
+
+    @GetMapping("/{userId}/public-profile")
+    public ResponseEntity<ApiResponse<UserInfoDto>> getPublicProfile(
+            @org.springframework.web.bind.annotation.PathVariable java.util.UUID userId
+    ) {
+        UserInfoDto data = userProfileService.getPublicProfile(userId);
+        return ResponseEntity.ok(ApiResponse.success(data, "OK"));
+    }
 }

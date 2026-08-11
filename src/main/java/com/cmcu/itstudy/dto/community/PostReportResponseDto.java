@@ -30,6 +30,7 @@ public class PostReportResponseDto {
     private String status;
     private Long reportCount;
     private Boolean isPostHidden;
+    private Boolean isPostDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime resolvedAt;
 }

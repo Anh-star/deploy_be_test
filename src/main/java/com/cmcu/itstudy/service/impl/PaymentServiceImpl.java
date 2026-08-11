@@ -20,6 +20,7 @@ import com.cmcu.itstudy.service.contract.PaymentService;
 import com.cmcu.itstudy.service.contract.SellerEarningService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -40,7 +41,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
     private final DocumentRepository documentRepository;
     private final DocumentAccessRepository documentAccessRepository;
-    private final VnPayConfig vnPayConfig;
+    private final ObjectProvider<VnPayConfig> vnPayConfigProvider;
     private final DocumentAccessService documentAccessService;
     private final PayOsService payOsService;
     private final SellerEarningService sellerEarningService;
@@ -48,14 +49,14 @@ public class PaymentServiceImpl implements PaymentService {
     public PaymentServiceImpl(PaymentRepository paymentRepository,
                              DocumentRepository documentRepository,
                              DocumentAccessRepository documentAccessRepository,
-                             VnPayConfig vnPayConfig,
+                             ObjectProvider<VnPayConfig> vnPayConfigProvider,
                              DocumentAccessService documentAccessService,
                              PayOsService payOsService,
                              SellerEarningService sellerEarningService) {
         this.paymentRepository = paymentRepository;
         this.documentRepository = documentRepository;
         this.documentAccessRepository = documentAccessRepository;
-        this.vnPayConfig = vnPayConfig;
+        this.vnPayConfigProvider = vnPayConfigProvider;
         this.documentAccessService = documentAccessService;
         this.payOsService = payOsService;
         this.sellerEarningService = sellerEarningService;
@@ -126,6 +127,8 @@ public class PaymentServiceImpl implements PaymentService {
 @Transactional
 public void processReturn(Map<String, String> params) {
 
+    VnPayConfig vnPayConfig = requireVnPayConfig();
+
     if (!vnPayConfig.validateReturnChecksum(params)) {
         throw new IllegalArgumentException("Invalid checksum");
     }
@@ -166,6 +169,8 @@ public void processReturn(Map<String, String> params) {
     @Transactional
     public void processIpn(Map<String, String> params) {
         log.info("IPN received: {}", params);
+
+        VnPayConfig vnPayConfig = requireVnPayConfig();
 
         if (!vnPayConfig.validateIpnChecksum(params)) {
             log.warn("Checksum invalid for IPN. params={}", params);
@@ -280,6 +285,19 @@ public void processReturn(Map<String, String> params) {
         if (payment.getStatus() == PaymentStatus.SUCCESS) {
             ensureSuccessfulPaymentSideEffects(payment);
         }
+    }
+
+    /**
+     * Resolves the VNPayConfig bean, throwing if it is not available.
+     * VNPay is disabled on Render so this bean is absent — callers must
+     * call this method only from the VNPay-specific return/IPN handlers.
+     */
+    private VnPayConfig requireVnPayConfig() {
+        VnPayConfig config = vnPayConfigProvider.getIfAvailable();
+        if (config == null) {
+            throw new IllegalStateException("VNPay is disabled");
+        }
+        return config;
     }
 
     /**

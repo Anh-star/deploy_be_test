@@ -54,4 +54,12 @@ public class UserProfileServiceImpl implements UserProfileService {
 
         return authService.getCurrentUser(user);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UserInfoDto getPublicProfile(java.util.UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new java.util.NoSuchElementException("User not found"));
+        return authService.getCurrentUser(user);
+    }
 }

@@ -19,6 +19,10 @@ public interface CommunityPostService {
 
     List<CommunityPostResponseDto> getFeed(int page, int size, UUID currentUserId);
 
+    List<CommunityPostResponseDto> getUserPosts(UUID authorId, int page, int size, UUID currentUserId);
+
+    CommunityPostResponseDto togglePinPost(UUID postId, UUID userId);
+
     long getFeedTotalCount();
 
     void deletePost(UUID postId, UUID userId);
@@ -58,7 +62,7 @@ public interface CommunityPostService {
     // Report & Moderation
     void reportPost(UUID postId, UUID reporterId, String reasonCode, String detail);
 
-    org.springframework.data.domain.Page<com.cmcu.itstudy.dto.community.PostReportResponseDto> getReportedPosts(String status, int page, int size);
+    org.springframework.data.domain.Page<com.cmcu.itstudy.dto.community.PostReportResponseDto> getReportedPosts(String status, String keyword, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate, int page, int size);
 
     void resolveReport(UUID reportId, UUID resolverId);
 
@@ -68,9 +72,11 @@ public interface CommunityPostService {
 
     void hidePost(UUID postId, UUID moderatorId, String reason);
 
-    void unhidePost(UUID postId, UUID moderatorId);
+    void unhidePost(UUID postId, UUID moderatorId, String reason);
 
     boolean toggleMutePostNotifications(UUID postId, UUID userId);
 
     void moderatorDeletePost(UUID postId, UUID moderatorId, String reason);
+
+    com.cmcu.itstudy.dto.community.CommunityModerationStatsDto getModerationStats();
 }

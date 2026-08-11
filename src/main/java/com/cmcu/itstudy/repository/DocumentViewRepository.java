@@ -9,11 +9,25 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface DocumentViewRepository extends JpaRepository<DocumentView, Long> {
 
     boolean existsByDocumentAndUser(Document document, User user);
+
+    Optional<DocumentView> findByDocumentAndUser(Document document, User user);
+
+    @Query("""
+            select v.document.id, max(v.viewedAt)
+            from DocumentView v
+            where v.user.id = :userId
+              and v.document.id in :documentIds
+            group by v.document.id
+            """)
+    List<Object[]> findLastViewedAtByUserAndDocumentIds(
+            @Param("userId") UUID userId,
+            @Param("documentIds") List<UUID> documentIds);
 
     @Query("""
             select count(distinct v.document.id)

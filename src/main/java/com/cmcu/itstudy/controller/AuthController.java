@@ -15,6 +15,7 @@ import com.cmcu.itstudy.service.contract.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -79,6 +80,9 @@ public class AuthController {
     public ResponseEntity<ApiResponse<UserInfoDto>> me(
             @AuthenticationPrincipal UserDetailsImpl currentUserDetails
     ) {
+        if (currentUserDetails == null) {
+            throw new AccessDeniedException("Authentication required");
+        }
         User currentUser = currentUserDetails.getUser();
         UserInfoDto userInfoDto = authService.getCurrentUser(currentUser);
         return ResponseEntity.ok(ApiResponse.success(userInfoDto, "Current user"));

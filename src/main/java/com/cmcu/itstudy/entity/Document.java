@@ -70,7 +70,16 @@ public class Document {
     @Column(name = "thumbnail_url", length = 500)
     private String thumbnailUrl;
 
-    @Column(name = "file_url", nullable = false, length = 500)
+    /**
+     * Free documents store the public Supabase URL here. Paid documents
+     * leave this column {@code NULL} — paid files are served exclusively
+     * through {@link DocumentFile#getStorageBucket()} + {@link DocumentFile#getStoragePath()}
+     * via the access-controlled paid download endpoint. The legacy column
+     * is retained for backward compatibility with existing free rows and
+     * the owner-detail preview; it is allowed to be null because paid
+     * documents MUST NOT persist a public, signed or placeholder URL.
+     */
+    @Column(name = "file_url", nullable = true, length = 500)
     private String fileUrl;
 
     @Column(name = "file_name", length = 255, columnDefinition = "nvarchar(255)")

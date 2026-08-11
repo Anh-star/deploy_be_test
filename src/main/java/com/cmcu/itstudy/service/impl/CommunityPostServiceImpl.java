@@ -1,5 +1,6 @@
 package com.cmcu.itstudy.service.impl;
 
+import com.cmcu.itstudy.dto.community.CommunityModerationStatsDto;
 import com.cmcu.itstudy.dto.community.CommunityPostResponseDto;
 import com.cmcu.itstudy.dto.community.CreatePollRequestDto;
 import com.cmcu.itstudy.dto.community.PollDto;
@@ -239,6 +240,36 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         if (posts.isEmpty()) return List.of();
 
         return posts.stream().map(post -> getPostResponseForUser(post, currentUserId)).collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommunityPostResponseDto> getUserPosts(UUID authorId, int page, int size, UUID currentUserId) {
+        Page<CommunityPost> postPage = postRepository.findByAuthorIdUserPosts(
+                authorId, PageRequest.of(page, size)
+        );
+        List<CommunityPost> posts = postPage.getContent();
+        if (posts.isEmpty()) return List.of();
+
+        return posts.stream().map(post -> getPostResponseForUser(post, currentUserId)).collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public CommunityPostResponseDto togglePinPost(UUID postId, UUID userId) {
+        CommunityPost post = postRepository.findByIdWithAuthor(postId)
+                .orElseThrow(() -> new NoSuchElementException("Post not found"));
+
+        if (!post.getAuthor().getId().equals(userId)) {
+            throw new IllegalArgumentException("Chỉ có thể ghim bài viết của chính bạn");
+        }
+
+        boolean willPin = !Boolean.TRUE.equals(post.getIsPinned());
+        post.setIsPinned(willPin);
+        post.setPinnedAt(willPin ? LocalDateTime.now() : null);
+
+        postRepository.save(post);
+        return getPostResponseForUser(post, userId);
     }
 
     private CommunityPostResponseDto getPostResponseForUser(CommunityPost post, UUID currentUserId) {
@@ -920,8 +951,22 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         CommunityPost post = postRepository.findById(postId)
                 .orElseThrow(() -> new NoSuchElementException("Bài viết không tồn tại"));
 
-        if (reportRepository.existsByPostIdAndReporterId(postId, reporterId)) {
-            throw new IllegalArgumentException("Bạn đã báo cáo bài viết này rồi.");
+        Optional<CommunityPostReport> existingOpt = reportRepository.findByPostIdAndReporterId(postId, reporterId);
+        if (existingOpt.isPresent()) {
+            CommunityPostReport existingReport = existingOpt.get();
+            if (!"DISMISSED".equalsIgnoreCase(existingReport.getStatus())) {
+                throw new IllegalArgumentException("Bạn đã báo cáo bài viết này rồi.");
+            }
+
+            existingReport.setReasonCode(reasonCode);
+            existingReport.setDetail(detail);
+            existingReport.setStatus("PENDING");
+            existingReport.setCreatedAt(LocalDateTime.now());
+            existingReport.setResolvedAt(null);
+            existingReport.setResolvedBy(null);
+
+            reportRepository.save(existingReport);
+            return;
         }
 
         User reporter = userRepository.findById(reporterId)
@@ -940,18 +985,15 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<PostReportResponseDto> getReportedPosts(String status, int page, int size) {
+    public Page<PostReportResponseDto> getReportedPosts(String status, String keyword, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate, int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size);
-        Page<CommunityPostReport> reports;
-        if (status != null && !status.isBlank()) {
-            reports = reportRepository.findByStatusAndPostDeletedFalse(status.toUpperCase(), pageRequest);
-        } else {
-            reports = reportRepository.findByPostDeletedFalse(pageRequest);
-        }
+        String st = (status != null && !status.isBlank()) ? status.toUpperCase() : null;
+        String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : null;
+        Page<CommunityPostReport> reports = reportRepository.searchReports(st, kw, startDate, endDate, pageRequest);
 
         return reports.map(r -> {
             CommunityPost p = r.getPost();
-            if (p == null || Boolean.TRUE.equals(p.getDeleted())) return null;
+            if (p == null) return null;
 
             User reporter = r.getReporter();
             User author = p.getAuthor();
@@ -973,6 +1015,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .status(r.getStatus())
                     .reportCount(count)
                     .isPostHidden(Boolean.TRUE.equals(p.getHidden()))
+                    .isPostDeleted(Boolean.TRUE.equals(p.getDeleted()))
                     .createdAt(r.getCreatedAt())
                     .build();
         });
@@ -1063,6 +1106,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         post.setHidden(true);
         postRepository.save(post);
 
+        reportRepository.updateStatusByPostId(postId, "RESOLVED");
+
         String msg = "Bài viết của bạn đã bị ẩn bởi quản trị viên cộng đồng.";
         if (StringUtils.hasText(reason)) {
             msg += " Lý do: " + reason.trim();
@@ -1080,11 +1125,58 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
     @Override
     @Transactional
-    public void unhidePost(UUID postId, UUID moderatorId) {
+    public void unhidePost(UUID postId, UUID moderatorId, String reason) {
         CommunityPost post = postRepository.findById(postId)
                 .orElseThrow(() -> new NoSuchElementException("Bài viết không tồn tại"));
         post.setHidden(false);
         postRepository.save(post);
+
+        // 1. Send notification to Post Author
+        try {
+            if (post.getAuthor() != null) {
+                String msg = "Bài viết của bạn đã được hiển thị lại trên cộng đồng.";
+                if (StringUtils.hasText(reason)) {
+                    msg += " Lý do: " + reason.trim();
+                }
+                notificationService.createAndPush(
+                        post.getAuthor().getId(),
+                        moderatorId,
+                        NotificationType.POST_HIDDEN,
+                        post.getId().toString(),
+                        "COMMUNITY_POST",
+                        msg
+                );
+            }
+        } catch (Exception e) {
+            log.warn("Failed to push unhide notification to post author: {}", e.getMessage());
+        }
+
+        // 2. Send notification to Reporters
+        try {
+            List<CommunityPostReport> reports = reportRepository.findByPostId(postId);
+            if (reports != null && !reports.isEmpty()) {
+                for (CommunityPostReport report : reports) {
+                    User reporter = report.getReporter();
+                    UUID reporterId = (reporter != null) ? reporter.getId() : null;
+                    if (reporterId != null) {
+                        String msg = "Bài viết bạn từng báo cáo đã được ban quản trị xét duyệt và hiển thị lại.";
+                        if (StringUtils.hasText(reason)) {
+                            msg += " Lý do: " + reason.trim();
+                        }
+                        notificationService.createAndPush(
+                                reporterId,
+                                moderatorId,
+                                NotificationType.REPORT_DISMISSED,
+                                postId.toString(),
+                                "COMMUNITY_POST_REPORT",
+                                msg
+                        );
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to push unhide notification to reporters: {}", e.getMessage());
+        }
     }
 
     @Override
@@ -1151,5 +1243,30 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 "COMMUNITY_POST",
                 msg
         );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CommunityModerationStatsDto getModerationStats() {
+        long pendingPosts = reportRepository.countDistinctPostByStatus("PENDING");
+        long pendingReports = reportRepository.countByStatusAndPostDeletedFalse("PENDING");
+
+        long resolvedPosts = reportRepository.countDistinctPostByStatus("RESOLVED");
+        long resolvedReports = reportRepository.countByStatusAndPostDeletedFalse("RESOLVED");
+
+        long dismissedPosts = reportRepository.countDistinctPostByStatus("DISMISSED");
+        long dismissedReports = reportRepository.countByStatusAndPostDeletedFalse("DISMISSED");
+
+        long hiddenPosts = reportRepository.countDistinctHiddenReportedPosts();
+
+        return CommunityModerationStatsDto.builder()
+                .pendingPostsCount(pendingPosts)
+                .pendingReportsCount(pendingReports)
+                .resolvedPostsCount(resolvedPosts)
+                .resolvedReportsCount(resolvedReports)
+                .dismissedPostsCount(dismissedPosts)
+                .dismissedReportsCount(dismissedReports)
+                .hiddenPostsCount(hiddenPosts)
+                .build();
     }
 }

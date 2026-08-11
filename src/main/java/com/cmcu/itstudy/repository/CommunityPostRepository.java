@@ -29,5 +29,14 @@ public interface CommunityPostRepository extends JpaRepository<CommunityPost, UU
     @Query("SELECT p.id FROM CommunityPostLike pl JOIN pl.post p WHERE p.id IN :postIds AND pl.user.id = :userId")
     List<UUID> findLikedPostIds(@Param("postIds") List<UUID> postIds, @Param("userId") UUID userId);
 
+    @Query(
+        value = "SELECT p FROM CommunityPost p LEFT JOIN FETCH p.author WHERE p.author.id = :authorId AND (p.deleted = false OR p.deleted IS NULL) AND (p.hidden = false OR p.hidden IS NULL) ORDER BY COALESCE(p.isPinned, false) DESC, p.pinnedAt DESC, p.createdAt DESC",
+        countQuery = "SELECT COUNT(p) FROM CommunityPost p WHERE p.author.id = :authorId AND (p.deleted = false OR p.deleted IS NULL) AND (p.hidden = false OR p.hidden IS NULL)"
+    )
+    Page<CommunityPost> findByAuthorIdUserPosts(@Param("authorId") UUID authorId, Pageable pageable);
+
+    @Query("SELECT p FROM CommunityPost p WHERE p.author.id = :authorId AND p.isPinned = true AND (p.deleted = false OR p.deleted IS NULL)")
+    List<CommunityPost> findByAuthor_IdAndIsPinnedTrue(@Param("authorId") UUID authorId);
+
     List<CommunityPost> findByDeletedTrueAndDeletedAtBefore(LocalDateTime threshold);
 }

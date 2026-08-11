@@ -121,6 +121,12 @@ public class CommunityPost {
     @Column(name = "is_hidden", nullable = false)
     private Boolean hidden;
 
+    @Column(name = "is_pinned")
+    private Boolean isPinned;
+
+    @Column(name = "pinned_at")
+    private LocalDateTime pinnedAt;
+
     @PrePersist
     void prePersist() {
         LocalDateTime now = LocalDateTime.now();
@@ -133,6 +139,7 @@ public class CommunityPost {
         if (this.deleted == null) this.deleted = Boolean.FALSE;
         if (this.allowComments == null) this.allowComments = Boolean.TRUE;
         if (this.hidden == null) this.hidden = Boolean.FALSE;
+        if (this.isPinned == null) this.isPinned = Boolean.FALSE;
     }
 
     @PreUpdate

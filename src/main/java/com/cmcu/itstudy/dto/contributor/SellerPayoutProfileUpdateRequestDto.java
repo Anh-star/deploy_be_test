@@ -1,6 +1,7 @@
 package com.cmcu.itstudy.dto.contributor;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -24,9 +25,13 @@ public class SellerPayoutProfileUpdateRequestDto {
     private String bankName;
 
     @NotBlank(message = "Bank account number is required")
+    @Pattern(
+            regexp = "^[0-9]{7,19}$",
+            message = "Bank account number must contain 7 to 19 digits"
+    )
     @Size(
-            max = 64,
-            message = "Bank account number must not exceed 64 characters"
+            max = 19,
+            message = "Bank account number must not exceed 19 characters"
     )
     private String bankAccountNumber;
 

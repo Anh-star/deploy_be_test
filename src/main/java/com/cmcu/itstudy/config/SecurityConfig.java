@@ -57,6 +57,10 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
+                                HttpMethod.GET,
+                                "/api/auth/me"
+                        ).authenticated()
+                        .requestMatchers(
                                 "/api/auth/login",
                                 "/api/auth/register",
                                 "/api/auth/refresh",
@@ -67,6 +71,7 @@ public class SecurityConfig {
                                 "/api/documents",
                                 "/api/documents/*",
                                 "/api/documents/*/view",
+                                "/api/documents/*/preview",
                                 "/api/categories",
                                 "/api/tags/popular",
                                 "/api/auth/**",
@@ -110,6 +115,12 @@ public class SecurityConfig {
         configuration.setAllowedOriginPatterns(List.of("*"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With", "X-Refresh-Token"));
+        configuration.setExposedHeaders(Arrays.asList(
+                "X-Preview-Mode",
+                "X-Preview-Pages",
+                "X-Total-Pages",
+                "X-Preview-Renderer"
+        ));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

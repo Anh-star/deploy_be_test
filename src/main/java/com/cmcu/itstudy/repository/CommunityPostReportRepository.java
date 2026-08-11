@@ -37,13 +37,41 @@ public interface CommunityPostReportRepository extends JpaRepository<CommunityPo
     @Query("SELECT r FROM CommunityPostReport r WHERE (r.post.deleted = false OR r.post.deleted IS NULL) ORDER BY r.createdAt DESC")
     Page<CommunityPostReport> findByPostDeletedFalse(Pageable pageable);
 
-    Page<CommunityPostReport> findAllByStatusOrderByCreatedAtDesc(String status, Pageable pageable);
 
-    Page<CommunityPostReport> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
     @Query("SELECT COUNT(r) FROM CommunityPostReport r WHERE r.post.id = :postId")
     long countByPostId(@Param("postId") UUID postId);
 
     @Query("SELECT COUNT(r) > 0 FROM CommunityPostReport r WHERE r.post.id = :postId AND r.status = :status")
     boolean existsByPostIdAndStatus(@Param("postId") UUID postId, @Param("status") String status);
+
+    @Query("SELECT COUNT(DISTINCT r.post.id) FROM CommunityPostReport r WHERE r.status = :status")
+    long countDistinctPostByStatus(@Param("status") String status);
+
+    @Query("SELECT COUNT(r) FROM CommunityPostReport r WHERE r.status = :status")
+    long countByStatusAndPostDeletedFalse(@Param("status") String status);
+
+    @Query("SELECT COUNT(DISTINCT r.post.id) FROM CommunityPostReport r WHERE r.post.hidden = true AND (r.post.deleted = false OR r.post.deleted IS NULL)")
+    long countDistinctHiddenReportedPosts();
+
+    @Query("SELECT r FROM CommunityPostReport r " +
+           "LEFT JOIN r.post p " +
+           "LEFT JOIN p.author a " +
+           "LEFT JOIN r.reporter rep " +
+           "WHERE (:status IS NULL OR :status = '' OR r.status = :status) " +
+           "AND (:keyword IS NULL OR :keyword = '' OR " +
+           "     LOWER(p.title) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "     LOWER(p.content) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "     LOWER(a.fullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "     LOWER(rep.fullName) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
+           "AND (:startDate IS NULL OR r.createdAt >= :startDate) " +
+           "AND (:endDate IS NULL OR r.createdAt <= :endDate) " +
+           "ORDER BY r.createdAt DESC")
+    Page<CommunityPostReport> searchReports(
+            @Param("status") String status,
+            @Param("keyword") String keyword,
+            @Param("startDate") java.time.LocalDateTime startDate,
+            @Param("endDate") java.time.LocalDateTime endDate,
+            Pageable pageable
+    );
 }

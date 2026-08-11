@@ -11,11 +11,13 @@ import com.cmcu.itstudy.mapper.DocumentMapper;
 import com.cmcu.itstudy.repository.DocumentBookmarkRepository;
 import com.cmcu.itstudy.repository.DocumentRepository;
 import com.cmcu.itstudy.repository.DocumentTagRepository;
+import com.cmcu.itstudy.repository.DocumentViewRepository;
 import com.cmcu.itstudy.repository.TagRepository;
 import com.cmcu.itstudy.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -28,17 +30,20 @@ public class DocumentCardEnrichmentService {
     private final DocumentBookmarkRepository documentBookmarkRepository;
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
+    private final DocumentViewRepository documentViewRepository;
 
     public DocumentCardEnrichmentService(TagRepository tagRepository,
                                          DocumentTagRepository documentTagRepository,
                                          DocumentBookmarkRepository documentBookmarkRepository,
                                          UserRepository userRepository,
-                                         DocumentRepository documentRepository) {
+                                         DocumentRepository documentRepository,
+                                         DocumentViewRepository documentViewRepository) {
         this.tagRepository = tagRepository;
         this.documentTagRepository = documentTagRepository;
         this.documentBookmarkRepository = documentBookmarkRepository;
         this.userRepository = userRepository;
         this.documentRepository = documentRepository;
+        this.documentViewRepository = documentViewRepository;
     }
 
     public List<DocumentCardResponseDto> toEnrichedCardDtos(List<Document> documents, UUID currentUserId) {
@@ -54,6 +59,66 @@ public class DocumentCardEnrichmentService {
                 .map(DocumentMapper::toCardDto)
                 .peek(dto -> enrichCardDto(dto, uploaders, tagsByDocument, bookmarkedDocumentIds))
                 .collect(Collectors.toList());
+    }
+
+    public List<DocumentCardResponseDto> toEnrichedCardDtosWithLastViewedAt(
+            List<Document> documents, UUID currentUserId) {
+        if (documents == null || documents.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<UUID, DocumentUploaderDto> uploaders = loadUploaders(documents);
+        Map<UUID, List<String>> tagsByDocument = loadTagNames(documents);
+        Set<UUID> bookmarkedDocumentIds = loadBookmarkedDocumentIds(documents, currentUserId);
+        Map<UUID, LocalDateTime> lastViewedAtByDocId = loadLastViewedAt(documents, currentUserId);
+
+        return documents.stream()
+                .map(DocumentMapper::toCardDto)
+                .peek(dto -> enrichCardDtoWithLastViewedAt(dto, uploaders, tagsByDocument,
+                        bookmarkedDocumentIds, lastViewedAtByDocId))
+                .collect(Collectors.toList());
+    }
+
+    private Map<UUID, LocalDateTime> loadLastViewedAt(List<Document> documents, UUID currentUserId) {
+        if (currentUserId == null || documents.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<UUID> documentIds = documents.stream()
+                .map(Document::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        if (documentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<Object[]> rows = documentViewRepository.findLastViewedAtByUserAndDocumentIds(currentUserId, documentIds);
+        Map<UUID, LocalDateTime> result = new HashMap<>();
+        for (Object[] row : rows) {
+            if (row == null || row.length < 2 || row[0] == null) {
+                continue;
+            }
+            UUID docId = (UUID) row[0];
+            LocalDateTime viewedAt = row[1] instanceof LocalDateTime ? (LocalDateTime) row[1] : null;
+            if (viewedAt != null) {
+                result.put(docId, viewedAt);
+            }
+        }
+        return result;
+    }
+
+    private void enrichCardDtoWithLastViewedAt(DocumentCardResponseDto dto,
+                                              Map<UUID, DocumentUploaderDto> uploaders,
+                                              Map<UUID, List<String>> tagsByDocument,
+                                              Set<UUID> bookmarkedDocumentIds,
+                                              Map<UUID, LocalDateTime> lastViewedAtByDocId) {
+        enrichCardDto(dto, uploaders, tagsByDocument, bookmarkedDocumentIds);
+        if (dto == null || dto.getId() == null) {
+            return;
+        }
+        UUID documentId = UUID.fromString(dto.getId());
+        dto.setLastViewedAt(lastViewedAtByDocId.get(documentId));
     }
 
     private Map<UUID, DocumentUploaderDto> loadUploaders(List<Document> documents) {

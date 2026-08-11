@@ -123,18 +123,33 @@ public final class DocumentMapper {
     }
 
     /**
-     * Primary file for detail/preview: prefer {@link DocumentFile#getFileUrl()}, then {@link Document#getFileUrl()},
-     * then storage path (legacy rows).
+     * Primary file for detail/preview: prefer {@link DocumentFile#getFileUrl()}, then {@link Document#getFileUrl()}.
+     * For FREE documents only, fall back to the storage path (legacy rows where the public URL
+     * was previously stored as the storage path). For PAID documents the storage path is a
+     * private-bucket key and MUST NOT be exposed as a download URL — both {@code Document.fileUrl}
+     * and {@code DocumentFile.fileUrl} are intentionally null for paid documents, so the result
+     * is null and the caller is expected to use the access-controlled paid download endpoint.
      */
     public static DocumentPrimaryFileDto toPrimaryFileDto(DocumentFile file, Document document) {
         if (file == null) {
             return legacyPrimaryFromDocument(document);
         }
-        String fileUrl = firstNonBlank(
-                file.getFileUrl(),
-                document != null ? document.getFileUrl() : null,
-                file.getStoragePath()
-        );
+        boolean paid = document != null && Boolean.TRUE.equals(document.getIsPaid());
+        String fileUrl;
+        if (paid) {
+            // Paid docs: never expose a URL — neither a public URL nor the private storage path.
+            fileUrl = firstNonBlank(
+                    file.getFileUrl(),
+                    document != null ? document.getFileUrl() : null
+            );
+        } else {
+            // Free docs: legacy rows may carry the storage path as a public URL.
+            fileUrl = firstNonBlank(
+                    file.getFileUrl(),
+                    document != null ? document.getFileUrl() : null,
+                    file.getStoragePath()
+            );
+        }
         Long size = file.getSizeBytes() != null ? file.getSizeBytes() : (document != null ? document.getFileSize() : null);
         String ft = StringUtils.hasText(file.getFileExtension())
                 ? file.getFileExtension()
@@ -158,13 +173,24 @@ public final class DocumentMapper {
     }
 
     public static DocumentFileUrlResponseDto toFileUrlResponseDto(DocumentFile file, Document document) {
+        boolean paid = document != null && Boolean.TRUE.equals(document.getIsPaid());
         if (file == null) {
             if (document == null || !StringUtils.hasText(document.getFileUrl())) {
                 return null;
             }
+            // Paid documents with no Document.fileUrl do NOT have a public URL.
+            if (paid) {
+                return null;
+            }
             return DocumentFileUrlResponseDto.builder().fileUrl(document.getFileUrl()).build();
         }
-        String url = firstNonBlank(file.getFileUrl(), document.getFileUrl(), file.getStoragePath());
+        String url;
+        if (paid) {
+            // Paid documents: never expose the private storage path as a public URL.
+            url = firstNonBlank(file.getFileUrl(), document.getFileUrl());
+        } else {
+            url = firstNonBlank(file.getFileUrl(), document.getFileUrl(), file.getStoragePath());
+        }
         return DocumentFileUrlResponseDto.builder().fileUrl(url).build();
     }
 

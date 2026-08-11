@@ -155,6 +155,59 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
         return toActionResponse(saved);
     }
 
+    @Override
+    public PaymentModeratorWithdrawalActionResponseDto approveAndMarkPaid(
+            UUID withdrawalId,
+            UUID moderatorId,
+            String adminNote
+    ) {
+        if (withdrawalId == null) {
+            throw new IllegalArgumentException("Withdrawal ID is required");
+        }
+        if (moderatorId == null) {
+            throw new IllegalArgumentException("Moderator ID is required");
+        }
+        if (adminNote == null || adminNote.isBlank()) {
+            throw new IllegalArgumentException(
+                    "Payment confirmation note is required"
+            );
+        }
+
+        WithdrawalRequest withdrawal = withdrawalRequestRepository
+                .findByIdForUpdate(withdrawalId)
+                .orElseThrow(() -> new NoSuchElementException(
+                        "Withdrawal request not found"
+                ));
+
+        if (withdrawal.getStatus() != WithdrawalStatus.PENDING) {
+            throw new WithdrawalStateConflictException(
+                    "Withdrawal request has already been processed"
+            );
+        }
+
+        // Single atomic step: balance move + status flip share the same
+        // transaction. PESSIMISTIC_WRITE on the row plus @Transactional on
+        // this method ensure rollback on any failure (no status PAID while
+        // money is still locked).
+        sellerBalanceService.moveLockedToWithdrawn(
+                withdrawal.getSellerId(),
+                withdrawal.getAmount()
+        );
+
+        LocalDateTime now = LocalDateTime.now();
+        withdrawal.setStatus(WithdrawalStatus.PAID);
+        withdrawal.setApprovedByAdminId(moderatorId);
+        withdrawal.setApprovedAt(now);
+        withdrawal.setPaidByAdminId(moderatorId);
+        withdrawal.setPaidAt(now);
+        withdrawal.setAdminNote(adminNote.trim());
+
+        WithdrawalRequest saved = withdrawalRequestRepository
+                .saveAndFlush(withdrawal);
+
+        return toActionResponse(saved);
+    }
+
     private static String normalizeOptionalNote(String adminNote) {
         if (adminNote == null || adminNote.isBlank()) {
             return null;

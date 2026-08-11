@@ -24,7 +24,7 @@ public class ContributorWithdrawalResponseDto {
     private WithdrawalStatus status;
     private String bankCode;
     private String bankName;
-    private String maskedBankAccountNumber;
+    private String bankAccountNumber;
     private String bankAccountHolderName;
     private String sellerNote;
     private LocalDateTime createdAt;
