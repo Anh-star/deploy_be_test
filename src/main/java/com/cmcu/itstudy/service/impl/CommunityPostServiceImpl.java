@@ -1108,10 +1108,16 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         reportRepository.updateStatusByPostId(postId, "RESOLVED");
 
+        String adminEmail = userRepository.findById(moderatorId)
+                .map(User::getEmail)
+                .filter(StringUtils::hasText)
+                .orElse("admin@example.com");
+
         String msg = "Bài viết của bạn đã bị ẩn bởi quản trị viên cộng đồng.";
         if (StringUtils.hasText(reason)) {
             msg += " Lý do: " + reason.trim();
         }
+        msg += ". Vui lòng liên hệ tới email quản trị viên (" + adminEmail + ") nếu bạn có thắc mắc hoặc khiếu nại.";
 
         notificationService.createAndPush(
                 post.getAuthor().getId(),
