@@ -51,6 +51,7 @@ COPY --from=build /app/target/*.jar app.jar
 # Keep the existing application port configuration.
 
 EXPOSE 8080
-ENV PORT=8080
+# Limit JVM memory footprint so Spring Boot + LibreOffice runs safely under Render's 512MB RAM cap.
+ENV JAVA_TOOL_OPTIONS="-Xms128m -Xmx256m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC"
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
