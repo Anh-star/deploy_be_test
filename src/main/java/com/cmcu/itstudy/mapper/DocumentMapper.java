@@ -173,23 +173,27 @@ public final class DocumentMapper {
     }
 
     public static DocumentFileUrlResponseDto toFileUrlResponseDto(DocumentFile file, Document document) {
-        boolean paid = document != null && Boolean.TRUE.equals(document.getIsPaid());
-        if (file == null) {
-            if (document == null || !StringUtils.hasText(document.getFileUrl())) {
+        if (document == null) {
+            if (file == null || !StringUtils.hasText(file.getFileUrl())) {
                 return null;
             }
-            // Paid documents with no Document.fileUrl do NOT have a public URL.
-            if (paid) {
-                return null;
-            }
-            return DocumentFileUrlResponseDto.builder().fileUrl(document.getFileUrl()).build();
+            return DocumentFileUrlResponseDto.builder().fileUrl(file.getFileUrl()).build();
         }
+
+        String fallbackPreviewUrl = "/api/documents/" + document.getId() + "/preview";
+        String fileUrl = file != null ? file.getFileUrl() : null;
+        String docUrl = document.getFileUrl();
+        String storagePath = (file != null && StringUtils.hasText(file.getStoragePath()))
+                ? file.getStoragePath()
+                : null;
+
+        boolean paid = Boolean.TRUE.equals(document.getIsPaid());
         String url;
         if (paid) {
-            // Paid documents: never expose the private storage path as a public URL.
-            url = firstNonBlank(file.getFileUrl(), document.getFileUrl());
+            // For paid documents, fallback to the secure preview endpoint if direct public fileUrl is absent.
+            url = firstNonBlank(fileUrl, docUrl, fallbackPreviewUrl);
         } else {
-            url = firstNonBlank(file.getFileUrl(), document.getFileUrl(), file.getStoragePath());
+            url = firstNonBlank(fileUrl, docUrl, storagePath, fallbackPreviewUrl);
         }
         return DocumentFileUrlResponseDto.builder().fileUrl(url).build();
     }
