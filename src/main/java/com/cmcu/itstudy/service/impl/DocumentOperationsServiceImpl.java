@@ -147,15 +147,22 @@ public class DocumentOperationsServiceImpl implements DocumentOperationsService 
             user = userRepository.findById(userId).orElse(null);
         }
 
-        DocumentDownload download = DocumentDownload.builder()
-                .document(document)
-                .user(user)
-                .build();
-        documentDownloadRepository.save(download);
+        boolean alreadyDownloaded = false;
+        if (user != null) {
+            alreadyDownloaded = documentDownloadRepository.existsByDocument_IdAndUser_Id(documentId, user.getId());
+        }
 
-        document.setDownloadCount(document.getDownloadCount() != null ? document.getDownloadCount() + 1 : 1L);
-        document.setLastDownloadedAt(LocalDateTime.now());
-        documentRepository.save(document);
+        if (!alreadyDownloaded) {
+            DocumentDownload download = DocumentDownload.builder()
+                    .document(document)
+                    .user(user)
+                    .build();
+            documentDownloadRepository.save(download);
+
+            document.setDownloadCount(document.getDownloadCount() != null ? document.getDownloadCount() + 1 : 1L);
+            document.setLastDownloadedAt(LocalDateTime.now());
+            documentRepository.save(document);
+        }
     }
 
     @Transactional

@@ -15,6 +15,8 @@ public interface DocumentDownloadRepository extends JpaRepository<DocumentDownlo
 
     long countByDocument_Id(UUID documentId);
 
+    boolean existsByDocument_IdAndUser_Id(UUID documentId, UUID userId);
+
     default long countByDocumentId(UUID documentId) {
         return countByDocument_Id(documentId);
     }
