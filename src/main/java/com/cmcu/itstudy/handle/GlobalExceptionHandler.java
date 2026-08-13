@@ -185,6 +185,29 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.failure("Failed to create upload target"));
     }
 
+    @ExceptionHandler(AutoQuizSourceAccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAutoQuizSourceAccessDenied(
+            AutoQuizSourceAccessDeniedException ex) {
+        // Phase 2E-A: every rejection of the secure-source endpoint
+        // is funnelled through here. We deliberately collapse all
+        // failure reasons into a single 403 response carrying only
+        // the exception's safe message. The message must NOT echo
+        // the expected token, the bucket, the storage path, the
+        // generationId, or any internal identifier.
+        //
+        // The categorical reason is logged server-side for operator
+        // diagnosis; the public body is a single ApiResponse.failure
+        // envelope.
+        log.warn(
+                "Auto Quiz secure-source access denied: reason={} "
+                        + "message={}",
+                ex.reason(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.failure(ex.getMessage() != null
+                        ? ex.getMessage()
+                        : "Access denied"));
+    }
+
     @ExceptionHandler(StorageObjectNotFoundException.class)
     public ResponseEntity<ApiResponse<Void>> handleStorageObjectNotFound(StorageObjectNotFoundException ex) {
         // 400 with a single safe string — never echo path / uploadId.
