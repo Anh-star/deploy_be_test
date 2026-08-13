@@ -15,11 +15,11 @@ public class SellerEarningReleaseScheduler {
 
     private final SellerEarningBatchReleaseService sellerEarningBatchReleaseService;
 
-    @Value("${seller.earning-release.batch-size:100}")
+    @Value("${seller.earning-release.batch-size:20}")
     private int batchSize;
 
     @Scheduled(
-            fixedDelayString = "${seller.earning-release.fixed-delay-ms:3600000}",
+            fixedDelayString = "${seller.earning-release.fixed-delay-ms:600000}",
             initialDelayString = "${seller.earning-release.initial-delay-ms:60000}"
     )
     public void releaseDueSellerEarnings() {
