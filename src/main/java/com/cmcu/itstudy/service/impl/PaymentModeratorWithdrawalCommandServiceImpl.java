@@ -61,21 +61,12 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
         WithdrawalRequest saved = withdrawalRequestRepository
                 .saveAndFlush(withdrawal);
 
-        try {
-            String reqCode = saved.getRequestCode() != null ? saved.getRequestCode() : "";
-            String note = saved.getAdminNote() != null ? saved.getAdminNote().trim() : "";
-            String msg = "Yêu cầu rút tiền #" + reqCode + " của bạn đã được phê duyệt." + (!note.isBlank() ? " Ghi chú: " + note : "");
-            notificationService.createAndPush(
-                    saved.getSellerId(),
-                    moderatorId,
-                    NotificationType.WITHDRAWAL_APPROVED,
-                    saved.getId().toString(),
-                    "WITHDRAWAL",
-                    msg
-            );
-        } catch (Exception e) {
-            // Ignore notification failure
-        }
+        notifyWithdrawal(
+                saved,
+                moderatorId,
+                NotificationType.WITHDRAWAL_APPROVED,
+                "Yêu cầu rút tiền #" + (saved.getRequestCode() != null ? saved.getRequestCode() : "") + " của bạn đã được phê duyệt." + formatNote(saved.getAdminNote())
+        );
 
         return toActionResponse(saved);
     }
@@ -124,21 +115,12 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
         WithdrawalRequest saved = withdrawalRequestRepository
                 .saveAndFlush(withdrawal);
 
-        try {
-            String reqCode = saved.getRequestCode() != null ? saved.getRequestCode() : "";
-            String reason = saved.getAdminNote() != null ? saved.getAdminNote().trim() : "";
-            String msg = "Yêu cầu rút tiền #" + reqCode + " của bạn đã bị từ chối." + (!reason.isBlank() ? " Lý do: " + reason : "");
-            notificationService.createAndPush(
-                    saved.getSellerId(),
-                    moderatorId,
-                    NotificationType.WITHDRAWAL_REJECTED,
-                    saved.getId().toString(),
-                    "WITHDRAWAL",
-                    msg
-            );
-        } catch (Exception e) {
-            // Ignore notification failure
-        }
+        notifyWithdrawal(
+                saved,
+                moderatorId,
+                NotificationType.WITHDRAWAL_REJECTED,
+                "Yêu cầu rút tiền #" + (saved.getRequestCode() != null ? saved.getRequestCode() : "") + " của bạn đã bị từ chối." + formatReason(saved.getAdminNote())
+        );
 
         return toActionResponse(saved);
     }
@@ -187,21 +169,12 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
         WithdrawalRequest saved = withdrawalRequestRepository
                 .saveAndFlush(withdrawal);
 
-        try {
-            String reqCode = saved.getRequestCode() != null ? saved.getRequestCode() : "";
-            String note = saved.getAdminNote() != null ? saved.getAdminNote().trim() : "";
-            String msg = "Yêu cầu rút tiền #" + reqCode + " của bạn đã được chuyển khoản thành công." + (!note.isBlank() ? " Ghi chú: " + note : "");
-            notificationService.createAndPush(
-                    saved.getSellerId(),
-                    moderatorId,
-                    NotificationType.WITHDRAWAL_APPROVED,
-                    saved.getId().toString(),
-                    "WITHDRAWAL",
-                    msg
-            );
-        } catch (Exception e) {
-            // Ignore notification failure
-        }
+        notifyWithdrawal(
+                saved,
+                moderatorId,
+                NotificationType.WITHDRAWAL_APPROVED,
+                "Yêu cầu rút tiền #" + (saved.getRequestCode() != null ? saved.getRequestCode() : "") + " của bạn đã được chuyển khoản thành công." + formatNote(saved.getAdminNote())
+        );
 
         return toActionResponse(saved);
     }
@@ -256,23 +229,37 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
         WithdrawalRequest saved = withdrawalRequestRepository
                 .saveAndFlush(withdrawal);
 
-        try {
-            String reqCode = saved.getRequestCode() != null ? saved.getRequestCode() : "";
-            String note = saved.getAdminNote() != null ? saved.getAdminNote().trim() : "";
-            String msg = "Yêu cầu rút tiền #" + reqCode + " của bạn đã được duyệt và chuyển khoản thành công." + (!note.isBlank() ? " Ghi chú: " + note : "");
-            notificationService.createAndPush(
-                    saved.getSellerId(),
-                    moderatorId,
-                    NotificationType.WITHDRAWAL_APPROVED,
-                    saved.getId().toString(),
-                    "WITHDRAWAL",
-                    msg
-            );
-        } catch (Exception e) {
-            // Ignore notification failure
-        }
+        notifyWithdrawal(
+                saved,
+                moderatorId,
+                NotificationType.WITHDRAWAL_APPROVED,
+                "Yêu cầu rút tiền #" + (saved.getRequestCode() != null ? saved.getRequestCode() : "") + " của bạn đã được duyệt và chuyển khoản thành công." + formatNote(saved.getAdminNote())
+        );
 
         return toActionResponse(saved);
+    }
+
+    private void notifyWithdrawal(WithdrawalRequest withdrawal, UUID moderatorId, NotificationType type, String message) {
+        try {
+            notificationService.createAndPush(
+                    withdrawal.getSellerId(),
+                    moderatorId,
+                    type,
+                    withdrawal.getId().toString(),
+                    "WITHDRAWAL",
+                    message
+            );
+        } catch (Exception ignored) {
+            // Ignore notification failure
+        }
+    }
+
+    private static String formatNote(String adminNote) {
+        return (adminNote != null && !adminNote.isBlank()) ? " Ghi chú: " + adminNote.trim() : "";
+    }
+
+    private static String formatReason(String adminNote) {
+        return (adminNote != null && !adminNote.isBlank()) ? " Lý do: " + adminNote.trim() : "";
     }
 
     private static String normalizeOptionalNote(String adminNote) {
