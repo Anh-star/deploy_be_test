@@ -13,11 +13,13 @@ import com.cmcu.itstudy.entity.User;
 import com.cmcu.itstudy.enums.AllowedDocumentFileType;
 import com.cmcu.itstudy.enums.DocumentPreviewArtifactKind;
 import com.cmcu.itstudy.enums.DocumentStatus;
+import com.cmcu.itstudy.enums.NotificationType;
 import com.cmcu.itstudy.handle.PreviewNotReadyException;
 import com.cmcu.itstudy.repository.DocumentFileRepository;
 import com.cmcu.itstudy.repository.DocumentPreviewArtifactRepository;
 import com.cmcu.itstudy.repository.DocumentRepository;
 import com.cmcu.itstudy.service.contract.AdminDocumentService;
+import com.cmcu.itstudy.service.contract.NotificationService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -41,17 +43,20 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
     private final DocumentPreviewArtifactRepository artifactRepository;
     private final DocumentPreviewArtifactFactory artifactFactory;
     private final Clock clock;
+    private final NotificationService notificationService;
 
     public AdminDocumentServiceImpl(DocumentRepository documentRepository,
                                     DocumentFileRepository documentFileRepository,
                                     DocumentPreviewArtifactRepository artifactRepository,
                                     DocumentPreviewArtifactFactory artifactFactory,
-                                    Clock clock) {
+                                    Clock clock,
+                                    NotificationService notificationService) {
         this.documentRepository = documentRepository;
         this.documentFileRepository = documentFileRepository;
         this.artifactRepository = artifactRepository;
         this.artifactFactory = Objects.requireNonNull(artifactFactory, "artifactFactory");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.notificationService = notificationService;
     }
 
     @Override
@@ -201,7 +206,39 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
 
         document.setStatus(target);
         document.setUpdatedBy(moderator);
-        documentRepository.save(document);
+        Document savedDoc = documentRepository.save(document);
+
+        try {
+            if (savedDoc.getCreatedBy() != null && savedDoc.getCreatedBy().getId() != null) {
+                UUID recipientId = savedDoc.getCreatedBy().getId();
+                UUID actorId = moderator != null ? moderator.getId() : null;
+                String docTitle = savedDoc.getTitle() != null ? savedDoc.getTitle() : "tài liệu";
+
+                if (target == DocumentStatus.APPROVED) {
+                    notificationService.createAndPush(
+                            recipientId,
+                            actorId,
+                            NotificationType.DOCUMENT_APPROVED,
+                            savedDoc.getId().toString(),
+                            "DOCUMENT",
+                            "Tài liệu \"" + docTitle + "\" của bạn đã được duyệt và xuất bản."
+                    );
+                } else if (target == DocumentStatus.REJECTED) {
+                    String reason = savedDoc.getRejectReason() != null ? savedDoc.getRejectReason() : "";
+                    String msg = "Tài liệu \"" + docTitle + "\" của bạn đã bị từ chối." + (!reason.isBlank() ? " Lý do: " + reason : "");
+                    notificationService.createAndPush(
+                            recipientId,
+                            actorId,
+                            NotificationType.DOCUMENT_REJECTED,
+                            savedDoc.getId().toString(),
+                            "DOCUMENT",
+                            msg
+                    );
+                }
+            }
+        } catch (Exception e) {
+            // Log warning to prevent notification failure from rolling back document approval
+        }
     }
 
     /**
