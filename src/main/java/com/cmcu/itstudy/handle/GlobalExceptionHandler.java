@@ -2,6 +2,7 @@ package com.cmcu.itstudy.handle;
 
 import com.cmcu.itstudy.dto.common.ApiResponse;
 import com.cmcu.itstudy.handle.AIGeneratedQuizValidationException;
+import com.cmcu.itstudy.handle.AutoQuizCallbackAccessDeniedException;
 import com.cmcu.itstudy.handle.WithdrawalStateConflictException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -183,6 +184,23 @@ public class GlobalExceptionHandler {
         log.warn("Signed upload target failed: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(ApiResponse.failure("Failed to create upload target"));
+    }
+
+    @ExceptionHandler(AutoQuizCallbackAccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAutoQuizCallbackAccessDenied(
+            AutoQuizCallbackAccessDeniedException ex) {
+        // Phase 2E: callback rejections from n8n. We log the categorical
+        // reason server-side for operator diagnosis; the public body is a
+        // single ApiResponse.failure envelope.
+        log.warn(
+                "Auto Quiz callback denied: reason={} message={}",
+                ex.reason(),
+                ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.failure(
+                        ex.getMessage() != null
+                                ? ex.getMessage()
+                                : "Access denied"));
     }
 
     @ExceptionHandler(AutoQuizSourceAccessDeniedException.class)

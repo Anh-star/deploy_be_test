@@ -88,6 +88,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/quizzes/ai-import").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/auto-quiz/generations/*/source").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/auto-quiz/generations/*/complete").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/payments/return").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/payments/ipn").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/payments/webhook").permitAll()
