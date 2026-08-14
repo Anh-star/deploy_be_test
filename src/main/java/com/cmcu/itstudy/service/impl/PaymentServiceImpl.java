@@ -9,12 +9,14 @@ import com.cmcu.itstudy.dto.payment.PayOsWebhookDto;
 import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.entity.Payment;
 import com.cmcu.itstudy.enums.DocumentStatus;
+import com.cmcu.itstudy.enums.NotificationType;
 import com.cmcu.itstudy.enums.PaymentStatus;
 import com.cmcu.itstudy.repository.DocumentAccessRepository;
 import com.cmcu.itstudy.repository.DocumentRepository;
 import com.cmcu.itstudy.repository.PaymentRepository;
 import com.cmcu.itstudy.security.UserDetailsImpl;
 import com.cmcu.itstudy.service.contract.DocumentAccessService;
+import com.cmcu.itstudy.service.contract.NotificationService;
 import com.cmcu.itstudy.service.contract.PayOsService;
 import com.cmcu.itstudy.service.contract.PaymentService;
 import com.cmcu.itstudy.service.contract.SellerEarningService;
@@ -45,6 +47,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final DocumentAccessService documentAccessService;
     private final PayOsService payOsService;
     private final SellerEarningService sellerEarningService;
+    private final NotificationService notificationService;
 
     public PaymentServiceImpl(PaymentRepository paymentRepository,
                              DocumentRepository documentRepository,
@@ -52,7 +55,8 @@ public class PaymentServiceImpl implements PaymentService {
                              ObjectProvider<VnPayConfig> vnPayConfigProvider,
                              DocumentAccessService documentAccessService,
                              PayOsService payOsService,
-                             SellerEarningService sellerEarningService) {
+                             SellerEarningService sellerEarningService,
+                             NotificationService notificationService) {
         this.paymentRepository = paymentRepository;
         this.documentRepository = documentRepository;
         this.documentAccessRepository = documentAccessRepository;
@@ -60,6 +64,7 @@ public class PaymentServiceImpl implements PaymentService {
         this.documentAccessService = documentAccessService;
         this.payOsService = payOsService;
         this.sellerEarningService = sellerEarningService;
+        this.notificationService = notificationService;
     }
 
     @Override
@@ -326,6 +331,24 @@ public void processReturn(Map<String, String> params) {
         documentAccessService.grantAccess(userId, documentId, paymentId);
 
         sellerEarningService.recordSuccessfulPayment(paymentId);
+
+        try {
+            documentRepository.findById(documentId).ifPresent(document -> {
+                if (document.getCreatedBy() != null && document.getCreatedBy().getId() != null) {
+                    String docTitle = document.getTitle() != null ? document.getTitle() : "tài liệu";
+                    notificationService.createAndPush(
+                            document.getCreatedBy().getId(),
+                            userId,
+                            NotificationType.DOCUMENT_PURCHASED,
+                            documentId.toString(),
+                            "DOCUMENT",
+                            "Tài liệu \"" + docTitle + "\" của bạn đã được mua thành công."
+                    );
+                }
+            });
+        } catch (Exception e) {
+            log.warn("Failed to push DOCUMENT_PURCHASED notification for paymentId={}: {}", paymentId, e.getMessage());
+        }
 
         log.info(
                 "Payment SUCCESS side effects applied: paymentId={}, userId={}, documentId={}",
