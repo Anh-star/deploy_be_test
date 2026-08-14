@@ -63,13 +63,15 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
 
         try {
             String reqCode = saved.getRequestCode() != null ? saved.getRequestCode() : "";
+            String note = saved.getAdminNote() != null ? saved.getAdminNote().trim() : "";
+            String msg = "Yêu cầu rút tiền #" + reqCode + " của bạn đã được phê duyệt." + (!note.isBlank() ? " Ghi chú: " + note : "");
             notificationService.createAndPush(
                     saved.getSellerId(),
                     moderatorId,
                     NotificationType.WITHDRAWAL_APPROVED,
                     saved.getId().toString(),
                     "WITHDRAWAL",
-                    "Yêu cầu rút tiền #" + reqCode + " của bạn đã được phê duyệt."
+                    msg
             );
         } catch (Exception e) {
             // Ignore notification failure
@@ -124,7 +126,7 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
 
         try {
             String reqCode = saved.getRequestCode() != null ? saved.getRequestCode() : "";
-            String reason = saved.getAdminNote() != null ? saved.getAdminNote() : "";
+            String reason = saved.getAdminNote() != null ? saved.getAdminNote().trim() : "";
             String msg = "Yêu cầu rút tiền #" + reqCode + " của bạn đã bị từ chối." + (!reason.isBlank() ? " Lý do: " + reason : "");
             notificationService.createAndPush(
                     saved.getSellerId(),
@@ -187,13 +189,15 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
 
         try {
             String reqCode = saved.getRequestCode() != null ? saved.getRequestCode() : "";
+            String note = saved.getAdminNote() != null ? saved.getAdminNote().trim() : "";
+            String msg = "Yêu cầu rút tiền #" + reqCode + " của bạn đã được chuyển khoản thành công." + (!note.isBlank() ? " Ghi chú: " + note : "");
             notificationService.createAndPush(
                     saved.getSellerId(),
                     moderatorId,
                     NotificationType.WITHDRAWAL_APPROVED,
                     saved.getId().toString(),
                     "WITHDRAWAL",
-                    "Yêu cầu rút tiền #" + reqCode + " của bạn đã được chuyển khoản thành công."
+                    msg
             );
         } catch (Exception e) {
             // Ignore notification failure
@@ -254,13 +258,15 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
 
         try {
             String reqCode = saved.getRequestCode() != null ? saved.getRequestCode() : "";
+            String note = saved.getAdminNote() != null ? saved.getAdminNote().trim() : "";
+            String msg = "Yêu cầu rút tiền #" + reqCode + " của bạn đã được duyệt và chuyển khoản thành công." + (!note.isBlank() ? " Ghi chú: " + note : "");
             notificationService.createAndPush(
                     saved.getSellerId(),
                     moderatorId,
                     NotificationType.WITHDRAWAL_APPROVED,
                     saved.getId().toString(),
                     "WITHDRAWAL",
-                    "Yêu cầu rút tiền #" + reqCode + " của bạn đã được duyệt và chuyển khoản thành công."
+                    msg
             );
         } catch (Exception e) {
             // Ignore notification failure
