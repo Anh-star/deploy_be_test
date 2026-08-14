@@ -63,9 +63,29 @@ import java.util.Map;
  * <h2>Timeouts</h2>
  * <ul>
  *   <li>connect timeout: 5 seconds</li>
- *   <li>read timeout: 10 seconds</li>
- *   <li>request factory: {@link JdkClientHttpRequestFactory} backed by
- *       {@link HttpClient}.</li>
+ *   <li>read timeout (signed-upload-target, object-info): 10 seconds</li>
+ *   <li>read timeout (private object download): 30 seconds &mdash;
+ *       the 6.8&nbsp;MB binary PDF download needs headroom against
+ *       variable egress, and on Render Java&nbsp;17 the JDK HTTP
+ *       client has a documented HTTP/2 edge case that can stall
+ *       mid-body. The wider read timeout is paired with a
+ *       HTTP/1.1-only download transport (see
+ *       {@link #productionDownloadRequestFactory()}).</li>
+ *   <li>request factory:
+ *       <ul>
+ *         <li>signed-upload-target, object-info &mdash;
+ *             {@link JdkClientHttpRequestFactory} backed by a default
+ *             {@link HttpClient} (HTTP/2 with HTTP/1.1 fallback).</li>
+ *         <li>private object download &mdash;
+ *             {@link JdkClientHttpRequestFactory} backed by an
+ *             HTTP/1.1-only {@link HttpClient}. Forcing HTTP/1.1
+ *             isolates the binary download from the JDK 17.0.x
+ *             HTTP/2 framing / GOAWAY bug class (see OpenJDK
+ *             JDK-8335181) that has been observed surfacing as
+ *             plain {@link RestClientException} body-phase
+ *             {@code IOException}s on Render.</li>
+ *       </ul>
+ *   </li>
  * </ul>
  *
  * <h2>Secret handling</h2>
@@ -79,8 +99,18 @@ public class SupabaseStorageServiceImpl implements SupabaseStorageService {
 
     /** Connect timeout for the underlying HTTP client. */
     public static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
-    /** Read timeout for the underlying HTTP client. */
+    /** Read timeout for the signed-upload-target and object-info calls. */
     public static final Duration READ_TIMEOUT = Duration.ofSeconds(10);
+    /**
+     * Read timeout for the private-object download call.
+     *
+     * <p>Wider than {@link #READ_TIMEOUT} because the binary download
+     * returns up to 25&nbsp;MB of bytes (typically a 6.8&nbsp;MB PDF).
+     * The wider window gives the Supabase CDN egress room to stream
+     * the body without the read timeout firing while the underlying
+     * ISO&nbsp;8601 content-length count is still being read.
+     */
+    public static final Duration DOWNLOAD_READ_TIMEOUT = Duration.ofSeconds(30);
 
     private static final Logger log = LoggerFactory.getLogger(SupabaseStorageServiceImpl.class);
 
@@ -401,6 +431,32 @@ public class SupabaseStorageServiceImpl implements SupabaseStorageService {
         return builder.build();
     }
 
+    /**
+     * Build a {@link RestClient} dedicated to the binary
+     * private-object download call.
+     *
+     * <p>This client uses an HTTP/1.1-only JDK
+     * {@link HttpClient} and a wider read timeout than the
+     * shared factory. It is intentionally separate from
+     * {@link #buildRestClient(String, String)} so the
+     * signed-upload-target and object-info transports are
+     * unaffected by the protocol-version change.
+     *
+     * @param baseUrl canonical Supabase project URL
+     * @param serviceRoleKey service-role JWT (never logged)
+     * @return the configured {@link RestClient}
+     */
+    private RestClient buildDownloadRestClient(
+            String baseUrl, String serviceRoleKey) {
+        RestClient.Builder builder = RestClient.builder()
+                .baseUrl(baseUrl)
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + serviceRoleKey)
+                .defaultHeader("apikey", serviceRoleKey)
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .requestFactory(productionDownloadRequestFactory());
+        return builder.build();
+    }
+
     private static ClientHttpRequestFactory productionRequestFactory() {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(CONNECT_TIMEOUT)
@@ -408,6 +464,43 @@ public class SupabaseStorageServiceImpl implements SupabaseStorageService {
         JdkClientHttpRequestFactory factory =
                 new JdkClientHttpRequestFactory(httpClient);
         factory.setReadTimeout(READ_TIMEOUT);
+        return factory;
+    }
+
+    /**
+     * Build a request factory dedicated to the private-object
+     * binary download.
+     *
+     * <p>Two changes versus {@link #productionRequestFactory()}:
+     * <ul>
+     *   <li>{@link HttpClient.Version#HTTP_1_1} is forced. The
+     *       default JDK 17.0.x HTTP/2 client has been observed
+     *       to hit OpenJDK JDK-8335181 on Render and Surface
+     *       mid-body {@code IOException}s (GOAWAY handling)
+     *       that Spring's {@code DefaultRestClient} wraps as a
+     *       plain {@link RestClientException} with the
+     *       message "Error while extracting response for
+     *       type [byte&#x5b;&#x5d;] and content type
+     *       [application/pdf]". Forcing HTTP/1.1 sidesteps
+     *       that bug class entirely. The shared
+     *       signed-upload-target / object-info transport is
+     *       unaffected because it returns tiny JSON bodies
+     *       that are not impacted by the same JDK HTTP/2
+     *       framing issue.</li>
+     *   <li>Read timeout is bumped to
+     *       {@link #DOWNLOAD_READ_TIMEOUT} (30&nbsp;s) so the
+     *       6.8&nbsp;MB PDF body has room to stream even on
+     *       variable egress.</li>
+     * </ul>
+     */
+    private static ClientHttpRequestFactory productionDownloadRequestFactory() {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(CONNECT_TIMEOUT)
+                .build();
+        JdkClientHttpRequestFactory factory =
+                new JdkClientHttpRequestFactory(httpClient);
+        factory.setReadTimeout(DOWNLOAD_READ_TIMEOUT);
         return factory;
     }
 
@@ -521,6 +614,30 @@ public class SupabaseStorageServiceImpl implements SupabaseStorageService {
      * <p>The bytes are accumulated into a bounded buffer rather than
      * written to disk so the preview pipeline never leaves a temp file
      * lying around in the JVM working directory.
+     *
+     * <h3>Transport</h3>
+     * <p>This call uses a dedicated HTTP/1.1-only
+     * {@link ClientHttpRequestFactory} &mdash; see
+     * {@link #productionDownloadRequestFactory()}. The shared
+     * signed-upload-target / object-info transport is unaffected.
+     *
+     * <h3>Diagnostic logging</h3>
+     * <p>On failure, the class name of the thrown
+     * {@link RestClientException} (or its parent) and the class
+     * names of up to eight deep causes are logged via
+     * {@link #logDownloadTransportChain(Throwable, String)}. This
+     * breadcrumb is essential for Render-side debugging because
+     * the JDK 17.0.x HTTP/2 client has been observed to surface
+     * a body-phase {@code IOException} as a plain
+     * {@link RestClientException} with the generic message
+     * "Error while extracting response for type [byte&#x5b;&#x5d;]
+     * and content type [application/pdf]", which is otherwise
+     * indistinguishable from any other REST failure.
+     *
+     * <p>Logged values NEVER include the service role key, the
+     * {@code Authorization} header, the {@code apikey} header,
+     * any signed token, the complete storage path, the
+     * bucket, or the response body.
      */
     @Override
     public byte[] downloadPrivateObject(String bucket, String path) {
@@ -541,7 +658,7 @@ public class SupabaseStorageServiceImpl implements SupabaseStorageService {
 
         RestClient client = testClient != null
                 ? testClient
-                : buildRestClient(baseUrl, properties.getServiceRoleKey());
+                : buildDownloadRestClient(baseUrl, properties.getServiceRoleKey());
 
         try {
             byte[] payload = client.get()
@@ -581,16 +698,58 @@ public class SupabaseStorageServiceImpl implements SupabaseStorageService {
             throw e;
         } catch (ResourceAccessException e) {
             log.warn("Supabase private download timed out");
+            logDownloadTransportChain(e, "timeout");
             throw new SignedUploadTargetFailedException(
                     "Supabase private download timed out", e);
         } catch (RestClientException e) {
             log.warn("Supabase private download failed");
+            logDownloadTransportChain(e, "rest");
             throw new SignedUploadTargetFailedException(
                     "Supabase private download failed", e);
         } catch (RuntimeException e) {
             log.warn("Supabase private download unexpected failure");
+            logDownloadTransportChain(e, "unexpected");
             throw new SignedUploadTargetFailedException(
                     "Supabase private download failed", e);
+        }
+    }
+
+    /**
+     * Log the class names of the failure and up to eight nested
+     * causes. The category is a short, non-secret descriptor
+     * (for example {@code "timeout"}, {@code "rest"},
+     * {@code "unexpected"}).
+     *
+     * <p>This method NEVER logs the service role key, the
+     * {@code Authorization} header, the {@code apikey} header,
+     * any signed token, the complete storage path, the bucket,
+     * or the response body. Only exception class names &mdash;
+     * not exception messages &mdash; are echoed, so a Render
+     * operator can see whether the failure is e.g. a
+     * {@code java.io.IOException} wrapped by a
+     * {@code RestClientException} without exposing any
+     * Supabase payload.
+     *
+     * @param throwable the top-level failure (never {@code null})
+     * @param category safe transport classifier
+     */
+    private static void logDownloadTransportChain(
+            Throwable throwable, String category) {
+        if (throwable == null) {
+            return;
+        }
+        Throwable cursor = throwable;
+        int depth = 0;
+        int maxDepth = 8;
+        while (cursor != null && depth < maxDepth) {
+            log.warn(
+                    "Supabase private download transport chain: "
+                            + "category={} depth={} class={}",
+                    category,
+                    depth,
+                    cursor.getClass().getName());
+            cursor = cursor.getCause();
+            depth++;
         }
     }
 }
