@@ -208,39 +208,12 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
         document.setUpdatedBy(moderator);
         Document savedDoc = documentRepository.save(document);
 
-        try {
-            if (savedDoc.getCreatedBy() != null && savedDoc.getCreatedBy().getId() != null) {
-                UUID recipientId = savedDoc.getCreatedBy().getId();
-                UUID actorId = moderator != null ? moderator.getId() : null;
-                String docTitle = savedDoc.getTitle() != null ? savedDoc.getTitle() : "tài liệu";
-
-                if (target == DocumentStatus.APPROVED) {
-                    String note = request.getAdminNote() != null ? request.getAdminNote().trim() : "";
-                    String msg = "Tài liệu \"" + docTitle + "\" của bạn đã được duyệt và xuất bản." + (!note.isBlank() ? " Ghi chú: " + note : "");
-                    notificationService.createAndPush(
-                            recipientId,
-                            actorId,
-                            NotificationType.DOCUMENT_APPROVED,
-                            savedDoc.getId().toString(),
-                            "DOCUMENT",
-                            msg
-                    );
-                } else if (target == DocumentStatus.REJECTED) {
-                    String reason = savedDoc.getRejectReason() != null ? savedDoc.getRejectReason().trim() : "";
-                    String msg = "Tài liệu \"" + docTitle + "\" của bạn đã bị từ chối." + (!reason.isBlank() ? " Lý do: " + reason : "");
-                    notificationService.createAndPush(
-                            recipientId,
-                            actorId,
-                            NotificationType.DOCUMENT_REJECTED,
-                            savedDoc.getId().toString(),
-                            "DOCUMENT",
-                            msg
-                    );
-                }
-            }
-        } catch (Exception e) {
-            // Log warning to prevent notification failure from rolling back document approval
-        }
+        notifyDocumentModeration(
+                savedDoc,
+                moderator,
+                target,
+                target == DocumentStatus.APPROVED ? request.getAdminNote() : savedDoc.getRejectReason()
+        );
     }
 
     /**
@@ -396,5 +369,32 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
             return trimmed;
         }
         return trimmed.substring(0, 120) + "…";
+    }
+
+    private void notifyDocumentModeration(Document doc, User moderator, DocumentStatus target, String customNote) {
+        if (doc.getCreatedBy() == null || doc.getCreatedBy().getId() == null) {
+            return;
+        }
+        try {
+            String title = doc.getTitle() != null ? doc.getTitle() : "tài liệu";
+            boolean isApproved = (target == DocumentStatus.APPROVED);
+            String noteSuffix = (customNote != null && !customNote.isBlank())
+                    ? (isApproved ? " Ghi chú: " : " Lý do: ") + customNote.trim()
+                    : "";
+            String msg = isApproved
+                    ? "Tài liệu \"" + title + "\" của bạn đã được duyệt và xuất bản." + noteSuffix
+                    : "Tài liệu \"" + title + "\" của bạn đã bị từ chối." + noteSuffix;
+
+            notificationService.createAndPush(
+                    doc.getCreatedBy().getId(),
+                    moderator != null ? moderator.getId() : null,
+                    isApproved ? NotificationType.DOCUMENT_APPROVED : NotificationType.DOCUMENT_REJECTED,
+                    doc.getId().toString(),
+                    "DOCUMENT",
+                    msg
+            );
+        } catch (Exception ignored) {
+            // Ignore notification failure
+        }
     }
 }
