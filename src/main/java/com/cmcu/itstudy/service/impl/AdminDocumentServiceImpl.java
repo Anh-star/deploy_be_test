@@ -215,16 +215,18 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
                 String docTitle = savedDoc.getTitle() != null ? savedDoc.getTitle() : "tài liệu";
 
                 if (target == DocumentStatus.APPROVED) {
+                    String note = request.getAdminNote() != null ? request.getAdminNote().trim() : "";
+                    String msg = "Tài liệu \"" + docTitle + "\" của bạn đã được duyệt và xuất bản." + (!note.isBlank() ? " Ghi chú: " + note : "");
                     notificationService.createAndPush(
                             recipientId,
                             actorId,
                             NotificationType.DOCUMENT_APPROVED,
                             savedDoc.getId().toString(),
                             "DOCUMENT",
-                            "Tài liệu \"" + docTitle + "\" của bạn đã được duyệt và xuất bản."
+                            msg
                     );
                 } else if (target == DocumentStatus.REJECTED) {
-                    String reason = savedDoc.getRejectReason() != null ? savedDoc.getRejectReason() : "";
+                    String reason = savedDoc.getRejectReason() != null ? savedDoc.getRejectReason().trim() : "";
                     String msg = "Tài liệu \"" + docTitle + "\" của bạn đã bị từ chối." + (!reason.isBlank() ? " Lý do: " + reason : "");
                     notificationService.createAndPush(
                             recipientId,

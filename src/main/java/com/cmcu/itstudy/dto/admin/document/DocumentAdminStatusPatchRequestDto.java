@@ -20,4 +20,7 @@ public class DocumentAdminStatusPatchRequestDto {
 
     /** Required when status is REJECTED */
     private String rejectReason;
+
+    /** Optional moderator note */
+    private String adminNote;
 }
