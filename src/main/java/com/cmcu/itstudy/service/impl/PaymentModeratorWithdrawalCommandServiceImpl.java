@@ -137,11 +137,6 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
         if (moderatorId == null) {
             throw new IllegalArgumentException("Moderator ID is required");
         }
-        if (adminNote == null || adminNote.isBlank()) {
-            throw new IllegalArgumentException(
-                    "Payment confirmation note is required"
-            );
-        }
 
         WithdrawalRequest withdrawal = withdrawalRequestRepository
                 .findByIdForUpdate(withdrawalId)
@@ -164,7 +159,7 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
         withdrawal.setStatus(WithdrawalStatus.PAID);
         withdrawal.setPaidByAdminId(moderatorId);
         withdrawal.setPaidAt(now);
-        withdrawal.setAdminNote(adminNote.trim());
+        withdrawal.setAdminNote(normalizeOptionalNote(adminNote));
 
         WithdrawalRequest saved = withdrawalRequestRepository
                 .saveAndFlush(withdrawal);
@@ -190,11 +185,6 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
         }
         if (moderatorId == null) {
             throw new IllegalArgumentException("Moderator ID is required");
-        }
-        if (adminNote == null || adminNote.isBlank()) {
-            throw new IllegalArgumentException(
-                    "Payment confirmation note is required"
-            );
         }
 
         WithdrawalRequest withdrawal = withdrawalRequestRepository
@@ -224,7 +214,7 @@ public class PaymentModeratorWithdrawalCommandServiceImpl
         withdrawal.setApprovedAt(now);
         withdrawal.setPaidByAdminId(moderatorId);
         withdrawal.setPaidAt(now);
-        withdrawal.setAdminNote(adminNote.trim());
+        withdrawal.setAdminNote(normalizeOptionalNote(adminNote));
 
         WithdrawalRequest saved = withdrawalRequestRepository
                 .saveAndFlush(withdrawal);
