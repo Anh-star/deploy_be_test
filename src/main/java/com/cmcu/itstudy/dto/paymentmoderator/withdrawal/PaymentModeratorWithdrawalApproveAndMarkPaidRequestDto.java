@@ -15,9 +15,6 @@ import lombok.Setter;
 @AllArgsConstructor
 public class PaymentModeratorWithdrawalApproveAndMarkPaidRequestDto {
 
-    @NotBlank(
-            message = "Payment confirmation note is required"
-    )
     @Size(
             max = 1000,
             message = "Payment confirmation note must not exceed 1000 characters"
