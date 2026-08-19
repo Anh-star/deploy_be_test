@@ -633,9 +633,9 @@ public class DocumentServiceImpl implements DocumentService {
         org.springframework.data.domain.Page<DocumentReport> reports;
 
         if (StringUtils.hasText(status)) {
-            reports = documentReportRepository.findByStatusAndDocumentDeletedFalse(status.toUpperCase(), pageRequest);
+            reports = documentReportRepository.findAllByStatusOrderByCreatedAtDesc(status.toUpperCase(), pageRequest);
         } else {
-            reports = documentReportRepository.findByDocumentDeletedFalse(pageRequest);
+            reports = documentReportRepository.findAllByOrderByCreatedAtDesc(pageRequest);
         }
 
         return reports.map(r -> {

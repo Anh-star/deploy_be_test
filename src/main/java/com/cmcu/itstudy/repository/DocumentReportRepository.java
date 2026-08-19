@@ -21,12 +21,6 @@ public interface DocumentReportRepository extends JpaRepository<DocumentReport, 
 
     List<DocumentReport> findByDocumentId(UUID documentId);
 
-    @Query("SELECT r FROM DocumentReport r WHERE r.status = :status AND (r.document.deleted = false OR r.document.deleted IS NULL) ORDER BY r.createdAt DESC")
-    Page<DocumentReport> findByStatusAndDocumentDeletedFalse(@Param("status") String status, Pageable pageable);
-
-    @Query("SELECT r FROM DocumentReport r WHERE (r.document.deleted = false OR r.document.deleted IS NULL) ORDER BY r.createdAt DESC")
-    Page<DocumentReport> findByDocumentDeletedFalse(Pageable pageable);
-
     Page<DocumentReport> findAllByStatusOrderByCreatedAtDesc(String status, Pageable pageable);
 
     Page<DocumentReport> findAllByOrderByCreatedAtDesc(Pageable pageable);
