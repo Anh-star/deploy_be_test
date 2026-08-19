@@ -266,7 +266,7 @@ public class AutoQuizCallbackServiceImpl implements AutoQuizCallbackService {
 
         // Build the Quiz entity
         Quiz quiz = Quiz.builder()
-                .title(buildQuizTitle(document))
+                .title(resolveQuizTitle(request, document))
                 .description(resolveQuizDescription(request, document))
                 .durationMinutes(30)
                 .maxAttemptsPerDay(3)
@@ -323,15 +323,87 @@ public class AutoQuizCallbackServiceImpl implements AutoQuizCallbackService {
     }
 
     private String buildQuizTitle(Document document) {
-        String docTitle = document.getTitle();
-        if (docTitle != null && !docTitle.isBlank()) {
-            String trimmed = docTitle.trim();
-            if (trimmed.length() > 200) {
-                trimmed = trimmed.substring(0, 200);
+        // Deprecated — kept temporarily to avoid unused-symbol warnings
+        // if referenced from older build paths. Safe to remove once all
+        // call sites route through {@link #resolveQuizTitle}.
+        return resolveQuizTitle(null, document);
+    }
+
+    /**
+     * Resolve the title that will be stored on {@link Quiz}.
+     *
+     * <p>Priority:</p>
+     * <ol>
+     *   <li>The {@code quizTitle} field shipped by n8n / Gemini (trimmed).
+     *       This is the canonical AI-generated Vietnamese title.</li>
+     *   <li>If the AI did not provide one (legacy callback or AI omitted
+     *       the field), fall back to a Vietnamese, document-title-based
+     *       title &mdash; <em>only</em> when the document title does not
+     *       show signs of mojibake (lone {@code '?'} characters that
+     *       stand in for unrecoverable UTF-8 bytes).</li>
+     *   <li>Final fallback: a generic Vietnamese label.</li>
+     * </ol>
+     *
+     * <p>The output is hard-capped at {@code 255} characters to mirror
+     * the {@code tbl_quizzes.title} column constraint and the inbound
+     * {@link AutoQuizCallbackRequestDto#getQuizTitle()} validator.</p>
+     */
+    private String resolveQuizTitle(
+            AutoQuizCallbackRequestDto request,
+            Document document) {
+        String aiTitle = request != null ? request.getQuizTitle() : null;
+        if (aiTitle != null) {
+            String trimmed = aiTitle.trim();
+            if (!trimmed.isEmpty()) {
+                if (trimmed.length() > 255) {
+                    trimmed = trimmed.substring(0, 255);
+                }
+                return trimmed;
             }
-            return trimmed + " - Auto Quiz";
         }
-        return "Auto-generated Quiz";
+        return buildFallbackTitle(document);
+    }
+
+    private String buildFallbackTitle(Document document) {
+        if (document != null) {
+            String docTitle = document.getTitle();
+            if (docTitle != null) {
+                String trimmed = docTitle.trim();
+                if (!trimmed.isEmpty() && !looksMojibake(trimmed)) {
+                    return "Bài trắc nghiệm: " + trimmed;
+                }
+            }
+        }
+        return "Bài trắc nghiệm tự động";
+    }
+
+    /**
+     * Heuristic for unrecoverable mojibake: a non-trivial proportion of
+     * {@code '?'} characters inside a UTF-8 title usually means the
+     * bytes could not be decoded and were substituted. We do NOT try to
+     * repair the string — we simply reject it so the fallback generic
+     * title can take its place.
+     */
+    static boolean looksMojibake(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        int questionMarks = 0;
+        for (int i = 0; i < value.length(); i++) {
+            if (value.charAt(i) == '?') {
+                questionMarks++;
+            }
+        }
+        // Single '?' in a long Vietnamese title is enough evidence to skip
+        // it; shorter strings get a slightly higher tolerance.
+        int length = value.length();
+        if (questionMarks == 0) {
+            return false;
+        }
+        if (length <= 20) {
+            return questionMarks >= 2;
+        }
+        return true;
     }
 
     /**

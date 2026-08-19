@@ -53,6 +53,18 @@ public class AutoQuizCallbackRequestDto {
     private Integer requestedQuestionCount;
 
     /**
+     * Optional AI-generated quiz title (Vietnamese). When present and
+     * non-blank this value is persisted as {@code Quiz.title}. When
+     * absent or blank, the backend falls back to a Vietnamese,
+     * document-title-based title.
+     *
+     * <p>Optional so legacy callers (e.g. an n8n instance deployed slightly
+     * ahead of the BE) keep working.</p>
+     */
+    @Size(max = 255, message = "quizTitle must not exceed 255 characters")
+    private String quizTitle;
+
+    /**
      * Optional AI-generated semantic description of the quiz (what topic /
      * knowledge area it covers). When present and non-blank, this value is
      * persisted as {@code Quiz.description}. When absent or blank, the
