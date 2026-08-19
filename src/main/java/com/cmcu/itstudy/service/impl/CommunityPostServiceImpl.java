@@ -1419,7 +1419,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         refreshTokenRepository.revokeAllByUserId(author.getId());
 
         // 3. Hide ALL community posts by this author
-        communityPostRepository.hideAllByAuthorId(author.getId());
+        postRepository.hideAllByAuthorId(author.getId());
 
         // 4. Hide ALL documents by this author
         documentRepository.hideAllByCreatedById(author.getId());
