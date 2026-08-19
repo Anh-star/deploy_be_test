@@ -35,4 +35,36 @@ public interface DocumentQuizRepository extends JpaRepository<DocumentQuiz, UUID
                     """
     )
     Page<DocumentQuiz> findByDocumentIdWithQuiz(@Param("documentId") UUID documentId, Pageable pageable);
+
+    @Query("""
+            select dq
+            from DocumentQuiz dq
+            join fetch dq.document d
+            left join fetch dq.quiz q
+            left join fetch q.questions
+            where dq.quiz.id = :quizId
+              and d.deleted = false
+            """)
+    List<DocumentQuiz> findAllByQuizIdWithDocument(@Param("quizId") UUID quizId);
+
+    @Query("""
+            select dq
+            from DocumentQuiz dq
+            join fetch dq.quiz q
+            join fetch dq.document d
+            left join fetch d.createdBy
+            where d.createdBy.id = :userId
+              and d.deleted = false
+            order by dq.sortOrder asc, dq.id asc
+            """,
+            countQuery = """
+            select count(dq)
+            from DocumentQuiz dq
+            join dq.document d
+            where d.createdBy.id = :userId
+              and d.deleted = false
+            """)
+    org.springframework.data.domain.Page<DocumentQuiz> findByOwnerIdWithQuizAndDocumentPaged(
+            @Param("userId") UUID userId,
+            org.springframework.data.domain.Pageable pageable);
 }

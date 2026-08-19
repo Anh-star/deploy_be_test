@@ -16,6 +16,7 @@ import com.cmcu.itstudy.entity.QuizAttempt;
 import com.cmcu.itstudy.entity.QuizAttemptAnswer;
 import com.cmcu.itstudy.entity.QuizQuestion;
 import com.cmcu.itstudy.entity.QuizQuestionOption;
+import com.cmcu.itstudy.enums.DocumentStatus;
 import com.cmcu.itstudy.handle.QuizAlreadySubmittedException;
 import com.cmcu.itstudy.mapper.DocumentMapper;
 import com.cmcu.itstudy.mapper.QuizMapper;
@@ -26,6 +27,7 @@ import com.cmcu.itstudy.repository.QuizRepository;
 import com.cmcu.itstudy.repository.DocumentQuizRepository;
 import com.cmcu.itstudy.repository.QuizQuestionRepository;
 import com.cmcu.itstudy.security.UserDetailsImpl;
+import com.cmcu.itstudy.service.contract.DocumentAccessService;
 import com.cmcu.itstudy.service.contract.QuizService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -64,19 +66,22 @@ public class QuizServiceImpl implements QuizService {
     private final QuizAttemptRepository quizAttemptRepository;
     private final QuizAttemptAnswerRepository quizAttemptAnswerRepository;
     private final DocumentRepository documentRepository;
+    private final DocumentAccessService documentAccessService;
 
     public QuizServiceImpl(DocumentQuizRepository documentQuizRepository,
                            QuizQuestionRepository quizQuestionRepository,
                            QuizRepository quizRepository,
                            QuizAttemptRepository quizAttemptRepository,
                            QuizAttemptAnswerRepository quizAttemptAnswerRepository,
-                           DocumentRepository documentRepository) {
+                           DocumentRepository documentRepository,
+                           DocumentAccessService documentAccessService) {
         this.documentQuizRepository = documentQuizRepository;
         this.quizQuestionRepository = quizQuestionRepository;
         this.quizRepository = quizRepository;
         this.quizAttemptRepository = quizAttemptRepository;
         this.quizAttemptAnswerRepository = quizAttemptAnswerRepository;
         this.documentRepository = documentRepository;
+        this.documentAccessService = documentAccessService;
     }
 
     @Transactional(readOnly = true)
@@ -134,12 +139,14 @@ public class QuizServiceImpl implements QuizService {
         return DocumentMapper.toQuizListPageResponseDto(linkPage, counts);
     }
 
+    @Transactional(readOnly = true)
     @Override
-    @Transactional(isolation = Isolation.SERIALIZABLE)
     public StartQuizResponseDto startQuiz(UUID quizId) {
         UUID userId = getCurrentUserId();
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new NoSuchElementException("Quiz not found"));
+
+        validateDocumentAccessForQuiz(quiz, userId);
 
         QuizAttempt inProgressAttempt = findLatestInProgressAttemptForStart(userId, quizId);
         if (inProgressAttempt != null) {
@@ -307,6 +314,8 @@ public class QuizServiceImpl implements QuizService {
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new NoSuchElementException("Quiz not found"));
 
+        validateDocumentAccessForQuiz(quiz, userId);
+
         List<Object[]> countRows = quizQuestionRepository.countQuestionsGroupedByQuizId(List.of(quizId));
         long totalQuestions = countRows.isEmpty()
                 ? 0L
@@ -406,6 +415,49 @@ public class QuizServiceImpl implements QuizService {
             throw new IllegalArgumentException("Unauthorized");
         }
         return userDetails.getUser().getId();
+    }
+
+    private void validateDocumentAccessForQuiz(Quiz quiz, UUID userId) {
+        List<DocumentQuiz> links = documentQuizRepository.findAllByQuizIdWithDocument(quiz.getId());
+        if (links.isEmpty()) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "No document is associated with this quiz");
+        }
+
+        for (DocumentQuiz link : links) {
+            com.cmcu.itstudy.entity.Document doc = link.getDocument();
+            if (doc == null || Boolean.TRUE.equals(doc.getDeleted())) {
+                continue;
+            }
+
+            UUID ownerId = doc.getCreatedBy() != null ? doc.getCreatedBy().getId() : null;
+            DocumentStatus docStatus = doc.getStatus();
+
+            if (docStatus == com.cmcu.itstudy.enums.DocumentStatus.PENDING) {
+                if (ownerId != null && ownerId.equals(userId)) {
+                    return;
+                }
+                continue;
+            }
+
+            if (docStatus == com.cmcu.itstudy.enums.DocumentStatus.APPROVED) {
+                if (ownerId != null && ownerId.equals(userId)) {
+                    return;
+                }
+                if (!Boolean.TRUE.equals(doc.getIsPaid())) {
+                    return;
+                }
+                if (documentAccessService.hasAccess(userId, doc.getId())) {
+                    return;
+                }
+                continue;
+            }
+
+            continue;
+        }
+
+        throw new org.springframework.security.access.AccessDeniedException(
+                "You do not have permission to access this quiz");
     }
 
     private UUID parseUuid(String value, String message) {
