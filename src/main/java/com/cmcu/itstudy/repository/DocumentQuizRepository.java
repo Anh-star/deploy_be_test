@@ -47,7 +47,8 @@ public interface DocumentQuizRepository extends JpaRepository<DocumentQuiz, UUID
             """)
     List<DocumentQuiz> findAllByQuizIdWithDocument(@Param("quizId") UUID quizId);
 
-    @Query("""
+    @Query(
+            value = """
             select dq
             from DocumentQuiz dq
             join fetch dq.quiz q

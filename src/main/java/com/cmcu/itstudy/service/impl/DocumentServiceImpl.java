@@ -708,7 +708,7 @@ public class DocumentServiceImpl implements DocumentService {
         MyDocumentAutoQuizDto.QuizInfo quizInfo = null;
         com.cmcu.itstudy.entity.Quiz quizEntity = generation.getQuiz();
         if (quizEntity != null) {
-            long totalQuestions = quizQuestionRepository.countByQuizId(quizEntity.getId());
+            long totalQuestions = quizQuestionRepository.countByQuiz_Id(quizEntity.getId());
             quizInfo = MyDocumentAutoQuizDto.QuizInfo.builder()
                     .quizId(quizEntity.getId().toString())
                     .title(quizEntity.getTitle())

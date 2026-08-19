@@ -11,7 +11,7 @@ RUN mvn dependency:go-offline -B
 # Copy src and build the package
 
 COPY src ./src
-RUN mvn clean package -DskipTests -B
+RUN mvn clean package -Dmaven.test.skip=true -B
 
 
 # Stage 2: Run the application
