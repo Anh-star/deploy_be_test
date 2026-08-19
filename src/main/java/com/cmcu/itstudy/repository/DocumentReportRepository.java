@@ -21,19 +21,16 @@ public interface DocumentReportRepository extends JpaRepository<DocumentReport, 
 
     List<DocumentReport> findByDocumentId(UUID documentId);
 
-    @Query(value = "SELECT r FROM DocumentReport r LEFT JOIN FETCH r.document d LEFT JOIN FETCH d.createdBy LEFT JOIN FETCH r.reporter u WHERE r.status = :status ORDER BY r.createdAt DESC",
-           countQuery = "SELECT COUNT(r) FROM DocumentReport r WHERE r.status = :status")
-    Page<DocumentReport> findByStatusWithDetails(@Param("status") String status, Pageable pageable);
+    @Query(value = "SELECT r FROM DocumentReport r " +
+           "LEFT JOIN r.document d " +
+           "LEFT JOIN r.reporter rep " +
+           "WHERE (:status IS NULL OR :status = '' OR r.status = :status) " +
+           "ORDER BY r.createdAt DESC",
+           countQuery = "SELECT COUNT(r) FROM DocumentReport r WHERE (:status IS NULL OR :status = '' OR r.status = :status)")
+    Page<DocumentReport> searchReports(@Param("status") String status, Pageable pageable);
 
-    @Query(value = "SELECT r FROM DocumentReport r LEFT JOIN FETCH r.document d LEFT JOIN FETCH d.createdBy LEFT JOIN FETCH r.reporter u ORDER BY r.createdAt DESC",
-           countQuery = "SELECT COUNT(r) FROM DocumentReport r")
-    Page<DocumentReport> findAllWithDetails(Pageable pageable);
-
-    Page<DocumentReport> findAllByStatusOrderByCreatedAtDesc(String status, Pageable pageable);
-
-    Page<DocumentReport> findAllByOrderByCreatedAtDesc(Pageable pageable);
-
-    long countByDocumentId(UUID documentId);
+    @Query("SELECT COUNT(r) FROM DocumentReport r WHERE r.document.id = :documentId")
+    long countByDocumentId(@Param("documentId") UUID documentId);
 
     boolean existsByDocumentIdAndStatus(UUID documentId, String status);
 }

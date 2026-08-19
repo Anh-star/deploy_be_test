@@ -631,22 +631,8 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     public org.springframework.data.domain.Page<com.cmcu.itstudy.dto.document.DocumentReportResponseDto> getReportedDocuments(String status, int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size);
-        org.springframework.data.domain.Page<DocumentReport> reports;
-
-        try {
-            if (StringUtils.hasText(status)) {
-                reports = documentReportRepository.findByStatusWithDetails(status.toUpperCase(), pageRequest);
-            } else {
-                reports = documentReportRepository.findAllWithDetails(pageRequest);
-            }
-        } catch (Exception e) {
-            log.warn("Fallback to standard query for DocumentReports: {}", e.getMessage());
-            if (StringUtils.hasText(status)) {
-                reports = documentReportRepository.findAllByStatusOrderByCreatedAtDesc(status.toUpperCase(), pageRequest);
-            } else {
-                reports = documentReportRepository.findAllByOrderByCreatedAtDesc(pageRequest);
-            }
-        }
+        String st = (status != null && !status.isBlank()) ? status.toUpperCase() : null;
+        org.springframework.data.domain.Page<DocumentReport> reports = documentReportRepository.searchReports(st, pageRequest);
 
         return reports.map(r -> {
             String docTitle = "Tài liệu không tồn tại";
