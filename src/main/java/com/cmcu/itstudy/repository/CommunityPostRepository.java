@@ -41,11 +41,11 @@ public interface CommunityPostRepository extends JpaRepository<CommunityPost, UU
 
     List<CommunityPost> findByDeletedTrueAndDeletedAtBefore(LocalDateTime threshold);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE CommunityPost p SET p.hidden = true WHERE p.author.id = :authorId AND (p.deleted = false OR p.deleted IS NULL)")
     int hideAllByAuthorId(@Param("authorId") UUID authorId);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE CommunityPost p SET p.hidden = false WHERE p.author.id = :authorId AND (p.deleted = false OR p.deleted IS NULL)")
     int unhideAllByAuthorId(@Param("authorId") UUID authorId);
 }

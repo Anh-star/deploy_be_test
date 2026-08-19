@@ -55,6 +55,19 @@ public class DatabaseSchemaMigrationRunner implements ApplicationRunner {
                 log.warn("Schema migration for tbl_community_post_reports: {}", ex.getMessage());
             }
 
+            // 3. Add Indexes to prevent table locks during bulk operations
+            try {
+                stmt.execute("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_documents_created_by' AND object_id = OBJECT_ID('tbl_documents')) " +
+                             "    CREATE INDEX idx_documents_created_by ON tbl_documents(created_by);");
+                stmt.execute("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_posts_author_id' AND object_id = OBJECT_ID('tbl_community_posts')) " +
+                             "    CREATE INDEX idx_posts_author_id ON tbl_community_posts(author_id);");
+                stmt.execute("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'idx_refresh_tokens_user_id' AND object_id = OBJECT_ID('tbl_refresh_tokens')) " +
+                             "    CREATE INDEX idx_refresh_tokens_user_id ON tbl_refresh_tokens(user_id);");
+                log.info("Schema migration: Performance indexes verified successfully.");
+            } catch (Exception ex) {
+                log.warn("Schema migration for performance indexes: {}", ex.getMessage());
+            }
+
         } catch (Exception e) {
             log.warn("Schema migration runner error: {}", e.getMessage());
         }
