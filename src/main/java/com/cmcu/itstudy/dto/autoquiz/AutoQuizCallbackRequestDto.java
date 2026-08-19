@@ -52,6 +52,18 @@ public class AutoQuizCallbackRequestDto {
     @Max(value = 50, message = "requestedQuestionCount must be at most 50")
     private Integer requestedQuestionCount;
 
+    /**
+     * Optional AI-generated semantic description of the quiz (what topic /
+     * knowledge area it covers). When present and non-blank, this value is
+     * persisted as {@code Quiz.description}. When absent or blank, the
+     * backend falls back to a generic, document-title-based description.
+     *
+     * <p>Optional so legacy callers (e.g. an n8n instance deployed slightly
+     * ahead of the BE) keep working.</p>
+     */
+    @Size(max = 1000, message = "quizDescription must not exceed 1000 characters")
+    private String quizDescription;
+
     @NotNull(message = "questions is required")
     @NotEmpty(message = "questions must not be empty")
     @Valid

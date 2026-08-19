@@ -267,7 +267,7 @@ public class AutoQuizCallbackServiceImpl implements AutoQuizCallbackService {
         // Build the Quiz entity
         Quiz quiz = Quiz.builder()
                 .title(buildQuizTitle(document))
-                .description(buildQuizDescription(generation))
+                .description(resolveQuizDescription(request, document))
                 .durationMinutes(30)
                 .maxAttemptsPerDay(3)
                 .passScorePercent(80.0d)
@@ -334,13 +334,51 @@ public class AutoQuizCallbackServiceImpl implements AutoQuizCallbackService {
         return "Auto-generated Quiz";
     }
 
-    private String buildQuizDescription(QuizGeneration generation) {
-        return "Auto-generated quiz from document. "
-                + "Generated on "
-                + LocalDateTime.now().toString()
-                + ". Requested "
-                + generation.getRequestedQuestionCount()
-                + " questions.";
+    /**
+     * Resolve the description that will be stored on {@link Quiz}.
+     *
+     * <p>Priority:</p>
+     * <ol>
+     *   <li>The {@code quizDescription} field shipped by n8n / Gemini
+     *       (trimmed). This is the canonical semantic description.</li>
+     *   <li>If the AI did not provide one (legacy callback or AI omitted
+     *       the field), fall back to a generic, document-title-based
+     *       sentence that says the quiz helps review the document's
+     *       knowledge. <strong>No timestamps or requested-count
+     *       metadata</strong> are baked into this fallback — the
+     *       semantic content must come from the AI.</li>
+     * </ol>
+     *
+     * <p>The fallback length is hard-capped at {@code 1000} characters
+     * to mirror {@link AutoQuizCallbackRequestDto#getQuizDescription()}
+     * validation; AI-supplied descriptions are already capped by the
+     * inbound validator.</p>
+     */
+    private String resolveQuizDescription(
+            AutoQuizCallbackRequestDto request,
+            Document document) {
+        String aiDescription = request != null ? request.getQuizDescription() : null;
+        if (aiDescription != null) {
+            String trimmed = aiDescription.trim();
+            if (!trimmed.isEmpty()) {
+                if (trimmed.length() > 1000) {
+                    trimmed = trimmed.substring(0, 1000);
+                }
+                return trimmed;
+            }
+        }
+        return buildFallbackDescription(document);
+    }
+
+    private String buildFallbackDescription(Document document) {
+        String docTitle = document != null ? document.getTitle() : null;
+        if (docTitle != null && !docTitle.isBlank()) {
+            String trimmed = docTitle.trim();
+            return "Bài trắc nghiệm giúp ôn tập và kiểm tra các kiến thức "
+                    + "trọng tâm trong tài liệu \"" + trimmed + "\".";
+        }
+        return "Bài trắc nghiệm giúp ôn tập và kiểm tra các kiến thức "
+                + "trọng tâm của tài liệu.";
     }
 
     private AutoQuizCallbackResponseDto buildIdempotentResponse(
