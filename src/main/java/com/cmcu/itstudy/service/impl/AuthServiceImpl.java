@@ -116,6 +116,10 @@ public class AuthServiceImpl extends BaseAuthService implements AuthService {
             throw new IllegalArgumentException("Invalid email or password");
         }
 
+        if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
+            throw new IllegalArgumentException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động. Vui lòng liên hệ quản trị viên để được hỗ trợ.");
+        }
+
         List<Role> roles = extractRoles(user);
         // Lọc các vai trò mong muốn ('ADMIN', 'CONTRIBUTOR') để đưa vào token
         List<String> authorizedRoleNames = roles.stream()
@@ -174,6 +178,10 @@ public class AuthServiceImpl extends BaseAuthService implements AuthService {
 
         User user = userRepository.findByEmailWithRoles(storedToken.getUser().getEmail())
                 .orElseThrow(() -> new IllegalArgumentException("User not found for refresh token"));
+
+        if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
+            throw new IllegalArgumentException("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động.");
+        }
 
         List<Role> roles = extractRoles(user);
         // Lọc các vai trò mong muốn ('ADMIN', 'CONTRIBUTOR') để đưa vào token

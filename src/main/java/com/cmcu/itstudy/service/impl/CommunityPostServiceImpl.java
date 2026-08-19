@@ -73,6 +73,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     private final NotificationService notificationService;
     private final CommunityPostReportRepository reportRepository;
     private final SseService sseService;
+    private final com.cmcu.itstudy.repository.DocumentRepository documentRepository;
+    private final com.cmcu.itstudy.repository.RefreshTokenRepository refreshTokenRepository;
 
     public CommunityPostServiceImpl(
             CommunityPostRepository postRepository,
@@ -88,7 +90,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             CommunityPostNotificationMuteRepository notificationMuteRepository,
             NotificationService notificationService,
             CommunityPostReportRepository reportRepository,
-            SseService sseService
+            SseService sseService,
+            com.cmcu.itstudy.repository.DocumentRepository documentRepository,
+            com.cmcu.itstudy.repository.RefreshTokenRepository refreshTokenRepository
     ) {
         this.postRepository = postRepository;
         this.imageRepository = imageRepository;
@@ -104,6 +108,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         this.notificationService = notificationService;
         this.reportRepository = reportRepository;
         this.sseService = sseService;
+        this.documentRepository = documentRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
     }
 
     @Override
@@ -999,6 +1005,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             User author = p.getAuthor();
             long count = reportRepository.countByPostId(p.getId());
 
+            User escalatedBy = r.getEscalatedBy();
+
             return PostReportResponseDto.builder()
                     .id(r.getId().toString())
                     .postId(p.getId().toString())
@@ -1016,6 +1024,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .reportCount(count)
                     .isPostHidden(Boolean.TRUE.equals(p.getHidden()))
                     .isPostDeleted(Boolean.TRUE.equals(p.getDeleted()))
+                    .escalationReason(r.getEscalationReason())
+                    .escalatedByName(escalatedBy != null ? escalatedBy.getFullName() : null)
+                    .escalatedAt(r.getEscalatedAt())
                     .createdAt(r.getCreatedAt())
                     .build();
         });
@@ -1134,6 +1145,12 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     public void unhidePost(UUID postId, UUID moderatorId, String reason) {
         CommunityPost post = postRepository.findById(postId)
                 .orElseThrow(() -> new NoSuchElementException("Bài viết không tồn tại"));
+
+        List<CommunityPostReport> postReports = reportRepository.findByPostId(postId);
+        if (postReports != null && postReports.stream().anyMatch(r -> "ESCALATED".equalsIgnoreCase(r.getStatus()))) {
+            throw new IllegalArgumentException("Bài viết này đã được chuyển lên Admin xử lý. Quản lý cộng đồng không thể tự mở ẩn.");
+        }
+
         post.setHidden(false);
         postRepository.save(post);
 
@@ -1274,5 +1291,227 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 .dismissedReportsCount(dismissedReports)
                 .hiddenPostsCount(hiddenPosts)
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public void escalateReport(UUID reportId, UUID moderatorId, String reason) {
+        CommunityPostReport report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+
+        User moderator = userRepository.findById(moderatorId)
+                .orElseThrow(() -> new NoSuchElementException("Người dùng không tồn tại"));
+
+        CommunityPost post = report.getPost();
+        if (post == null) {
+            throw new NoSuchElementException("Bài viết không tồn tại");
+        }
+
+        // 1. Hide post immediately
+        post.setHidden(true);
+        postRepository.save(post);
+
+        // 2. Mark all reports of this post as ESCALATED with escalation details
+        List<CommunityPostReport> postReports = reportRepository.findByPostId(post.getId());
+        LocalDateTime now = LocalDateTime.now();
+        if (postReports != null && !postReports.isEmpty()) {
+            for (CommunityPostReport r : postReports) {
+                r.setStatus("ESCALATED");
+                r.setEscalationReason(reason);
+                r.setEscalatedBy(moderator);
+                r.setEscalatedAt(now);
+            }
+            reportRepository.saveAll(postReports);
+        } else {
+            report.setStatus("ESCALATED");
+            report.setEscalationReason(reason);
+            report.setEscalatedBy(moderator);
+            report.setEscalatedAt(now);
+            reportRepository.save(report);
+        }
+
+        // 3. Send notification to author that post is under review by admin
+        try {
+            String msg = "Bài viết của bạn đang được chuyển lên Ban Quản Trị cấp cao (Admin) để xem xét giải quyết.";
+            if (StringUtils.hasText(reason)) {
+                msg += " Lý do chuyển tiếp: " + reason.trim();
+            }
+            notificationService.createAndPush(
+                    post.getAuthor().getId(),
+                    moderatorId,
+                    NotificationType.POST_HIDDEN,
+                    post.getId().toString(),
+                    "COMMUNITY_POST",
+                    msg
+            );
+        } catch (Exception e) {
+            log.warn("Failed to push escalate notification to post author: {}", e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<PostReportResponseDto> getEscalatedReports(String keyword, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate, int page, int size) {
+        PageRequest pageRequest = PageRequest.of(page, size);
+        String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : null;
+        Page<CommunityPostReport> reports = reportRepository.searchReports("ESCALATED", kw, startDate, endDate, pageRequest);
+
+        return reports.map(r -> {
+            CommunityPost p = r.getPost();
+            if (p == null) return null;
+
+            User reporter = r.getReporter();
+            User author = p.getAuthor();
+            long count = reportRepository.countByPostId(p.getId());
+            User escalatedBy = r.getEscalatedBy();
+
+            return PostReportResponseDto.builder()
+                    .id(r.getId().toString())
+                    .postId(p.getId().toString())
+                    .postTitle(p.getTitle())
+                    .postContent(p.getContent())
+                    .postAuthorId(author != null ? author.getId().toString() : null)
+                    .postAuthorName(author != null ? author.getFullName() : "Không xác định")
+                    .postAuthorAvatar(author != null ? author.getAvatarUrl() : null)
+                    .reporterId(reporter != null ? reporter.getId().toString() : null)
+                    .reporterName(reporter != null ? reporter.getFullName() : "Không xác định")
+                    .reporterAvatar(reporter != null ? reporter.getAvatarUrl() : null)
+                    .reasonCode(r.getReasonCode())
+                    .detail(r.getDetail())
+                    .status(r.getStatus())
+                    .reportCount(count)
+                    .isPostHidden(Boolean.TRUE.equals(p.getHidden()))
+                    .isPostDeleted(Boolean.TRUE.equals(p.getDeleted()))
+                    .escalationReason(r.getEscalationReason())
+                    .escalatedByName(escalatedBy != null ? escalatedBy.getFullName() : null)
+                    .escalatedAt(r.getEscalatedAt())
+                    .createdAt(r.getCreatedAt())
+                    .resolvedAt(r.getResolvedAt())
+                    .build();
+        });
+    }
+
+    @Override
+    @Transactional
+    public void adminBanUserFromReport(UUID reportId, UUID adminId, String reason) {
+        CommunityPostReport report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+
+        CommunityPost post = report.getPost();
+        if (post == null) {
+            throw new NoSuchElementException("Bài viết không tồn tại");
+        }
+
+        User author = post.getAuthor();
+        if (author == null) {
+            throw new NoSuchElementException("Tác giả bài viết không tồn tại");
+        }
+
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new NoSuchElementException("Admin không tồn tại"));
+
+        // 1. Lock user account
+        author.setStatus("LOCKED");
+        author.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(author);
+
+        // 2. Revoke all tokens
+        refreshTokenRepository.revokeAllByUserId(author.getId());
+
+        // 3. Hide ALL community posts by this author
+        communityPostRepository.hideAllByAuthorId(author.getId());
+
+        // 4. Hide ALL documents by this author
+        documentRepository.hideAllByCreatedById(author.getId());
+
+        // 5. Mark all reports of this post as RESOLVED
+        List<CommunityPostReport> postReports = reportRepository.findByPostId(post.getId());
+        LocalDateTime now = LocalDateTime.now();
+        if (postReports != null && !postReports.isEmpty()) {
+            for (CommunityPostReport r : postReports) {
+                r.setStatus("RESOLVED");
+                r.setResolvedAt(now);
+                r.setResolvedBy(admin);
+            }
+            reportRepository.saveAll(postReports);
+        } else {
+            report.setStatus("RESOLVED");
+            report.setResolvedAt(now);
+            report.setResolvedBy(admin);
+            reportRepository.save(report);
+        }
+
+        // 6. Send notification to author
+        try {
+            String msg = "Tài khoản của bạn đã bị khóa bởi Ban Quản Trị do vi phạm quy chuẩn cộng đồng.";
+            if (StringUtils.hasText(reason)) {
+                msg += " Lý do: " + reason.trim();
+            }
+            msg += ". Vui lòng liên hệ support@itstudy.edu.vn nếu bạn có khiếu nại.";
+            notificationService.createAndPush(
+                    author.getId(),
+                    adminId,
+                    NotificationType.POST_DELETED,
+                    post.getId().toString(),
+                    "USER_ACCOUNT",
+                    msg
+            );
+        } catch (Exception e) {
+            log.warn("Failed to push ban notification to author: {}", e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional
+    public void adminAcquitReport(UUID reportId, UUID adminId, String reason) {
+        CommunityPostReport report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+
+        CommunityPost post = report.getPost();
+        if (post == null) {
+            throw new NoSuchElementException("Bài viết không tồn tại");
+        }
+
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new NoSuchElementException("Admin không tồn tại"));
+
+        // 1. Unhide post
+        post.setHidden(false);
+        postRepository.save(post);
+
+        // 2. Mark all reports of this post as DISMISSED
+        List<CommunityPostReport> postReports = reportRepository.findByPostId(post.getId());
+        LocalDateTime now = LocalDateTime.now();
+        if (postReports != null && !postReports.isEmpty()) {
+            for (CommunityPostReport r : postReports) {
+                r.setStatus("DISMISSED");
+                r.setResolvedAt(now);
+                r.setResolvedBy(admin);
+            }
+            reportRepository.saveAll(postReports);
+        } else {
+            report.setStatus("DISMISSED");
+            report.setResolvedAt(now);
+            report.setResolvedBy(admin);
+            reportRepository.save(report);
+        }
+
+        // 3. Send notification to author
+        try {
+            String msg = "Bài viết của bạn đã được Ban Quản Trị xem xét, bỏ qua báo cáo và hiển thị lại bình thường.";
+            if (StringUtils.hasText(reason)) {
+                msg += " Ghi chú: " + reason.trim();
+            }
+            notificationService.createAndPush(
+                    post.getAuthor().getId(),
+                    adminId,
+                    NotificationType.POST_HIDDEN,
+                    post.getId().toString(),
+                    "COMMUNITY_POST",
+                    msg
+            );
+        } catch (Exception e) {
+            log.warn("Failed to push acquit notification to author: {}", e.getMessage());
+        }
     }
 }

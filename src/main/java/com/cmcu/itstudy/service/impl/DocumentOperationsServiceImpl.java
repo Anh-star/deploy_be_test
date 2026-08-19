@@ -219,6 +219,7 @@ public class DocumentOperationsServiceImpl implements DocumentOperationsService 
 
             predicates.add(cb.equal(root.get("status"), DocumentStatus.APPROVED));
             predicates.add(cb.isFalse(root.get("deleted")));
+            predicates.add(cb.or(cb.isNull(root.get("hidden")), cb.isFalse(root.get("hidden"))));
 
             if (StringUtils.hasText(request.getKeyword())) {
                 predicates.add(cb.like(cb.lower(root.get("title")), "%" + request.getKeyword().toLowerCase() + "%"));

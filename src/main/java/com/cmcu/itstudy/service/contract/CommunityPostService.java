@@ -79,4 +79,12 @@ public interface CommunityPostService {
     void moderatorDeletePost(UUID postId, UUID moderatorId, String reason);
 
     com.cmcu.itstudy.dto.community.CommunityModerationStatsDto getModerationStats();
+
+    void escalateReport(UUID reportId, UUID moderatorId, String reason);
+
+    org.springframework.data.domain.Page<com.cmcu.itstudy.dto.community.PostReportResponseDto> getEscalatedReports(String keyword, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate, int page, int size);
+
+    void adminBanUserFromReport(UUID reportId, UUID adminId, String reason);
+
+    void adminAcquitReport(UUID reportId, UUID adminId, String reason);
 }

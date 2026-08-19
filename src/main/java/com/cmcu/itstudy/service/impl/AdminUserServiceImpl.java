@@ -37,17 +37,26 @@ public class AdminUserServiceImpl extends BaseAuthService implements AdminUserSe
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final UserRoleRepository userRoleRepository;
+    private final com.cmcu.itstudy.repository.CommunityPostRepository communityPostRepository;
+    private final com.cmcu.itstudy.repository.DocumentRepository documentRepository;
+    private final com.cmcu.itstudy.repository.RefreshTokenRepository refreshTokenRepository;
 
     public AdminUserServiceImpl(
             PasswordEncoder passwordEncoder,
             UserRepository userRepository,
             RoleRepository roleRepository,
-            UserRoleRepository userRoleRepository
+            UserRoleRepository userRoleRepository,
+            com.cmcu.itstudy.repository.CommunityPostRepository communityPostRepository,
+            com.cmcu.itstudy.repository.DocumentRepository documentRepository,
+            com.cmcu.itstudy.repository.RefreshTokenRepository refreshTokenRepository
     ) {
         super(passwordEncoder);
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.userRoleRepository = userRoleRepository;
+        this.communityPostRepository = communityPostRepository;
+        this.documentRepository = documentRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
     }
 
     @Override
@@ -152,9 +161,25 @@ public class AdminUserServiceImpl extends BaseAuthService implements AdminUserSe
     public AdminUserResponseDto patchStatus(UUID id, AdminUserStatusPatchRequestDto request) {
         User user = userRepository.findByIdWithRoles(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
-        user.setStatus(request.getStatus().trim());
+        String newStatus = request.getStatus().trim().toUpperCase();
+        user.setStatus(newStatus);
         user.setUpdatedAt(LocalDateTime.now());
         userRepository.save(user);
+
+        if ("LOCKED".equalsIgnoreCase(newStatus) || "BANNED".equalsIgnoreCase(newStatus) || "INACTIVE".equalsIgnoreCase(newStatus)) {
+            // Revoke all tokens
+            refreshTokenRepository.revokeAllByUserId(id);
+            // Hide all community posts by this user
+            communityPostRepository.hideAllByAuthorId(id);
+            // Hide all documents by this user
+            documentRepository.hideAllByCreatedById(id);
+        } else if ("ACTIVE".equalsIgnoreCase(newStatus)) {
+            // Unhide all community posts by this user
+            communityPostRepository.unhideAllByAuthorId(id);
+            // Unhide all documents by this user
+            documentRepository.unhideAllByCreatedById(id);
+        }
+
         User reloaded = userRepository.findByIdWithRoles(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
         return AdminUserMapper.toResponseDto(reloaded);

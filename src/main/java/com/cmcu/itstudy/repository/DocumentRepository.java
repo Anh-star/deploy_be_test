@@ -211,4 +211,12 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
             order by total_downloads desc, total_views desc, total_documents desc, u.full_name asc
             """, nativeQuery = true)
     List<Object[]> findLeaderboardUsersByDownloads(Pageable pageable);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("UPDATE Document d SET d.hidden = true WHERE d.createdBy.id = :userId AND (d.deleted = false OR d.deleted IS NULL)")
+    int hideAllByCreatedById(@Param("userId") UUID userId);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("UPDATE Document d SET d.hidden = false WHERE d.createdBy.id = :userId AND (d.deleted = false OR d.deleted IS NULL)")
+    int unhideAllByCreatedById(@Param("userId") UUID userId);
 }

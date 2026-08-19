@@ -103,6 +103,10 @@ public class Document {
     @Builder.Default
     private Boolean deleted = Boolean.FALSE;
 
+    @Column(name = "is_hidden", nullable = false)
+    @Builder.Default
+    private Boolean hidden = Boolean.FALSE;
+
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
@@ -225,6 +229,7 @@ public class Document {
         this.createdAt = now;
         this.updatedAt = now;
         if (this.deleted == null) this.deleted = Boolean.FALSE;
+        if (this.hidden == null) this.hidden = Boolean.FALSE;
         if (this.viewCount == null) this.viewCount = 0L;
         if (this.downloadCount == null) this.downloadCount = 0L;
         if (this.bookmarkCount == null) this.bookmarkCount = 0L;

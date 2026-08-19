@@ -102,6 +102,16 @@ public class CommunityModeratorController {
         return ResponseEntity.ok(ApiResponse.success(null, "Đã hiện lại bài viết"));
     }
 
+    @PutMapping("/reports/{reportId}/escalate")
+    public ResponseEntity<ApiResponse<Void>> escalateReport(
+            @PathVariable UUID reportId,
+            @RequestParam(required = false) String reason,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        communityPostService.escalateReport(reportId, getUserId(currentUser), reason);
+        return ResponseEntity.ok(ApiResponse.success(null, "Đã chuyển báo cáo lên Ban Quản Trị (Admin)"));
+    }
+
     @DeleteMapping("/posts/{postId}")
     public ResponseEntity<ApiResponse<Void>> moderatorDeletePost(
             @PathVariable UUID postId,

@@ -78,6 +78,18 @@ public class CommunityPostReport {
     @JsonIgnore
     private User resolvedBy;
 
+    @Column(name = "escalation_reason", columnDefinition = "nvarchar(max)")
+    private String escalationReason;
+
+    @Column(name = "escalated_at")
+    private LocalDateTime escalatedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "escalated_by_user_id")
+    @ToString.Exclude
+    @JsonIgnore
+    private User escalatedBy;
+
     @PrePersist
     void prePersist() {
         this.createdAt = LocalDateTime.now();

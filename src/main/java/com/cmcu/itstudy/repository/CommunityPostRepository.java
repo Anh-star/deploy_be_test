@@ -4,6 +4,7 @@ import com.cmcu.itstudy.entity.CommunityPost;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -39,4 +40,12 @@ public interface CommunityPostRepository extends JpaRepository<CommunityPost, UU
     List<CommunityPost> findByAuthor_IdAndIsPinnedTrue(@Param("authorId") UUID authorId);
 
     List<CommunityPost> findByDeletedTrueAndDeletedAtBefore(LocalDateTime threshold);
+
+    @Modifying
+    @Query("UPDATE CommunityPost p SET p.hidden = true WHERE p.author.id = :authorId AND (p.deleted = false OR p.deleted IS NULL)")
+    int hideAllByAuthorId(@Param("authorId") UUID authorId);
+
+    @Modifying
+    @Query("UPDATE CommunityPost p SET p.hidden = false WHERE p.author.id = :authorId AND (p.deleted = false OR p.deleted IS NULL)")
+    int unhideAllByAuthorId(@Param("authorId") UUID authorId);
 }

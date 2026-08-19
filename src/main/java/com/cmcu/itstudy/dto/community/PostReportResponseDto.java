@@ -31,6 +31,9 @@ public class PostReportResponseDto {
     private Long reportCount;
     private Boolean isPostHidden;
     private Boolean isPostDeleted;
+    private String escalationReason;
+    private String escalatedByName;
+    private LocalDateTime escalatedAt;
     private LocalDateTime createdAt;
     private LocalDateTime resolvedAt;
 }
