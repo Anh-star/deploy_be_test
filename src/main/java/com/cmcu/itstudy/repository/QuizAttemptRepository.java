@@ -43,6 +43,8 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> 
 
     long countByUserIdAndStatus(UUID userId, String status);
 
+    boolean existsByQuiz_Id(UUID quizId);
+
     @Query("""
             select avg(qa.score)
             from QuizAttempt qa
