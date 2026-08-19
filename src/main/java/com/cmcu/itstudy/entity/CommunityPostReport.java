@@ -90,6 +90,9 @@ public class CommunityPostReport {
     @JsonIgnore
     private User escalatedBy;
 
+    @Column(name = "resolution_notes", columnDefinition = "nvarchar(max)")
+    private String resolutionNotes;
+
     @PrePersist
     void prePersist() {
         this.createdAt = LocalDateTime.now();

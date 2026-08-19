@@ -36,7 +36,7 @@ public class DatabaseSchemaMigrationRunner implements ApplicationRunner {
                 log.warn("Schema migration for tbl_documents.is_hidden: {}", ex.getMessage());
             }
 
-            // 2. Add escalation fields to tbl_community_post_reports if not exists
+            // 2. Add escalation & resolution fields to tbl_community_post_reports if not exists
             try {
                 stmt.execute("IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('tbl_community_post_reports') AND name = 'escalation_reason') " +
                              "BEGIN " +
@@ -50,7 +50,11 @@ public class DatabaseSchemaMigrationRunner implements ApplicationRunner {
                              "BEGIN " +
                              "    ALTER TABLE tbl_community_post_reports ADD escalated_by_user_id UNIQUEIDENTIFIER NULL; " +
                              "END");
-                log.info("Schema migration: tbl_community_post_reports escalation columns verified successfully.");
+                stmt.execute("IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('tbl_community_post_reports') AND name = 'resolution_notes') " +
+                             "BEGIN " +
+                             "    ALTER TABLE tbl_community_post_reports ADD resolution_notes NVARCHAR(MAX) NULL; " +
+                             "END");
+                log.info("Schema migration: tbl_community_post_reports escalation & resolution columns verified successfully.");
             } catch (Exception ex) {
                 log.warn("Schema migration for tbl_community_post_reports: {}", ex.getMessage());
             }

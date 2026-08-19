@@ -34,6 +34,9 @@ public class PostReportResponseDto {
     private String escalationReason;
     private String escalatedByName;
     private LocalDateTime escalatedAt;
+    private String resolutionNotes;
+    private String resolvedByName;
+    private String authorStatus;
     private LocalDateTime createdAt;
     private LocalDateTime resolvedAt;
 }

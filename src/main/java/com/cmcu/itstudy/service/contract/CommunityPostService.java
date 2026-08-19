@@ -82,9 +82,11 @@ public interface CommunityPostService {
 
     void escalateReport(UUID reportId, UUID moderatorId, String reason);
 
-    org.springframework.data.domain.Page<com.cmcu.itstudy.dto.community.PostReportResponseDto> getEscalatedReports(String keyword, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate, int page, int size);
+    org.springframework.data.domain.Page<com.cmcu.itstudy.dto.community.PostReportResponseDto> getEscalatedReports(String status, String keyword, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate, int page, int size);
 
     void adminBanUserFromReport(UUID reportId, UUID adminId, String reason);
+
+    void adminUnbanUserFromReport(UUID reportId, UUID adminId, String reason);
 
     void adminAcquitReport(UUID reportId, UUID adminId, String reason);
 }

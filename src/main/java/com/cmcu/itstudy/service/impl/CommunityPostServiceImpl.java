@@ -1351,10 +1351,11 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<PostReportResponseDto> getEscalatedReports(String keyword, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate, int page, int size) {
+    public Page<PostReportResponseDto> getEscalatedReports(String status, String keyword, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate, int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size);
+        String targetStatus = (status != null && !status.isBlank()) ? status.trim().toUpperCase() : "ESCALATED";
         String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : null;
-        Page<CommunityPostReport> reports = reportRepository.searchReports("ESCALATED", kw, startDate, endDate, pageRequest);
+        Page<CommunityPostReport> reports = reportRepository.searchReports(targetStatus, kw, startDate, endDate, pageRequest);
 
         return reports.map(r -> {
             CommunityPost p = r.getPost();
@@ -1364,6 +1365,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             User author = p.getAuthor();
             long count = reportRepository.countByPostId(p.getId());
             User escalatedBy = r.getEscalatedBy();
+            User resolvedBy = r.getResolvedBy();
 
             return PostReportResponseDto.builder()
                     .id(r.getId().toString())
@@ -1373,6 +1375,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .postAuthorId(author != null ? author.getId().toString() : null)
                     .postAuthorName(author != null ? author.getFullName() : "Không xác định")
                     .postAuthorAvatar(author != null ? author.getAvatarUrl() : null)
+                    .authorStatus(author != null ? author.getStatus() : null)
                     .reporterId(reporter != null ? reporter.getId().toString() : null)
                     .reporterName(reporter != null ? reporter.getFullName() : "Không xác định")
                     .reporterAvatar(reporter != null ? reporter.getAvatarUrl() : null)
@@ -1385,6 +1388,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .escalationReason(r.getEscalationReason())
                     .escalatedByName(escalatedBy != null ? escalatedBy.getFullName() : null)
                     .escalatedAt(r.getEscalatedAt())
+                    .resolutionNotes(r.getResolutionNotes())
+                    .resolvedByName(resolvedBy != null ? resolvedBy.getFullName() : null)
                     .createdAt(r.getCreatedAt())
                     .resolvedAt(r.getResolvedAt())
                     .build();
@@ -1424,30 +1429,30 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         // 4. Hide ALL documents by this author
         documentRepository.hideAllByCreatedById(author.getId());
 
-        // 5. Mark all reports of this post as RESOLVED
+        // 5. Mark all reports of this post as RESOLVED_BAN and record reason
         List<CommunityPostReport> postReports = reportRepository.findByPostId(post.getId());
         LocalDateTime now = LocalDateTime.now();
+        String banReason = (reason != null && !reason.isBlank()) ? reason.trim() : "Vi phạm quy chuẩn cộng đồng";
+
         if (postReports != null && !postReports.isEmpty()) {
             for (CommunityPostReport r : postReports) {
-                r.setStatus("RESOLVED");
+                r.setStatus("RESOLVED_BAN");
                 r.setResolvedAt(now);
                 r.setResolvedBy(admin);
+                r.setResolutionNotes(banReason);
             }
             reportRepository.saveAll(postReports);
         } else {
-            report.setStatus("RESOLVED");
+            report.setStatus("RESOLVED_BAN");
             report.setResolvedAt(now);
             report.setResolvedBy(admin);
+            report.setResolutionNotes(banReason);
             reportRepository.save(report);
         }
 
-        // 6. Send notification to author
+        // 6. Send notification to author WITHOUT reason (generic notice)
         try {
-            String msg = "Tài khoản của bạn đã bị khóa bởi Ban Quản Trị do vi phạm quy chuẩn cộng đồng.";
-            if (StringUtils.hasText(reason)) {
-                msg += " Lý do: " + reason.trim();
-            }
-            msg += ". Vui lòng liên hệ support@itstudy.edu.vn nếu bạn có khiếu nại.";
+            String msg = "Tài khoản của bạn đã bị khóa bởi Ban Quản Trị do vi phạm quy chuẩn cộng đồng. Vui lòng liên hệ support@itstudy.edu.vn nếu bạn có khiếu nại.";
             notificationService.createAndPush(
                     author.getId(),
                     adminId,
@@ -1458,6 +1463,80 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             );
         } catch (Exception e) {
             log.warn("Failed to push ban notification to author: {}", e.getMessage());
+        }
+    }
+
+    @Override
+    @Transactional
+    public void adminUnbanUserFromReport(UUID reportId, UUID adminId, String reason) {
+        CommunityPostReport report = reportRepository.findById(reportId)
+                .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+
+        CommunityPost post = report.getPost();
+        if (post == null) {
+            throw new NoSuchElementException("Bài viết không tồn tại");
+        }
+
+        User author = post.getAuthor();
+        if (author == null) {
+            throw new NoSuchElementException("Tác giả bài viết không tồn tại");
+        }
+
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new NoSuchElementException("Admin không tồn tại"));
+
+        // 1. Unlock user account
+        author.setStatus("ACTIVE");
+        author.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(author);
+
+        // 2. Unhide ALL community posts by this author
+        postRepository.unhideAllByAuthorId(author.getId());
+
+        // 3. Unhide ALL documents by this author
+        documentRepository.unhideAllByCreatedById(author.getId());
+
+        // 4. Update reports status to RESOLVED_UNBAN
+        List<CommunityPostReport> postReports = reportRepository.findByPostId(post.getId());
+        LocalDateTime now = LocalDateTime.now();
+        String unbanNote = (reason != null && !reason.isBlank()) ? reason.trim() : null;
+
+        if (postReports != null && !postReports.isEmpty()) {
+            for (CommunityPostReport r : postReports) {
+                r.setStatus("RESOLVED_UNBAN");
+                r.setResolvedAt(now);
+                r.setResolvedBy(admin);
+                if (unbanNote != null) {
+                    r.setResolutionNotes((r.getResolutionNotes() != null ? r.getResolutionNotes() + " | Mở khóa: " : "Mở khóa: ") + unbanNote);
+                }
+            }
+            reportRepository.saveAll(postReports);
+        } else {
+            report.setStatus("RESOLVED_UNBAN");
+            report.setResolvedAt(now);
+            report.setResolvedBy(admin);
+            if (unbanNote != null) {
+                report.setResolutionNotes((report.getResolutionNotes() != null ? report.getResolutionNotes() + " | Mở khóa: " : "Mở khóa: ") + unbanNote);
+            }
+            reportRepository.save(report);
+        }
+
+        // 5. Send unban notification to author (with note if provided)
+        try {
+            String msg = "Tài khoản của bạn đã được mở khóa bởi Ban Quản Trị. Các bài viết và tài liệu của bạn đã được khôi phục hiển thị.";
+            if (StringUtils.hasText(unbanNote)) {
+                msg += " Ghi chú: " + unbanNote;
+            }
+            notificationService.createAndPush(
+                    author.getId(),
+                    adminId,
+                    NotificationType.REPORT_DISMISSED,
+                    post.getId().toString(),
+                    "USER_ACCOUNT",
+                    msg
+            );
+        } catch (Exception e) {
+            log.warn("Failed to push unban notification to author: {}", e.getMessage());
         }
     }
 
@@ -1482,25 +1561,29 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         // 2. Mark all reports of this post as DISMISSED
         List<CommunityPostReport> postReports = reportRepository.findByPostId(post.getId());
         LocalDateTime now = LocalDateTime.now();
+        String dismissReason = (reason != null && !reason.isBlank()) ? reason.trim() : null;
+
         if (postReports != null && !postReports.isEmpty()) {
             for (CommunityPostReport r : postReports) {
                 r.setStatus("DISMISSED");
                 r.setResolvedAt(now);
                 r.setResolvedBy(admin);
+                r.setResolutionNotes(dismissReason);
             }
             reportRepository.saveAll(postReports);
         } else {
             report.setStatus("DISMISSED");
             report.setResolvedAt(now);
             report.setResolvedBy(admin);
+            report.setResolutionNotes(dismissReason);
             reportRepository.save(report);
         }
 
         // 3. Send notification to author
         try {
             String msg = "Bài viết của bạn đã được Ban Quản Trị xem xét, bỏ qua báo cáo và hiển thị lại bình thường.";
-            if (StringUtils.hasText(reason)) {
-                msg += " Ghi chú: " + reason.trim();
+            if (StringUtils.hasText(dismissReason)) {
+                msg += " Ghi chú: " + dismissReason;
             }
             notificationService.createAndPush(
                     post.getAuthor().getId(),

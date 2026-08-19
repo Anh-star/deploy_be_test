@@ -36,13 +36,14 @@ public class AdminCommunityModerationController {
 
     @GetMapping("/reports")
     public ResponseEntity<ApiResponse<Page<PostReportResponseDto>>> getEscalatedReports(
+            @RequestParam(required = false, defaultValue = "ESCALATED") String status,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
-        Page<PostReportResponseDto> data = communityPostService.getEscalatedReports(keyword, startDate, endDate, page, size);
+        Page<PostReportResponseDto> data = communityPostService.getEscalatedReports(status, keyword, startDate, endDate, page, size);
         return ResponseEntity.ok(ApiResponse.success(data, "Lấy danh sách báo cáo chuyển tiếp thành công"));
     }
 
@@ -54,6 +55,16 @@ public class AdminCommunityModerationController {
     ) {
         communityPostService.adminBanUserFromReport(reportId, getUserId(currentUser), reason);
         return ResponseEntity.ok(ApiResponse.success(null, "Đã khóa tài khoản người dùng và ẩn toàn bộ bài viết, tài liệu liên quan"));
+    }
+
+    @PutMapping("/reports/{reportId}/unban-user")
+    public ResponseEntity<ApiResponse<Void>> unbanUser(
+            @PathVariable UUID reportId,
+            @RequestParam(required = false) String reason,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        communityPostService.adminUnbanUserFromReport(reportId, getUserId(currentUser), reason);
+        return ResponseEntity.ok(ApiResponse.success(null, "Đã mở khóa tài khoản người dùng và hiển thị lại toàn bộ bài viết, tài liệu"));
     }
 
     @PutMapping("/reports/{reportId}/dismiss")
