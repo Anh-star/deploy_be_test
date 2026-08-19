@@ -1,5 +1,7 @@
 package com.cmcu.itstudy.dto.quiz;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -79,6 +81,12 @@ public class OwnerQuizEditorRequestDto {
             @NotBlank
             private String content;
 
+            /**
+             * Canonical wire key is {@code isCorrect}. {@code correct} is
+             * accepted as a legacy alias so older FE clients keep working.
+             */
+            @JsonProperty("isCorrect")
+            @JsonAlias({"correct"})
             private boolean isCorrect;
 
             @NotNull
