@@ -629,36 +629,84 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     public org.springframework.data.domain.Page<com.cmcu.itstudy.dto.document.DocumentReportResponseDto> getReportedDocuments(String status, int page, int size) {
         PageRequest pageRequest = PageRequest.of(page, size);
-        Slice<DocumentReport> reportsSlice;
         org.springframework.data.domain.Page<DocumentReport> reports;
 
-        if (StringUtils.hasText(status)) {
-            reports = documentReportRepository.findAllByStatusOrderByCreatedAtDesc(status.toUpperCase(), pageRequest);
-        } else {
-            reports = documentReportRepository.findAllByOrderByCreatedAtDesc(pageRequest);
+        try {
+            if (StringUtils.hasText(status)) {
+                reports = documentReportRepository.findByStatusWithDetails(status.toUpperCase(), pageRequest);
+            } else {
+                reports = documentReportRepository.findAllWithDetails(pageRequest);
+            }
+        } catch (Exception e) {
+            log.warn("Fallback to standard query for DocumentReports: {}", e.getMessage());
+            if (StringUtils.hasText(status)) {
+                reports = documentReportRepository.findAllByStatusOrderByCreatedAtDesc(status.toUpperCase(), pageRequest);
+            } else {
+                reports = documentReportRepository.findAllByOrderByCreatedAtDesc(pageRequest);
+            }
         }
 
         return reports.map(r -> {
-            Document doc = r.getDocument();
-            User reporter = r.getReporter();
-            User author = doc != null ? doc.getCreatedBy() : null;
-            long count = doc != null ? documentReportRepository.countByDocumentId(doc.getId()) : 0L;
+            String docTitle = "Tài liệu không tồn tại";
+            String docAuthorId = null;
+            String docAuthorName = "Không xác định";
+            String docAuthorAvatar = null;
+            String docStatus = null;
+            String docIdStr = null;
+            long count = 0L;
+
+            try {
+                Document doc = r.getDocument();
+                if (doc != null) {
+                    docIdStr = doc.getId() != null ? doc.getId().toString() : null;
+                    docTitle = doc.getTitle() != null ? doc.getTitle() : "Tài liệu không tiêu đề";
+                    docStatus = doc.getStatus() != null ? doc.getStatus().name() : null;
+
+                    User author = doc.getCreatedBy();
+                    if (author != null) {
+                        docAuthorId = author.getId() != null ? author.getId().toString() : null;
+                        docAuthorName = author.getFullName() != null ? author.getFullName() : (author.getUsername() != null ? author.getUsername() : "Không xác định");
+                        docAuthorAvatar = author.getAvatarUrl();
+                    }
+
+                    if (doc.getId() != null) {
+                        count = documentReportRepository.countByDocumentId(doc.getId());
+                    }
+                }
+            } catch (Exception ex) {
+                log.warn("Failed to extract document/author details for report {}: {}", r.getId(), ex.getMessage());
+            }
+
+            String reporterIdStr = null;
+            String reporterNameStr = "Không xác định";
+            String reporterAvatarStr = null;
+
+            try {
+                User reporter = r.getReporter();
+                if (reporter != null) {
+                    reporterIdStr = reporter.getId() != null ? reporter.getId().toString() : null;
+                    reporterNameStr = reporter.getFullName() != null ? reporter.getFullName() : (reporter.getUsername() != null ? reporter.getUsername() : "Người dùng");
+                    reporterAvatarStr = reporter.getAvatarUrl();
+                }
+            } catch (Exception ex) {
+                log.warn("Failed to extract reporter details for report {}: {}", r.getId(), ex.getMessage());
+            }
 
             return com.cmcu.itstudy.dto.document.DocumentReportResponseDto.builder()
                     .id(r.getId() != null ? r.getId().toString() : null)
-                    .documentId(doc != null ? doc.getId().toString() : null)
-                    .documentTitle(doc != null ? doc.getTitle() : "Tài liệu không tồn tại")
-                    .documentAuthorId(author != null ? author.getId().toString() : null)
-                    .documentAuthorName(author != null ? author.getFullName() : "Không xác định")
-                    .documentAuthorAvatar(author != null ? author.getAvatarUrl() : null)
-                    .reporterId(reporter != null ? reporter.getId().toString() : null)
-                    .reporterName(reporter != null ? reporter.getFullName() : "Không xác định")
-                    .reporterAvatar(reporter != null ? reporter.getAvatarUrl() : null)
+                    .documentId(docIdStr)
+                    .documentTitle(docTitle)
+                    .documentAuthorId(docAuthorId)
+                    .documentAuthorName(docAuthorName)
+                    .documentAuthorAvatar(docAuthorAvatar)
+                    .reporterId(reporterIdStr)
+                    .reporterName(reporterNameStr)
+                    .reporterAvatar(reporterAvatarStr)
                     .reasonCode(r.getReasonCode())
                     .detail(r.getDetail())
                     .status(r.getStatus())
                     .reportCount(count)
-                    .documentStatus(doc != null && doc.getStatus() != null ? doc.getStatus().name() : null)
+                    .documentStatus(docStatus)
                     .createdAt(r.getCreatedAt())
                     .resolvedAt(r.getResolvedAt())
                     .build();

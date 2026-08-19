@@ -21,6 +21,14 @@ public interface DocumentReportRepository extends JpaRepository<DocumentReport, 
 
     List<DocumentReport> findByDocumentId(UUID documentId);
 
+    @Query(value = "SELECT r FROM DocumentReport r LEFT JOIN FETCH r.document d LEFT JOIN FETCH d.createdBy LEFT JOIN FETCH r.reporter u WHERE r.status = :status ORDER BY r.createdAt DESC",
+           countQuery = "SELECT COUNT(r) FROM DocumentReport r WHERE r.status = :status")
+    Page<DocumentReport> findByStatusWithDetails(@Param("status") String status, Pageable pageable);
+
+    @Query(value = "SELECT r FROM DocumentReport r LEFT JOIN FETCH r.document d LEFT JOIN FETCH d.createdBy LEFT JOIN FETCH r.reporter u ORDER BY r.createdAt DESC",
+           countQuery = "SELECT COUNT(r) FROM DocumentReport r")
+    Page<DocumentReport> findAllWithDetails(Pageable pageable);
+
     Page<DocumentReport> findAllByStatusOrderByCreatedAtDesc(String status, Pageable pageable);
 
     Page<DocumentReport> findAllByOrderByCreatedAtDesc(Pageable pageable);
