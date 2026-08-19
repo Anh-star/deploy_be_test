@@ -24,6 +24,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -40,6 +41,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class DocumentServiceImpl implements DocumentService {
 
@@ -665,7 +667,7 @@ public class DocumentServiceImpl implements DocumentService {
                     User author = doc.getCreatedBy();
                     if (author != null) {
                         docAuthorId = author.getId() != null ? author.getId().toString() : null;
-                        docAuthorName = author.getFullName() != null ? author.getFullName() : (author.getUsername() != null ? author.getUsername() : "Không xác định");
+                        docAuthorName = author.getFullName() != null ? author.getFullName() : (author.getEmail() != null ? author.getEmail() : "Không xác định");
                         docAuthorAvatar = author.getAvatarUrl();
                     }
 
@@ -685,7 +687,7 @@ public class DocumentServiceImpl implements DocumentService {
                 User reporter = r.getReporter();
                 if (reporter != null) {
                     reporterIdStr = reporter.getId() != null ? reporter.getId().toString() : null;
-                    reporterNameStr = reporter.getFullName() != null ? reporter.getFullName() : (reporter.getUsername() != null ? reporter.getUsername() : "Người dùng");
+                    reporterNameStr = reporter.getFullName() != null ? reporter.getFullName() : (reporter.getEmail() != null ? reporter.getEmail() : "Người dùng");
                     reporterAvatarStr = reporter.getAvatarUrl();
                 }
             } catch (Exception ex) {
