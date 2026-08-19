@@ -61,6 +61,7 @@ public class SecurityConfig {
                                 "/api/auth/me"
                         ).authenticated()
                         .requestMatchers(
+                                "/api/health",
                                 "/api/auth/login",
                                 "/api/auth/register",
                                 "/api/auth/refresh",
