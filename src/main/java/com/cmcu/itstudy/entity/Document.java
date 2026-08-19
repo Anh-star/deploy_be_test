@@ -103,7 +103,7 @@ public class Document {
     @Builder.Default
     private Boolean deleted = Boolean.FALSE;
 
-    @Column(name = "is_hidden", nullable = false)
+    @Column(name = "is_hidden")
     @Builder.Default
     private Boolean hidden = Boolean.FALSE;
 
