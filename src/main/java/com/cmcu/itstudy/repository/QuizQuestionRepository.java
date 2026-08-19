@@ -27,4 +27,6 @@ public interface QuizQuestionRepository extends JpaRepository<QuizQuestion, UUID
             order by qq.sortOrder asc, qo.sortOrder asc
             """)
     List<QuizQuestion> findAllByQuizIdWithOptions(@Param("quizId") UUID quizId);
+
+    long countByQuiz_Id(UUID quizId);
 }

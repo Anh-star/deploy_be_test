@@ -3,7 +3,9 @@ package com.cmcu.itstudy.service.contract;
 import com.cmcu.itstudy.dto.document.DocumentCardDto;
 import com.cmcu.itstudy.dto.document.DocumentCreateRequestDto;
 import com.cmcu.itstudy.dto.document.DocumentUpdateRequestDto;
+import com.cmcu.itstudy.dto.document.MyDocumentAutoQuizDto;
 import com.cmcu.itstudy.dto.document.MyDocumentDetailDto;
+import com.cmcu.itstudy.dto.document.MyDocumentQuizListDto;
 import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.entity.User;
 
@@ -25,6 +27,10 @@ public interface DocumentService {
     List<DocumentCardDto> getMyDocuments(User currentUser);
 
     MyDocumentDetailDto getMyDocumentDetail(UUID documentId, User currentUser);
+
+    MyDocumentAutoQuizDto getMyDocumentAutoQuiz(UUID documentId, User currentUser);
+
+    MyDocumentQuizListDto getMyDocumentQuizzes(int page, int size, User currentUser);
 
     void reportDocument(UUID documentId, User reporter, com.cmcu.itstudy.dto.document.DocumentReportRequestDto requestDto);
 

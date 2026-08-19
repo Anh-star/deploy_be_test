@@ -3,13 +3,17 @@ package com.cmcu.itstudy.service.impl;
 import com.cmcu.itstudy.dto.document.DocumentCardDto;
 import com.cmcu.itstudy.dto.document.DocumentCreateRequestDto;
 import com.cmcu.itstudy.dto.document.DocumentUpdateRequestDto;
+import com.cmcu.itstudy.dto.document.MyDocumentAutoQuizDto;
 import com.cmcu.itstudy.dto.document.MyDocumentDetailDto;
+import com.cmcu.itstudy.dto.document.MyDocumentQuizItemDto;
+import com.cmcu.itstudy.dto.document.MyDocumentQuizListDto;
 import com.cmcu.itstudy.entity.*;
 import com.cmcu.itstudy.enums.DocumentStatus;
 import com.cmcu.itstudy.enums.FileType;
 import com.cmcu.itstudy.enums.PaymentStatus;
 import com.cmcu.itstudy.handle.DocumentPricingLockedException;
 import com.cmcu.itstudy.repository.*;
+import com.cmcu.itstudy.service.contract.DocumentAccessService;
 import com.cmcu.itstudy.service.contract.DocumentService;
 import com.cmcu.itstudy.service.contract.QuizGenerationService;
 import com.cmcu.itstudy.service.contract.TransactionalDocumentCrudService;
@@ -22,10 +26,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
@@ -45,6 +52,10 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentReportRepository documentReportRepository;
     private final TransactionalDocumentCrudService transactionalDocumentCrudService;
     private final QuizGenerationService quizGenerationService;
+    private final DocumentQuizRepository documentQuizRepository;
+    private final QuizGenerationRepository quizGenerationRepository;
+    private final QuizQuestionRepository quizQuestionRepository;
+    private final DocumentAccessService documentAccessService;
 
     public DocumentServiceImpl(DocumentRepository documentRepository,
                                DocumentTagRepository documentTagRepository,
@@ -54,7 +65,11 @@ public class DocumentServiceImpl implements DocumentService {
                                PaymentRepository paymentRepository,
                                DocumentReportRepository documentReportRepository,
                                TransactionalDocumentCrudService transactionalDocumentCrudService,
-                               QuizGenerationService quizGenerationService) {
+                               QuizGenerationService quizGenerationService,
+                               DocumentQuizRepository documentQuizRepository,
+                               QuizGenerationRepository quizGenerationRepository,
+                               QuizQuestionRepository quizQuestionRepository,
+                               DocumentAccessService documentAccessService) {
         this.documentRepository = documentRepository;
         this.documentTagRepository = documentTagRepository;
         this.categoryRepository = categoryRepository;
@@ -64,6 +79,10 @@ public class DocumentServiceImpl implements DocumentService {
         this.documentReportRepository = documentReportRepository;
         this.transactionalDocumentCrudService = transactionalDocumentCrudService;
         this.quizGenerationService = quizGenerationService;
+        this.documentQuizRepository = documentQuizRepository;
+        this.quizGenerationRepository = quizGenerationRepository;
+        this.quizQuestionRepository = quizQuestionRepository;
+        this.documentAccessService = documentAccessService;
     }
 
     @Transactional(readOnly = true)
@@ -666,6 +685,144 @@ public class DocumentServiceImpl implements DocumentService {
         report.setResolvedAt(LocalDateTime.now());
         report.setResolvedBy(resolver);
         documentReportRepository.save(report);
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public MyDocumentAutoQuizDto getMyDocumentAutoQuiz(UUID documentId, User currentUser) {
+        Document document = getById(documentId);
+        if (Boolean.TRUE.equals(document.getDeleted())) {
+            throw new NoSuchElementException("Document not found: " + documentId);
+        }
+        if (document.getCreatedBy() == null || !document.getCreatedBy().getId().equals(currentUser.getId())) {
+            throw new AccessDeniedException("You do not have access to this document");
+        }
+
+        java.util.Optional<com.cmcu.itstudy.entity.QuizGeneration> generationOpt =
+                quizGenerationService.findByDocumentId(documentId);
+        if (generationOpt.isEmpty()) {
+            throw new NoSuchElementException("Auto quiz not found for this document");
+        }
+        com.cmcu.itstudy.entity.QuizGeneration generation = generationOpt.get();
+
+        MyDocumentAutoQuizDto.QuizInfo quizInfo = null;
+        com.cmcu.itstudy.entity.Quiz quizEntity = generation.getQuiz();
+        if (quizEntity != null) {
+            long totalQuestions = quizQuestionRepository.countByQuizId(quizEntity.getId());
+            quizInfo = MyDocumentAutoQuizDto.QuizInfo.builder()
+                    .quizId(quizEntity.getId().toString())
+                    .title(quizEntity.getTitle())
+                    .description(quizEntity.getDescription())
+                    .totalQuestions(totalQuestions)
+                    .durationMinutes(quizEntity.getDurationMinutes())
+                    .passScorePercent(quizEntity.getPassScorePercent())
+                    .build();
+        }
+
+        return MyDocumentAutoQuizDto.builder()
+                .documentId(documentId.toString())
+                .generationId(generation.getId().toString())
+                .status(generation.getStatus())
+                .requestedQuestionCount(generation.getRequestedQuestionCount())
+                .requestedAt(generation.getRequestedAt())
+                .processingAt(generation.getProcessingAt())
+                .readyAt(generation.getReadyAt())
+                .failedAt(generation.getFailedAt())
+                .cancelledAt(generation.getCancelledAt())
+                .lastError(generation.getLastError())
+                .attempts(generation.getAttempts())
+                .quiz(quizInfo)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public MyDocumentQuizListDto getMyDocumentQuizzes(int page, int size, User currentUser) {
+        int safePage = Math.max(page, 0);
+        int safeSize = size > 0 ? size : 10;
+        org.springframework.data.domain.Pageable pageable =
+                org.springframework.data.domain.PageRequest.of(safePage, safeSize,
+                        org.springframework.data.domain.Sort.by(
+                                org.springframework.data.domain.Sort.Direction.ASC,
+                                "sortOrder", "id"));
+
+        org.springframework.data.domain.Page<com.cmcu.itstudy.entity.DocumentQuiz> linkPage =
+                documentQuizRepository.findByOwnerIdWithQuizAndDocumentPaged(currentUser.getId(), pageable);
+
+        if (linkPage.isEmpty()) {
+            return MyDocumentQuizListDto.builder()
+                    .items(Collections.emptyList())
+                    .page(safePage)
+                    .totalPages(0)
+                    .totalItems(0)
+                    .build();
+        }
+
+        List<UUID> quizIds = linkPage.getContent().stream()
+                .map(dq -> dq.getQuiz() != null ? dq.getQuiz().getId() : null)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        java.util.Map<UUID, Long> questionCounts = new java.util.HashMap<>();
+        if (!quizIds.isEmpty()) {
+            List<Object[]> countRows = quizQuestionRepository.countQuestionsGroupedByQuizId(quizIds);
+            for (Object[] row : countRows) {
+                if (row != null && row.length >= 2) {
+                    UUID qId = row[0] instanceof UUID ? (UUID) row[0] : null;
+                    Long cnt = row[1] instanceof Long ? (Long) row[1] : null;
+                    if (qId != null && cnt != null) {
+                        questionCounts.put(qId, cnt);
+                    }
+                }
+            }
+        }
+
+        java.util.Map<UUID, com.cmcu.itstudy.entity.QuizGeneration> generationMap = new java.util.HashMap<>();
+        if (!quizIds.isEmpty()) {
+            List<com.cmcu.itstudy.entity.QuizGeneration> allGenerations =
+                    quizGenerationRepository.findAllByQuiz_IdIn(quizIds);
+            for (com.cmcu.itstudy.entity.QuizGeneration gen : allGenerations) {
+                if (gen.getQuiz() != null && gen.getQuiz().getId() != null) {
+                    generationMap.put(gen.getQuiz().getId(), gen);
+                }
+            }
+        }
+
+        List<MyDocumentQuizItemDto> pageItems = new java.util.ArrayList<>();
+        for (com.cmcu.itstudy.entity.DocumentQuiz dq : linkPage.getContent()) {
+            com.cmcu.itstudy.entity.Quiz quiz = dq.getQuiz();
+            if (quiz == null) continue;
+            com.cmcu.itstudy.entity.Document doc = dq.getDocument();
+            if (doc == null) continue;
+
+            com.cmcu.itstudy.entity.QuizGeneration qg = generationMap.get(quiz.getId());
+            boolean isAuto = qg != null;
+
+            pageItems.add(MyDocumentQuizItemDto.builder()
+                    .quizId(quiz.getId().toString())
+                    .quizTitle(quiz.getTitle())
+                    .description(quiz.getDescription())
+                    .totalQuestions(questionCounts.getOrDefault(quiz.getId(), 0L))
+                    .durationMinutes(quiz.getDurationMinutes())
+                    .passScorePercent(quiz.getPassScorePercent())
+                    .isAutoGenerated(isAuto)
+                    .generationId(qg != null ? qg.getId().toString() : null)
+                    .generationStatus(qg != null && qg.getStatus() != null ? qg.getStatus().name() : null)
+                    .documentId(doc.getId().toString())
+                    .documentTitle(doc.getTitle())
+                    .documentFileName(doc.getFileName())
+                    .documentThumbnailUrl(doc.getThumbnailUrl())
+                    .createdAt(quiz.getCreatedAt())
+                    .build());
+        }
+
+        return MyDocumentQuizListDto.builder()
+                .items(pageItems)
+                .page(linkPage.getNumber())
+                .totalPages(linkPage.getTotalPages())
+                .totalItems(linkPage.getTotalElements())
+                .build();
     }
 
 }

@@ -27,6 +27,10 @@ public interface QuizGenerationRepository
      */
     Optional<QuizGeneration> findByDocument_Id(UUID documentId);
 
+    Optional<QuizGeneration> findByQuiz_Id(UUID quizId);
+
+    List<QuizGeneration> findAllByQuiz_IdIn(Collection<UUID> quizIds);
+
     /**
      * Phase 2C — atomic WAITING_SOURCE → QUEUED transition.
      *
