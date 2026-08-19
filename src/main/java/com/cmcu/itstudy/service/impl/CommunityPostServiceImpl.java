@@ -1554,13 +1554,15 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new NoSuchElementException("Admin không tồn tại"));
 
-        // 1. Unhide post
-        post.setHidden(false);
+        // 1. Soft-delete post (User account remains ACTIVE)
+        LocalDateTime now = LocalDateTime.now();
+        post.setDeleted(true);
+        post.setDeletedAt(now);
+        post.setHidden(true);
         postRepository.save(post);
 
         // 2. Mark all reports of this post as DISMISSED
         List<CommunityPostReport> postReports = reportRepository.findByPostId(post.getId());
-        LocalDateTime now = LocalDateTime.now();
         String dismissReason = (reason != null && !reason.isBlank()) ? reason.trim() : null;
 
         if (postReports != null && !postReports.isEmpty()) {
@@ -1579,22 +1581,22 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             reportRepository.save(report);
         }
 
-        // 3. Send notification to author
+        // 3. Send notification to author that post has been deleted
         try {
-            String msg = "Bài viết của bạn đã được Ban Quản Trị xem xét, bỏ qua báo cáo và hiển thị lại bình thường.";
+            String msg = "Bài viết của bạn đã bị xóa bởi Ban Quản Trị sau khi xem xét báo cáo vi phạm (Tài khoản của bạn vẫn hoạt động bình thường).";
             if (StringUtils.hasText(dismissReason)) {
                 msg += " Ghi chú: " + dismissReason;
             }
             notificationService.createAndPush(
                     post.getAuthor().getId(),
                     adminId,
-                    NotificationType.POST_HIDDEN,
+                    NotificationType.POST_DELETED,
                     post.getId().toString(),
                     "COMMUNITY_POST",
                     msg
             );
         } catch (Exception e) {
-            log.warn("Failed to push acquit notification to author: {}", e.getMessage());
+            log.warn("Failed to push acquit/delete notification to author: {}", e.getMessage());
         }
     }
 }

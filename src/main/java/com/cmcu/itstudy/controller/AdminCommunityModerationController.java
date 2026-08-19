@@ -74,6 +74,6 @@ public class AdminCommunityModerationController {
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
         communityPostService.adminAcquitReport(reportId, getUserId(currentUser), reason);
-        return ResponseEntity.ok(ApiResponse.success(null, "Đã bỏ qua báo cáo và hiển thị lại bài viết"));
+        return ResponseEntity.ok(ApiResponse.success(null, "Đã bỏ qua khóa tài khoản và xóa bài viết vi phạm"));
     }
 }
