@@ -262,6 +262,7 @@ public class TransactionalPaidDocumentBinderImpl implements TransactionalPaidDoc
                     primaryFile.getId(),
                     quizFileType,
                     metadata.getQuizQuestionCount(),
+                    null,
                     now);
         }
 

@@ -4,7 +4,7 @@ import com.cmcu.itstudy.entity.QuizGeneration;
 import com.cmcu.itstudy.enums.AllowedDocumentFileType;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -15,16 +15,20 @@ import java.util.UUID;
  * line. No n8n call, no signed URL, no scheduler, no callback — those
  * belong to later phases and will read from
  * {@link QuizGeneration#getStatus()}.
+ *
+ * <p>Phase Multi Auto Quiz 1: a document may carry multiple
+ * {@code QuizGeneration} rows. {@code enqueueForDocument} always creates a
+ * fresh row (no idempotent reuse of an existing one). Lookups that used
+ * to return {@code Optional<QuizGeneration>} now return
+ * {@code List<QuizGeneration>}; the singular owner endpoint picks the
+ * latest row from that list for backward compatibility.</p>
  */
 public interface QuizGenerationService {
 
     /**
-     * Idempotently enqueue an AI quiz generation request for a freshly
-     * persisted document.
-     *
-     * <p>If the repository already contains a row for
-     * {@code documentId}, the existing row is returned unchanged — the
-     * create flow must never overwrite or duplicate an active generation.
+     * Enqueue a brand-new AI quiz generation request for the supplied
+     * document. Each call creates a new {@link QuizGeneration} row — no
+     * idempotent reuse of an existing row.
      *
      * <p>Initial status mapping by {@link AllowedDocumentFileType}:
      * <ul>
@@ -40,6 +44,11 @@ public interface QuizGenerationService {
      *                               (must belong to {@code documentId})
      * @param fileType               resolved file type of the primary file
      * @param requestedQuestionCount question count in {@code [10, 50]}
+     * @param focusTopic             optional owner-supplied focus. Pass
+     *                               {@code null} for "whole document, no
+     *                               focus". Blank values are normalised to
+     *                               {@code null}. Length-capped at 500
+     *                               characters.
      * @param now                    caller-supplied timestamp
      */
     QuizGeneration enqueueForDocument(
@@ -47,18 +56,23 @@ public interface QuizGenerationService {
             UUID documentFileId,
             AllowedDocumentFileType fileType,
             int requestedQuestionCount,
+            String focusTopic,
             LocalDateTime now);
 
     /**
-     * Look up the (at-most-one) generation row attached to a document.
+     * Return every {@link QuizGeneration} row attached to the supplied
+     * document, ordered newest-first. Empty list means the document has
+     * never been enqueued.
      */
-    Optional<QuizGeneration> findByDocumentId(UUID documentId);
+    List<QuizGeneration> findAllByDocumentId(UUID documentId);
 
     /**
      * Cancel any active generation attached to a document. Called from
      * the soft-delete path.
      *
-     * <p>Transition rules:
+     * <p>Phase Multi Auto Quiz 1: iterates over every
+     * {@link QuizGeneration} row of the document and applies the
+     * per-row transition rules:</p>
      * <ul>
      *   <li>{@code WAITING_SOURCE}, {@code QUEUED}, {@code PROCESSING},
      *       {@code FAILED} → {@code CANCELLED}; {@code cancelledAt=now},
@@ -68,24 +82,34 @@ public interface QuizGenerationService {
      *   <li>{@code CANCELLED} → no-op (idempotent).</li>
      *   <li>No row → no-op.</li>
      * </ul>
+     *
+     * <p>READY rows are NEVER touched even if the document is being
+     * soft-deleted, because the resulting {@link com.cmcu.itstudy.entity.Quiz}
+     * is still surfaced to the owner elsewhere in the app.</p>
      */
     void cancelForDocument(UUID documentId, LocalDateTime now);
 
     /**
-     * Phase 2C: promote a {@code WAITING_SOURCE} generation to
-     * {@code QUEUED} once its canonical FULL preview PDF artifact
-     * becomes {@code READY}.
+     * Phase 2C: promote every {@code WAITING_SOURCE} generation of a
+     * document/file pair to {@code QUEUED} once its canonical FULL
+     * preview PDF artifact becomes {@code READY}.
      *
      * <p>This method is the source-ready bridge: it is called from a
      * {@link org.springframework.transaction.support.TransactionSynchronization}
      * callback that fires <em>after</em> the FULL preview artifact's
      * {@code markReady} transaction commits. This guarantees the
-     * READY state is durable before the generation is promoted.
+     * READY state is durable before the generation is promoted.</p>
      *
-     * <p>Transition rules:
+     * <p>Phase Multi Auto Quiz 1: a document can have multiple
+     * WAITING_SOURCE rows. The atomic UPDATE is allowed to promote
+     * {@code N} rows in one statement; the caller is informed only via
+     * the {@code affectedRows} log line.</p>
+     *
+     * <p>Transition rules per row:
      * <ul>
      *   <li>{@code WAITING_SOURCE} → {@code QUEUED}; {@code status=QUEUED},
-     *       {@code updatedAt=now}. All other fields ({@code requestedQuestionCount},
+     *       {@code updatedAt=now}. All other fields
+     *       ({@code requestedQuestionCount}, {@code focusTopic},
      *       {@code attempts}, {@code requestedAt}, {@code documentId},
      *       {@code documentFileId}) are preserved.</li>
      *   <li>{@code QUEUED} → no-op (idempotent).</li>
@@ -99,11 +123,12 @@ public interface QuizGenerationService {
      * {@code documentFileId}; if a {@code QuizGeneration} exists for
      * {@code documentId} but is anchored to a different
      * {@code documentFileId}, the transition is skipped to prevent
-     * cross-document pollution in future multi-file scenarios.
+     * cross-document pollution in future multi-file scenarios.</p>
      *
-     * @param documentId     the document whose generation should be promoted
+     * @param documentId     the document whose generation rows should be
+     *                       promoted
      * @param documentFileId the primary file that is now READY; must match
-     *                       the generation's stored {@code documentFileId}
+     *                       each row's stored {@code documentFileId}
      * @param now           caller-supplied timestamp
      */
     void queueWhenSourceReady(UUID documentId, UUID documentFileId, LocalDateTime now);

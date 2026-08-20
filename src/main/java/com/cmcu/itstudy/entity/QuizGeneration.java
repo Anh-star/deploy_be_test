@@ -15,7 +15,6 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -29,7 +28,11 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * One row per {@link Document} that the uploader wants an AI quiz for.
+ * One row per AI quiz auto-generation <em>request</em> attached to a
+ * {@link Document}. A document can carry N rows in Phase Multi Auto Quiz 1
+ * — each request is an independent generation with its own
+ * {@code requestedQuestionCount}, optional {@code focusTopic}, status,
+ * dispatch token and resulting {@link Quiz}.
  *
  * <p>Phase 2B persistence only. No n8n / signed-URL / scheduler / callback
  * wiring lives here. Later phases read this row, dispatch work, and write
@@ -37,11 +40,12 @@ import java.util.UUID;
  *
  * <p>Hard invariants:
  * <ul>
- *   <li>{@code UNIQUE(document_id)} — in V1 a document has at most one
- *       {@link QuizGeneration} row (one history entry per document, not
- *       "one active generation at a time"). The unique constraint is
- *       enforced by the database; concurrent enqueues fail the
- *       transaction instead of silently inserting a duplicate.</li>
+ *   <li>{@code UNIQUE(document_id)} has been removed. The unique
+ *       constraint enforced "at most one row per document" in V1 and
+ *       is now dropped so concurrent or sequential enqueues can each
+ *       create their own generation. Deterministic ordering between
+ *       rows of the same document is provided by the repository
+ *       {@code findAllByDocument_IdOrderByRequestedAtDesc(...)} method.</li>
  *   <li>QuizGeneration does NOT persist source paths, source buckets,
  *       or signed URLs. The AI-readable source for a future dispatch
  *       is resolved at dispatch time from the associated
@@ -57,11 +61,7 @@ import java.util.UUID;
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @ToString
 @Entity
-@Table(
-        name = "tbl_quiz_generations",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uq_quiz_generation_document",
-                columnNames = "document_id"))
+@Table(name = "tbl_quiz_generations")
 public class QuizGeneration {
 
     @Id
@@ -84,6 +84,15 @@ public class QuizGeneration {
 
     @Column(name = "requested_question_count", nullable = false)
     private Integer requestedQuestionCount;
+
+    /**
+     * Optional, owner-supplied focus topic that biases the AI toward
+     * a sub-area of the document. {@code null} means "whole document,
+     * no focus". Length is hard-capped at 500 characters by the
+     * service validation.
+     */
+    @Column(name = "focus_topic", length = 500, columnDefinition = "nvarchar(500)")
+    private String focusTopic;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)

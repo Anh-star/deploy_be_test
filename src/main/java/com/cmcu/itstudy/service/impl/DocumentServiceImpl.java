@@ -734,12 +734,16 @@ public class DocumentServiceImpl implements DocumentService {
             throw new AccessDeniedException("You do not have access to this document");
         }
 
-        java.util.Optional<com.cmcu.itstudy.entity.QuizGeneration> generationOpt =
-                quizGenerationService.findByDocumentId(documentId);
-        if (generationOpt.isEmpty()) {
+        java.util.List<com.cmcu.itstudy.entity.QuizGeneration> generations =
+                quizGenerationService.findAllByDocumentId(documentId);
+        if (generations == null || generations.isEmpty()) {
             throw new NoSuchElementException("Auto quiz not found for this document");
         }
-        com.cmcu.itstudy.entity.QuizGeneration generation = generationOpt.get();
+        // Phase Multi Auto Quiz 1: the singular owner endpoint still
+        // returns a single generation snapshot. Pick the latest one
+        // (repository orders by requestedAt DESC, createdAt DESC, id
+        // DESC). Plural listings belong to a later phase.
+        com.cmcu.itstudy.entity.QuizGeneration generation = generations.get(0);
 
         MyDocumentAutoQuizDto.QuizInfo quizInfo = null;
         com.cmcu.itstudy.entity.Quiz quizEntity = generation.getQuiz();

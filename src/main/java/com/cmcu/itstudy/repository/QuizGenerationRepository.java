@@ -22,11 +22,28 @@ public interface QuizGenerationRepository
         extends JpaRepository<QuizGeneration, UUID> {
 
     /**
-     * Returns the (at-most-one) generation row attached to the supplied
-     * document id. The {@code uq_quiz_generation_document} unique
-     * constraint guarantees this returns at most one row.
+     * Returns every {@link QuizGeneration} row attached to the supplied
+     * document, ordered newest-first.
+     *
+     * <p>Phase Multi Auto Quiz 1 dropped the
+     * {@code uq_quiz_generation_document} unique constraint so a
+     * document can carry N rows. Callers that historically relied on
+     * "at most one row" semantics should grab index 0 of this list
+     * (the latest requested generation).</p>
+     *
+     * <p>Ordering is deterministic:
+     * {@code requestedAt DESC, createdAt DESC, id DESC} so two rows
+     * requested within the same millisecond still have a stable
+     * relative order.</p>
      */
-    Optional<QuizGeneration> findByDocument_Id(UUID documentId);
+    @Query("""
+            SELECT q
+              FROM QuizGeneration q
+             WHERE q.document.id = :documentId
+             ORDER BY q.requestedAt DESC, q.createdAt DESC, q.id DESC
+            """)
+    List<QuizGeneration> findAllByDocument_IdOrderByRequestedAtDesc(
+            @Param("documentId") UUID documentId);
 
     Optional<QuizGeneration> findByQuiz_Id(UUID quizId);
 
@@ -35,15 +52,21 @@ public interface QuizGenerationRepository
     /**
      * Phase 2C — atomic WAITING_SOURCE → QUEUED transition.
      *
-     * <p>Updates exactly the {@code QuizGeneration} row attached to
+     * <p>Updates the {@code QuizGeneration} rows attached to
      * {@code documentId} <em>and</em> anchored to {@code documentFileId}
      * <em>and</em> currently in {@link QuizGenerationStatus#WAITING_SOURCE}
      * to {@link QuizGenerationStatus#QUEUED}, stamping {@code updated_at}
      * with {@code now}.</p>
      *
+     * <p>Phase Multi Auto Quiz 1: a document may now carry multiple
+     * {@code QuizGeneration} rows (the unique constraint was dropped),
+     * so this UPDATE can transition {@code N} rows in a single
+     * statement — that is the intended multi-generation behaviour for
+     * DOC / DOCX sources that become READY once.</p>
+     *
      * <p>Returns the number of rows affected:</p>
      * <ul>
-     *   <li>{@code 1} — the transition succeeded.</li>
+     *   <li>{@code N ≥ 1} — the transition succeeded for N rows.</li>
      *   <li>{@code 0} — no row matched: either no generation exists for
      *       {@code documentId}, the generation is anchored to a different
      *       {@code documentFileId}, or the status is not
@@ -78,14 +101,15 @@ public interface QuizGenerationRepository
      *       {@code next_attempt_at}, {@code dispatch_token}, etc.</li>
      * </ul>
      *
-     * @param documentId     the document whose generation should be promoted
+     * @param documentId     the document whose generation rows should be
+     *                       promoted
      * @param documentFileId the primary file that is now READY; must match
-     *                       the generation's {@code document_file_id}
+     *                       each generation's {@code document_file_id}
      * @param status         the only status that allows the transition
      *                       (always {@link QuizGenerationStatus#WAITING_SOURCE}
      *                       — the parameter exists so JPQL binding works)
      * @param now            caller-supplied timestamp for {@code updated_at}
-     * @return number of rows affected (0 or 1)
+     * @return number of rows affected (0 to {@code N})
      */
     @Modifying
     @Query("""

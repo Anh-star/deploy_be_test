@@ -16,25 +16,33 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
  * Default {@link QuizGenerationService} implementation.
  *
- * <p>Phase 2B: this service ONLY writes/reads the
- * {@code tbl_quiz_generations} table. It never makes a remote HTTP call,
- * never signs a Supabase URL, never touches n8n, never schedules
+ * <p>Phase 2B + Phase Multi Auto Quiz 1: this service ONLY writes/reads
+ * the {@code tbl_quiz_generations} table. It never makes a remote HTTP
+ * call, never signs a Supabase URL, never touches n8n, never schedules
  * anything, and never calls the Gemini client. Those concerns belong to
  * later phases that will read the {@link QuizGeneration} row this service
- * populates.
+ * populates.</p>
+ *
+ * <p>Multi-generation: each {@code enqueueForDocument} call creates a
+ * brand-new row. {@code cancelForDocument} iterates over every row of
+ * the document. {@code queueWhenSourceReady} is allowed to promote
+ * multiple WAITING_SOURCE rows of the same document/file pair in one
+ * atomic UPDATE.</p>
  *
  * <p>Propagation is {@code MANDATORY}: this bean is always called inside
  * an already-open transaction (the document create / soft-delete path)
  * so its writes participate in the same unit of work as the
- * {@code Document} and {@code DocumentFile} inserts.
+ * {@code Document} and {@code DocumentFile} inserts.</p>
  */
 @Service
 public class QuizGenerationServiceImpl implements QuizGenerationService {
@@ -52,6 +60,8 @@ public class QuizGenerationServiceImpl implements QuizGenerationService {
     static final String UNSUPPORTED_AUTO_QUIZ_MESSAGE =
             "Tự động tạo Quiz hiện chỉ hỗ trợ tài liệu PDF, DOC và DOCX.";
 
+    private static final int FOCUS_TOPIC_MAX_LENGTH = 500;
+
     private final QuizGenerationRepository quizGenerationRepository;
     private final DocumentRepository documentRepository;
     private final DocumentFileRepository documentFileRepository;
@@ -60,9 +70,9 @@ public class QuizGenerationServiceImpl implements QuizGenerationService {
             QuizGenerationRepository quizGenerationRepository,
             DocumentRepository documentRepository,
             DocumentFileRepository documentFileRepository) {
-        this.quizGenerationRepository = quizGenerationRepository;
-        this.documentRepository = documentRepository;
-        this.documentFileRepository = documentFileRepository;
+        this.quizGenerationRepository = Objects.requireNonNull(quizGenerationRepository);
+        this.documentRepository = Objects.requireNonNull(documentRepository);
+        this.documentFileRepository = Objects.requireNonNull(documentFileRepository);
     }
 
     private static final Logger log =
@@ -75,6 +85,7 @@ public class QuizGenerationServiceImpl implements QuizGenerationService {
             UUID documentFileId,
             AllowedDocumentFileType fileType,
             int requestedQuestionCount,
+            String focusTopic,
             LocalDateTime now) {
 
         // ── Argument validation ─────────────────────────────────────
@@ -95,12 +106,7 @@ public class QuizGenerationServiceImpl implements QuizGenerationService {
                     "requestedQuestionCount must be in [10, 50]");
         }
 
-        // ── Idempotency: if a row already exists, return it unchanged.
-        Optional<QuizGeneration> existing =
-                quizGenerationRepository.findByDocument_Id(documentId);
-        if (existing.isPresent()) {
-            return existing.get();
-        }
+        String normalisedFocusTopic = normaliseFocusTopic(focusTopic);
 
         // ── Initial status mapping by file type ─────────────────────
         QuizGenerationStatus initialStatus;
@@ -134,11 +140,16 @@ public class QuizGenerationServiceImpl implements QuizGenerationService {
                     "DocumentFile does not belong to the supplied document");
         }
 
-        // ── Build & persist ─────────────────────────────────────────
+        // ── Build & persist a NEW row ───────────────────────────────
+        // Phase Multi Auto Quiz 1: no idempotent reuse — each call
+        // produces an independent generation with its own requested
+        // question count, optional focusTopic, status, dispatch token
+        // and (eventually) resulting Quiz.
         QuizGeneration generation = QuizGeneration.builder()
                 .document(document)
                 .documentFile(documentFile)
                 .requestedQuestionCount(requestedQuestionCount)
+                .focusTopic(normalisedFocusTopic)
                 .status(initialStatus)
                 .attempts(0)
                 .requestedAt(now)
@@ -149,13 +160,43 @@ public class QuizGenerationServiceImpl implements QuizGenerationService {
         return quizGenerationRepository.saveAndFlush(generation);
     }
 
+    /**
+     * Normalise the owner-supplied focus topic:
+     * <ul>
+     *   <li>{@code null} → {@code null} (whole document, no focus);</li>
+     *   <li>blank / whitespace-only → {@code null};</li>
+     *   <li>otherwise trimmed and length-capped at
+     *       {@link #FOCUS_TOPIC_MAX_LENGTH} characters.</li>
+     * </ul>
+     *
+     * <p>Overflow &gt; {@link #FOCUS_TOPIC_MAX_LENGTH} is rejected with
+     * {@link IllegalArgumentException} so the operator sees a clear 400
+     * response rather than silent truncation.</p>
+     */
+    private static String normaliseFocusTopic(String focusTopic) {
+        if (focusTopic == null) {
+            return null;
+        }
+        String trimmed = focusTopic.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.length() > FOCUS_TOPIC_MAX_LENGTH) {
+            throw new IllegalArgumentException(
+                    "focusTopic must not exceed "
+                            + FOCUS_TOPIC_MAX_LENGTH + " characters");
+        }
+        return trimmed;
+    }
+
     @Override
     @Transactional(readOnly = true)
-    public Optional<QuizGeneration> findByDocumentId(UUID documentId) {
+    public List<QuizGeneration> findAllByDocumentId(UUID documentId) {
         if (documentId == null) {
-            return Optional.empty();
+            return Collections.emptyList();
         }
-        return quizGenerationRepository.findByDocument_Id(documentId);
+        return new ArrayList<>(
+                quizGenerationRepository.findAllByDocument_IdOrderByRequestedAtDesc(documentId));
     }
 
     @Override
@@ -168,33 +209,35 @@ public class QuizGenerationServiceImpl implements QuizGenerationService {
             throw new IllegalArgumentException("now must not be null");
         }
 
-        Optional<QuizGeneration> existing =
-                quizGenerationRepository.findByDocument_Id(documentId);
-        if (existing.isEmpty()) {
+        List<QuizGeneration> generations =
+                quizGenerationRepository.findAllByDocument_IdOrderByRequestedAtDesc(documentId);
+        if (generations.isEmpty()) {
             return;
         }
 
-        QuizGeneration generation = existing.get();
-        QuizGenerationStatus current = generation.getStatus();
-        if (current == null) {
-            return;
+        for (QuizGeneration generation : generations) {
+            QuizGenerationStatus current = generation.getStatus();
+            if (current == null) {
+                continue;
+            }
+
+            // READY and CANCELLED are terminal: must not be mutated
+            // even in a multi-row loop. READY's Quiz must survive.
+            if (current == QuizGenerationStatus.READY
+                    || current == QuizGenerationStatus.CANCELLED) {
+                continue;
+            }
+
+            generation.setStatus(QuizGenerationStatus.CANCELLED);
+            generation.setCancelledAt(now);
+            generation.setNextAttemptAt(null);
+            if (generation.getLastError() == null
+                    || generation.getLastError().isBlank()) {
+                generation.setLastError("DOCUMENT_DELETED");
+            }
         }
 
-        // READY and CANCELLED are terminal: must not be mutated.
-        if (current == QuizGenerationStatus.READY
-                || current == QuizGenerationStatus.CANCELLED) {
-            return;
-        }
-
-        generation.setStatus(QuizGenerationStatus.CANCELLED);
-        generation.setCancelledAt(now);
-        generation.setNextAttemptAt(null);
-        if (generation.getLastError() == null
-                || generation.getLastError().isBlank()) {
-            generation.setLastError("DOCUMENT_DELETED");
-        }
-
-        quizGenerationRepository.saveAndFlush(generation);
+        quizGenerationRepository.saveAll(generations);
     }
 
     @Override
@@ -212,28 +255,19 @@ public class QuizGenerationServiceImpl implements QuizGenerationService {
             throw new IllegalArgumentException("now must not be null");
         }
 
-        // Phase 2C E2E FIX: replace the entity-load-then-mutate approach
-        // with a single atomic conditional UPDATE.  This bypasses:
-        //   - lazy-loading the DocumentFile association (which previously
-        //     emitted a SELECT and could leave the row in a stale proxy
-        //     state when the proxy's id compared unequal);
-        //   - Hibernate dirty-tracking (which could fail to flush an
-        //     UPDATE if the managed entity's snapshot matched the
-        //     intended new state);
-        //   - SELECT-then-UPDATE non-atomicity (a concurrent CANCELLED
-        //     could land between the SELECT and the UPDATE).
-        //
-        // The atomic UPDATE below updates at most one row.  The WHERE
-        // clause pins:
+        // Phase 2C E2E FIX + Phase Multi Auto Quiz 1: the atomic
+        // UPDATE is allowed to promote N rows in a single statement
+        // (a document can now carry multiple WAITING_SOURCE rows).
+        // The WHERE clause still guarantees:
         //   - document_id       must match
         //   - document_file_id  must match
         //   - status            must be WAITING_SOURCE
-        // so QUEUED / PROCESSING / READY / FAILED / CANCELLED are all
-        // impossible to overwrite, and CANCELLED is therefore
+        // so QUEUED / PROCESSING / READY / FAILED / CANCELLED are
+        // all impossible to overwrite, and CANCELLED is therefore
         // guaranteed to never resurrect.
         //
-        // All other columns (requested_question_count, attempts,
-        // requested_at, processing_at, ready_at, failed_at,
+        // All other columns (requested_question_count, focus_topic,
+        // attempts, requested_at, processing_at, ready_at, failed_at,
         // cancelled_at, last_error, ...) are preserved because they
         // are absent from the SET clause.
         int affected = quizGenerationRepository.promoteWaitingSourceToQueued(
@@ -241,7 +275,8 @@ public class QuizGenerationServiceImpl implements QuizGenerationService {
                 QuizGenerationStatus.WAITING_SOURCE, now);
 
         // Diagnostic logging for human E2E verification.  Does NOT
-        // dump entity bodies, sensitive fields, or SQL.
+        // dump entity bodies, sensitive fields, or SQL. Phase Multi
+        // Auto Quiz 1: affectedRows may now be 0, 1, …, N.
         log.info(
                 "quiz-source-ready documentId={} documentFileId={} affectedRows={}",
                 documentId, documentFileId, affected);

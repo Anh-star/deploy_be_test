@@ -185,6 +185,7 @@ public class TransactionalDocumentCrudServiceImpl implements TransactionalDocume
                     primaryFile.getId(),
                     quizFileType,
                     request.getQuizQuestionCount(),
+                    null,
                     LocalDateTime.now(clock));
         }
 
