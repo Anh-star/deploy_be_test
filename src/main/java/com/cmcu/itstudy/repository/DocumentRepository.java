@@ -177,7 +177,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @Query("""
             select d.createdBy.id,
                    coalesce(sum(d.downloadCount), 0),
-                   count(d.id)
+                   count(d.id),
+                   coalesce(sum(d.viewCount), 0)
             from Document d
             where d.createdBy.id in :userIds
               and d.deleted = false
@@ -211,6 +212,34 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
             order by total_downloads desc, total_views desc, total_documents desc, u.full_name asc
             """, nativeQuery = true)
     List<Object[]> findLeaderboardUsersByDownloads(Pageable pageable);
+
+    @Query(value = """
+            select u.id, u.full_name, u.avatar,
+                   coalesce(sum(d.view_count), 0) as total_views,
+                   coalesce(sum(case when d.is_paid = 0 then d.download_count else 0 end), 0) as total_downloads,
+                   count(case when d.is_paid = 0 then d.id end) as total_documents
+            from tbl_users u
+            join tbl_documents d on d.created_by = u.id
+              and d.status = 'APPROVED' and d.is_deleted = 0
+            group by u.id, u.full_name, u.avatar
+            having coalesce(sum(case when d.is_paid = 0 then d.download_count else 0 end), 0) > 0
+            order by total_downloads desc, total_views desc, total_documents desc, u.full_name asc
+            """, nativeQuery = true)
+    List<Object[]> findLeaderboardUsersByFreeDownloads(Pageable pageable);
+
+    @Query(value = """
+            select u.id, u.full_name, u.avatar,
+                   coalesce(sum(d.view_count), 0) as total_views,
+                   coalesce(sum(case when d.is_paid = 1 then d.download_count else 0 end), 0) as total_downloads,
+                   count(case when d.is_paid = 1 then d.id end) as total_documents
+            from tbl_users u
+            join tbl_documents d on d.created_by = u.id
+              and d.status = 'APPROVED' and d.is_deleted = 0
+            group by u.id, u.full_name, u.avatar
+            having coalesce(sum(case when d.is_paid = 1 then d.download_count else 0 end), 0) > 0
+            order by total_downloads desc, total_views desc, total_documents desc, u.full_name asc
+            """, nativeQuery = true)
+    List<Object[]> findLeaderboardUsersByPaidDownloads(Pageable pageable);
 
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Document d SET d.hidden = true WHERE d.createdBy.id = :userId AND (d.deleted = false OR d.deleted IS NULL)")

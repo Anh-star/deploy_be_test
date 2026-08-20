@@ -151,20 +151,31 @@ public class DocumentCardEnrichmentService {
             userNames.put(userId, fullName);
         }
 
+        // Stats for verified badge: totalDownloads >= 50 || totalViews >= 100
         Map<UUID, Long> userDownloads = new HashMap<>();
-        Map<UUID, Long> userDocuments = new HashMap<>();
+        Map<UUID, Long> userViews = new HashMap<>();
         if (!userIds.isEmpty()) {
             List<Object[]> statsRows = documentRepository.findStatsByUserIds(userIds);
             for (Object[] row : statsRows) {
-                if (row == null || row.length < 3 || row[0] == null) {
+                if (row == null || row.length < 4 || row[0] == null) {
                     continue;
                 }
                 UUID userId = (UUID) row[0];
                 long totalDownloads = row[1] instanceof Number n ? n.longValue() : 0L;
-                long totalDocs = row[2] instanceof Number n ? n.longValue() : 0L;
+                long totalViews = row[3] instanceof Number n ? n.longValue() : 0L;
                 userDownloads.put(userId, totalDownloads);
-                userDocuments.put(userId, totalDocs);
+                userViews.put(userId, totalViews);
             }
+        }
+
+        // Compute leaderboard top 10 rankings across 3 boards
+        Map<UUID, Integer> bestRankMap = new HashMap<>();
+        Map<UUID, String> bestRankCategoryMap = new HashMap<>();
+        if (!userIds.isEmpty()) {
+            org.springframework.data.domain.Pageable top10 = org.springframework.data.domain.PageRequest.of(0, 10);
+            computeRanks(documentRepository.findLeaderboardUsersByViews(top10), "views", userIds, bestRankMap, bestRankCategoryMap);
+            computeRanks(documentRepository.findLeaderboardUsersByFreeDownloads(top10), "freeDownloads", userIds, bestRankMap, bestRankCategoryMap);
+            computeRanks(documentRepository.findLeaderboardUsersByPaidDownloads(top10), "paidDownloads", userIds, bestRankMap, bestRankCategoryMap);
         }
 
         for (Map.Entry<UUID, UUID> entry : docToUserMap.entrySet()) {
@@ -172,16 +183,41 @@ public class DocumentCardEnrichmentService {
             UUID userId = entry.getValue();
             String fullName = userNames.get(userId);
             long totalDownloads = userDownloads.getOrDefault(userId, 0L);
-            long totalDocs = userDocuments.getOrDefault(userId, 0L);
+            long totalViewsVal = userViews.getOrDefault(userId, 0L);
 
             result.put(docId, DocumentUploaderDto.builder()
                     .id(userId.toString())
                     .fullName(StringUtils.hasText(fullName) ? fullName : null)
-                    .hasManyDownloads(totalDownloads > 100)
-                    .hasManyDocuments(totalDocs >= 50)
+                    .bestRank(bestRankMap.get(userId))
+                    .bestRankCategory(bestRankCategoryMap.get(userId))
+                    .verified(totalDownloads >= 50 || totalViewsVal >= 100)
                     .build());
         }
         return result;
+    }
+
+    /** Helper: scan a leaderboard result set and update bestRank if this board gives a better (lower) rank. */
+    private void computeRanks(List<Object[]> leaderboardRows, String category,
+                              Set<UUID> relevantUserIds,
+                              Map<UUID, Integer> bestRankMap,
+                              Map<UUID, String> bestRankCategoryMap) {
+        int rank = 0;
+        for (Object[] row : leaderboardRows) {
+            rank++;
+            if (row == null || row[0] == null) continue;
+            UUID userId;
+            if (row[0] instanceof UUID u) {
+                userId = u;
+            } else {
+                userId = UUID.fromString(row[0].toString());
+            }
+            if (!relevantUserIds.contains(userId)) continue;
+            Integer current = bestRankMap.get(userId);
+            if (current == null || rank < current) {
+                bestRankMap.put(userId, rank);
+                bestRankCategoryMap.put(userId, category);
+            }
+        }
     }
 
     private Map<UUID, List<String>> loadTagNames(List<Document> documents) {
