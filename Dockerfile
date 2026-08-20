@@ -5,13 +5,15 @@ WORKDIR /app
 
 # Copy pom.xml and download dependencies (cached layer)
 
+ENV MAVEN_OPTS="-Xmx256m -Xms128m"
+
 COPY pom.xml .
 RUN mvn dependency:go-offline -B
 
 # Copy src and build the package
 
 COPY src ./src
-RUN mvn clean package -Dmaven.test.skip=true -B
+RUN mvn clean package -Dmaven.test.skip=true -B -T1
 
 
 # Stage 2: Run the application
