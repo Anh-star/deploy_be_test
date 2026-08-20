@@ -29,6 +29,10 @@ import java.util.UUID;
  *   <li>{@code requestedQuestionCount} — number of questions the
  *       uploader wants. Comes from the database (the
  *       {@code QuizGeneration} row), NEVER hard-coded.</li>
+ *   <li>{@code focusTopic} — optional owner-supplied focus topic that
+ *       biases the AI toward a sub-area of the document. {@code null}
+ *       means "whole document, no bias". Omitted from JSON when null
+ *       ( {@code @JsonInclude(NON_NULL)}).</li>
  *   <li>{@code dispatchToken} — the lease the dispatcher holds.
  *       n8n MUST echo this token back on the future secure-source
  *       callback so the backend can correlate the response with
@@ -50,6 +54,7 @@ import java.util.UUID;
         "documentId",
         "documentFileId",
         "requestedQuestionCount",
+        "focusTopic",
         "dispatchToken"
 })
 public final class AutoQuizDispatchPayloadDto {
@@ -66,6 +71,9 @@ public final class AutoQuizDispatchPayloadDto {
     @JsonProperty("requestedQuestionCount")
     private Integer requestedQuestionCount;
 
+    @JsonProperty("focusTopic")
+    private String focusTopic;
+
     @JsonProperty("dispatchToken")
     private UUID dispatchToken;
 
@@ -77,10 +85,21 @@ public final class AutoQuizDispatchPayloadDto {
                                        UUID documentFileId,
                                        Integer requestedQuestionCount,
                                        UUID dispatchToken) {
+        this(generationId, documentId, documentFileId,
+                requestedQuestionCount, null, dispatchToken);
+    }
+
+    public AutoQuizDispatchPayloadDto(UUID generationId,
+                                       UUID documentId,
+                                       UUID documentFileId,
+                                       Integer requestedQuestionCount,
+                                       String focusTopic,
+                                       UUID dispatchToken) {
         this.generationId = generationId;
         this.documentId = documentId;
         this.documentFileId = documentFileId;
         this.requestedQuestionCount = requestedQuestionCount;
+        this.focusTopic = focusTopic;
         this.dispatchToken = dispatchToken;
     }
 
@@ -98,6 +117,10 @@ public final class AutoQuizDispatchPayloadDto {
 
     public Integer getRequestedQuestionCount() {
         return requestedQuestionCount;
+    }
+
+    public String getFocusTopic() {
+        return focusTopic;
     }
 
     public UUID getDispatchToken() {
@@ -118,6 +141,10 @@ public final class AutoQuizDispatchPayloadDto {
 
     public void setRequestedQuestionCount(Integer requestedQuestionCount) {
         this.requestedQuestionCount = requestedQuestionCount;
+    }
+
+    public void setFocusTopic(String focusTopic) {
+        this.focusTopic = focusTopic;
     }
 
     public void setDispatchToken(UUID dispatchToken) {

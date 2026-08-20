@@ -311,6 +311,7 @@ public class AutoQuizDispatcherServiceImpl implements AutoQuizDispatcherService 
         UUID documentFileId = row.getDocumentFile() == null
                 ? null : row.getDocumentFile().getId();
         Integer requestedQuestionCount = row.getRequestedQuestionCount();
+        String focusTopic = row.getFocusTopic();
 
         // Lease token is computed BEFORE the claim so the
         // completion UPDATEs can echo it back in the WHERE clause.
@@ -334,7 +335,7 @@ public class AutoQuizDispatcherServiceImpl implements AutoQuizDispatcherService 
 
         AutoQuizDispatchPayloadDto payload = new AutoQuizDispatchPayloadDto(
                 generationId, documentId, documentFileId,
-                requestedQuestionCount, token);
+                requestedQuestionCount, focusTopic, token);
 
         // HTTP MUST stay OUTSIDE any DB transaction.  The claim is
         // already committed (REQUIRES_NEW), so a transport error here
