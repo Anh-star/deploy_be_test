@@ -17,6 +17,7 @@ import com.cmcu.itstudy.repository.QuizGenerationRepository;
 import com.cmcu.itstudy.repository.QuizQuestionOptionRepository;
 import com.cmcu.itstudy.repository.QuizQuestionRepository;
 import com.cmcu.itstudy.repository.QuizRepository;
+import com.cmcu.itstudy.repository.custom.SafeArtifactLastError;
 import com.cmcu.itstudy.service.contract.AutoQuizCallbackService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -484,5 +485,149 @@ public class AutoQuizCallbackServiceImpl implements AutoQuizCallbackService {
         diff |= expected.getLeastSignificantBits()
                 ^ supplied.getLeastSignificantBits();
         return diff == 0L;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 5A — business-rejection callback.
+    //
+    // Distinct from {@link #processCallback}: this path is for n8n to
+    // report a SEMANTIC / business failure (e.g. focus-topic mismatch
+    // with the document content) and skip AI quiz generation entirely.
+    // No {@code Quiz}, no questions, no options, no DocumentQuiz
+    // association is created. The generation row is terminalised to
+    // {@code FAILED} with a hard-coded, sanitised {@code lastError}
+    // code so callers can never smuggle arbitrary strings into the
+    // database.
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Hard-coded business-rejection code for Phase 5A. The string is
+     * kept here (NOT on the caller side) so the contract is server-
+     * owned: clients cannot supply an arbitrary {@code lastError}
+     * value, the dispatcher can match on a stable token, and the FE
+     * can map this exact code to a user-safe Vietnamese message.
+     */
+    static final String BUSINESS_REJECTION_FOCUS_TOPIC_MISMATCH =
+            "FOCUS_TOPIC_MISMATCH";
+
+    /**
+     * Public-safe response message echoed back to the caller. NEVER
+     * carries raw Gemini text or the rejection code itself — the
+     * caller already knows what it asked for.
+     */
+    private static final String BUSINESS_REJECTION_RESPONSE_MESSAGE =
+            "Generation rejected";
+
+    @Override
+    @Transactional
+    public AutoQuizCallbackResponseDto processBusinessRejection(
+            UUID generationId,
+            UUID dispatchToken) {
+
+        // Step 1: minimal input validation. The dispatch token is
+        // REQUIRED — a missing token is treated identically to a
+        // missing token on /complete (callback security parity).
+        if (generationId == null) {
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.GENERATION_NOT_FOUND,
+                    "Generation not found");
+        }
+        if (dispatchToken == null) {
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.MISSING_TOKEN,
+                    "Dispatch token is required");
+        }
+
+        // Step 2: load the generation row. NOT_FOUND uses the same
+        // safe envelope as /complete so the caller cannot probe for
+        // row existence.
+        QuizGeneration generation = generationRepository.findById(generationId)
+                .orElseThrow(() -> new AutoQuizCallbackAccessDeniedException(
+                        Reason.GENERATION_NOT_FOUND,
+                        "Generation not found"));
+
+        // Step 3: constant-time token validation. Mirrors the
+        // semantics of processCallback exactly: blank / null stored
+        // token is treated as a system bug but still rejected.
+        if (!constantTimeTokenEquals(
+                generation.getDispatchToken(), dispatchToken)) {
+            log.warn(
+                    "Auto Quiz business-rejection callback rejected: "
+                            + "token mismatch generationId={}",
+                    generationId);
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.TOKEN_MISMATCH,
+                    "Dispatch token does not match this generation");
+        }
+
+        // Step 4: status gate. The business-rejection path is ONLY
+        // valid for PROCESSING. Any other status (QUEUED,
+        // WAITING_SOURCE, READY, FAILED, CANCELLED) is rejected with
+        // the same "not in PROCESSING state" envelope used by
+        // /complete. CANCELLED wins — a CANCELLED row cannot be
+        // resurrected by a late rejection callback.
+        if (generation.getStatus() != QuizGenerationStatus.PROCESSING) {
+            log.warn(
+                    "Auto Quiz business-rejection callback rejected: "
+                            + "unexpected status={} generationId={}",
+                    generation.getStatus(),
+                    generationId);
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.GENERATION_NOT_FOUND,
+                    "Generation is not in PROCESSING state");
+        }
+
+        // Step 5: sanitise the rejection code. Use the project's
+        // existing SafeArtifactLastError helper so any future code
+        // values are length-bounded / character-bounded identically
+        // to the dispatch-side codes. Phase 5A only emits ONE code;
+        // the helper is here so adding a future rejection code does
+        // not require a new sanitisation path.
+        String reasonCode = SafeArtifactLastError.sanitize(
+                BUSINESS_REJECTION_FOCUS_TOPIC_MISMATCH, 80);
+        if (reasonCode == null || reasonCode.isBlank()) {
+            // Defensive: SafeArtifactLastError.sanitize may return
+            // null for an all-control-character input. Fall back to
+            // the literal code constant so the row is NEVER persisted
+            // with a null/blank lastError.
+            reasonCode = BUSINESS_REJECTION_FOCUS_TOPIC_MISMATCH;
+        }
+
+        // Step 6: atomic PROCESSING -> FAILED transition. The
+        // dispatch-token guard inside the UPDATE means affectedRows
+        // == 0 if a CANCELLED race or a lease rotation already
+        // terminalised the row. We treat that as a hard failure —
+        // we MUST NOT fake a successful rejection.
+        LocalDateTime now = LocalDateTime.now();
+        int updated = generationRepository.markFailedFromProcessing(
+                generationId, dispatchToken, reasonCode, now);
+
+        if (updated != 1) {
+            log.warn(
+                    "Auto Quiz business-rejection callback: "
+                            + "PROCESSING -> FAILED update affected "
+                            + "no rows (generationId={}). Likely a "
+                            + "CANCELLED race or stale lease.",
+                    generationId);
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.GENERATION_NOT_FOUND,
+                    "Generation is not in PROCESSING state");
+        }
+
+        log.info(
+                "Auto Quiz business-rejection accepted: "
+                        + "generationId={} reasonCode={}",
+                generationId, reasonCode);
+
+        // Step 7: response envelope. The message is a single
+        // safe constant — it never echoes the rejection code or any
+        // caller-supplied text. The status string reflects the
+        // terminal state the caller should now observe.
+        return AutoQuizCallbackResponseDto.builder()
+                .accepted(true)
+                .status(QuizGenerationStatus.FAILED.name())
+                .generationId(generationId)
+                .message(BUSINESS_REJECTION_RESPONSE_MESSAGE)
+                .build();
     }
 }

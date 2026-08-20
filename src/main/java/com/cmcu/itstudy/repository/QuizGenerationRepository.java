@@ -383,6 +383,74 @@ public interface QuizGenerationRepository
             @Param("now") LocalDateTime now);
 
     /**
+     * Phase 5A — terminal FAILED transition driven by a business
+     * rejection callback (e.g. focus-topic mismatch).
+     *
+     * <p>Mirrors {@link #releaseLeaseToFailed} but the WHERE clause
+     * targets {@code PROCESSING} instead of {@code QUEUED}: the
+     * dispatcher has already issued the lease and moved the row to
+     * {@code PROCESSING} via {@link #markDispatchedToProcessing}, and
+     * the n8n worker is now reporting a business rejection while the
+     * row still holds that lease.</p>
+     *
+     * <p>Concurrency contract:</p>
+     * <ul>
+     *   <li>The {@code dispatch_token} guard ensures that a CANCELLED
+     *       race (document deleted) or a lease rotation cannot be
+     *       overwritten by a late rejection callback.</li>
+     *   <li>{@code affectedRows == 0} means another writer has already
+     *       terminalised the row (CANCELLED race) — the service treats
+     *       that as a hard error and does NOT silently succeed.</li>
+     * </ul>
+     *
+     * <p>Side effects:</p>
+     * <ul>
+     *   <li>{@code status = FAILED}</li>
+     *   <li>{@code failed_at = :now}</li>
+     *   <li>{@code last_attempt_at = :now}</li>
+     *   <li>{@code last_error = :lastError}</li>
+     *   <li>{@code next_attempt_at = NULL}</li>
+     *   <li>{@code dispatch_token = NULL}</li>
+     *   <li>{@code dispatch_token_issued_at = NULL}</li>
+     *   <li>{@code updated_at = :now}</li>
+     * </ul>
+     *
+     * <p>This UPDATE does NOT touch {@code attempts} (no transport
+     * retry happened), does NOT create a {@code Quiz} row, and does
+     * NOT alter {@code document} or {@code document_file} bindings.</p>
+     *
+     * @param generationId id of the row to transition
+     * @param dispatchToken the lease token the dispatcher holds
+     * @param lastError     sanitised business-rejection code (e.g.
+     *                      {@code "FOCUS_TOPIC_MISMATCH"})
+     * @param now           current call time for {@code failed_at} /
+     *                      {@code last_attempt_at} / {@code updated_at}
+     * @return 1 on success, 0 on CANCELLED race or stale lease
+     */
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true)
+    @Query("""
+            UPDATE QuizGeneration q
+               SET q.status = com.cmcu.itstudy.enums.QuizGenerationStatus.FAILED,
+                   q.failedAt = :now,
+                   q.lastAttemptAt = :now,
+                   q.lastError = :lastError,
+                   q.nextAttemptAt = NULL,
+                   q.dispatchToken = NULL,
+                   q.dispatchTokenIssuedAt = NULL,
+                   q.updatedAt = :now
+             WHERE q.id = :generationId
+               AND q.status = com.cmcu.itstudy.enums.QuizGenerationStatus.PROCESSING
+               AND q.dispatchToken = :dispatchToken
+            """)
+    int markFailedFromProcessing(
+            @Param("generationId") UUID generationId,
+            @Param("dispatchToken") UUID dispatchToken,
+            @Param("lastError") String lastError,
+            @Param("now") LocalDateTime now);
+
+    /**
      * Phase 2D — crash-recovery path. Releases stale dispatch
      * leases so a future cycle can re-claim the row.
      *

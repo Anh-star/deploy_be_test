@@ -97,6 +97,67 @@ public class AutoQuizCallbackController {
                 .body(response);
     }
 
+    /**
+     * Phase 5A — n8n business-rejection callback.
+     *
+     * <p>Used by the dispatch worker to report that a generation must
+     * NOT be turned into a {@code Quiz} row because a semantic /
+     * business condition failed (initially: focus-topic mismatch with
+     * the document content). The backend hard-codes the rejection
+     * code; clients MUST NOT be able to supply an arbitrary
+     * {@code lastError} string.</p>
+     *
+     * <h3>Authentication</h3>
+     * <p>Identical to {@code /complete}: the endpoint is permit-all at
+     * Spring Security level; the per-row {@code dispatchToken} guards
+     * access via the service layer.</p>
+     *
+     * <h3>Request</h3>
+     * <ul>
+     *   <li>Path: {@code POST /api/auto-quiz/generations/{generationId}/reject}</li>
+     *   <li>Header: {@code X-Auto-Quiz-Dispatch-Token: <uuid>}</li>
+     *   <li>Body: none.</li>
+     * </ul>
+     *
+     * <h3>Response</h3>
+     * <ul>
+     *   <li>HTTP 200 &mdash; rejection accepted:
+     *       {@code {accepted: true, status: "FAILED", generationId, message: "Generation rejected"}}</li>
+     *   <li>HTTP 403 &mdash; rejected (wrong/missing token, not in
+     *       PROCESSING state, lease invalidated by CANCELLED race):
+     *       {@code {accepted: false, status, generationId, message}}</li>
+     * </ul>
+     *
+     * <h3>Side effects</h3>
+     * <p>On HTTP 200 the generation row transitions
+     * {@code PROCESSING -> FAILED} with {@code lastError =
+     * "FOCUS_TOPIC_MISMATCH"}. No {@code Quiz}, no questions, no
+     * options, no {@code DocumentQuiz} association is created.</p>
+     */
+    @PostMapping(
+            value = "/generations/{generationId}/reject",
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<AutoQuizCallbackResponseDto> rejectGeneration(
+            @PathVariable("generationId") UUID generationId,
+            @RequestHeader(value = HEADER_DISPATCH_TOKEN, required = false)
+                    String dispatchTokenRaw) {
+
+        UUID suppliedToken = parseDispatchToken(dispatchTokenRaw);
+
+        log.info(
+                "Auto Quiz business-rejection callback received: "
+                        + "generationId={}",
+                generationId);
+
+        AutoQuizCallbackResponseDto response =
+                callbackService.processBusinessRejection(
+                        generationId, suppliedToken);
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(response);
+    }
+
     private static UUID parseDispatchToken(String raw) {
         if (raw == null) {
             return null;
