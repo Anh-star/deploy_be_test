@@ -168,19 +168,35 @@ public class DocumentCreateRequestDto {
     private Integer quizQuestionCount;
 
     /**
+     * Optional owner-supplied focus topic that biases the AI toward a
+     * sub-area of the document when a quiz is auto-generated at upload
+     * time. {@code null} means "whole document, no bias".
+     *
+     * <p>Only used when {@link #generateQuiz} is {@code true}. If
+     * {@code generateQuiz == false} this field must be {@code null} or
+     * blank — enforced by {@link #isQuizOptionShapeValid()}.
+     *
+     * <p>The value is persisted directly in {@code QuizGeneration.focusTopic}
+     * and normalised by {@code QuizGenerationServiceImpl} (blank → null,
+     * trimmed, max 500 chars).
+     */
+    @Size(max = 500, message = "Nội dung trọng tâm không được vượt quá 500 ký tự.")
+    private String quizFocusTopic;
+
+    /**
      * Cross-field invariant for the quiz auto-generation preferences:
      * <ul>
-     *   <li>{@code generateQuiz == false} ⇒ {@code quizQuestionCount}
-     *       MUST be {@code null}.</li>
-     *   <li>{@code generateQuiz == true} ⇒ {@code quizQuestionCount}
-     *       MUST be present.</li>
+     *   <li>{@code generateQuiz == false} ⇒ both {@code quizQuestionCount}
+     *       and {@code quizFocusTopic} MUST be {@code null} or blank.</li>
+     *   <li>{@code generateQuiz == true} ⇒ {@code quizQuestionCount} MUST
+     *       be present; {@code quizFocusTopic} is optional.</li>
      * </ul>
      * {@code null} {@code generateQuiz} is treated as {@code false}.
      */
     @AssertTrue(message = "Vui lòng chọn số câu hỏi khi bật tự động tạo bài Quiz.")
     public boolean isQuizOptionShapeValid() {
         if (generateQuiz == null || Boolean.FALSE.equals(generateQuiz)) {
-            return quizQuestionCount == null;
+            return quizQuestionCount == null && isNullOrBlank(quizFocusTopic);
         }
         return quizQuestionCount != null;
     }
