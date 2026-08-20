@@ -111,7 +111,7 @@ public interface QuizGenerationRepository
      * @param now            caller-supplied timestamp for {@code updated_at}
      * @return number of rows affected (0 to {@code N})
      */
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             UPDATE QuizGeneration q
                SET q.status = com.cmcu.itstudy.enums.QuizGenerationStatus.QUEUED,
