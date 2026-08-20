@@ -4,6 +4,7 @@ import com.cmcu.itstudy.dto.common.ApiResponse;
 import com.cmcu.itstudy.dto.document.DocumentCardDto;
 import com.cmcu.itstudy.dto.document.DocumentCreateRequestDto;
 import com.cmcu.itstudy.dto.document.DocumentUpdateRequestDto;
+import com.cmcu.itstudy.dto.document.MyDocumentAutoQuizCreateRequestDto;
 import com.cmcu.itstudy.dto.document.MyDocumentAutoQuizDto;
 import com.cmcu.itstudy.dto.document.MyDocumentDetailDto;
 import com.cmcu.itstudy.dto.document.MyDocumentQuizListDto;
@@ -65,6 +66,38 @@ public class MyDocumentController {
         User user = currentUser.getUser();
         MyDocumentAutoQuizDto data = documentService.getMyDocumentAutoQuiz(documentId, user);
         return ResponseEntity.ok(ApiResponse.success(data, "Auto quiz info"));
+    }
+
+    /**
+     * Phase Multi Auto Quiz 2 — return every AI quiz generation for the
+     * supplied document, newest-first. The document owner can call this
+     * regardless of how many generations exist.
+     */
+    @GetMapping("/{documentId}/auto-quizzes")
+    public ResponseEntity<ApiResponse<List<MyDocumentAutoQuizDto>>> getMyDocumentAutoQuizzes(
+            @PathVariable UUID documentId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        User user = currentUser.getUser();
+        List<MyDocumentAutoQuizDto> data =
+                documentService.getMyDocumentAutoQuizzes(documentId, user);
+        return ResponseEntity.ok(ApiResponse.success(data, "All auto quizzes for this document"));
+    }
+
+    /**
+     * Phase Multi Auto Quiz 2 — enqueue a brand-new AI quiz generation for
+     * the supplied document. Each call creates an independent generation;
+     * there is no limit and no reuse of a previous generation.
+     */
+    @PostMapping("/{documentId}/auto-quizzes")
+    public ResponseEntity<ApiResponse<MyDocumentAutoQuizDto>> createMyDocumentAutoQuiz(
+            @PathVariable UUID documentId,
+            @Valid @RequestBody MyDocumentAutoQuizCreateRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        User user = currentUser.getUser();
+        MyDocumentAutoQuizDto created =
+                documentService.createMyDocumentAutoQuiz(documentId, request, user);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(created, "Auto quiz generation queued"));
     }
 
     @GetMapping("/quizzes")

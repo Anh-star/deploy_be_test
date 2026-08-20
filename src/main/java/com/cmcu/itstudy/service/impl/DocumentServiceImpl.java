@@ -3,6 +3,7 @@ package com.cmcu.itstudy.service.impl;
 import com.cmcu.itstudy.dto.document.DocumentCardDto;
 import com.cmcu.itstudy.dto.document.DocumentCreateRequestDto;
 import com.cmcu.itstudy.dto.document.DocumentUpdateRequestDto;
+import com.cmcu.itstudy.dto.document.MyDocumentAutoQuizCreateRequestDto;
 import com.cmcu.itstudy.dto.document.MyDocumentAutoQuizDto;
 import com.cmcu.itstudy.dto.document.MyDocumentDetailDto;
 import com.cmcu.itstudy.dto.document.MyDocumentQuizItemDto;
@@ -58,6 +59,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final QuizGenerationRepository quizGenerationRepository;
     private final QuizQuestionRepository quizQuestionRepository;
     private final DocumentAccessService documentAccessService;
+    private final DocumentPreviewArtifactRepository documentPreviewArtifactRepository;
 
     public DocumentServiceImpl(DocumentRepository documentRepository,
                                DocumentTagRepository documentTagRepository,
@@ -71,7 +73,8 @@ public class DocumentServiceImpl implements DocumentService {
                                DocumentQuizRepository documentQuizRepository,
                                QuizGenerationRepository quizGenerationRepository,
                                QuizQuestionRepository quizQuestionRepository,
-                               DocumentAccessService documentAccessService) {
+                               DocumentAccessService documentAccessService,
+                               DocumentPreviewArtifactRepository documentPreviewArtifactRepository) {
         this.documentRepository = documentRepository;
         this.documentTagRepository = documentTagRepository;
         this.categoryRepository = categoryRepository;
@@ -85,6 +88,7 @@ public class DocumentServiceImpl implements DocumentService {
         this.quizGenerationRepository = quizGenerationRepository;
         this.quizQuestionRepository = quizQuestionRepository;
         this.documentAccessService = documentAccessService;
+        this.documentPreviewArtifactRepository = documentPreviewArtifactRepository;
     }
 
     @Transactional(readOnly = true)
@@ -764,6 +768,177 @@ public class DocumentServiceImpl implements DocumentService {
                 .generationId(generation.getId().toString())
                 .status(generation.getStatus())
                 .requestedQuestionCount(generation.getRequestedQuestionCount())
+                .focusTopic(generation.getFocusTopic())
+                .requestedAt(generation.getRequestedAt())
+                .processingAt(generation.getProcessingAt())
+                .readyAt(generation.getReadyAt())
+                .failedAt(generation.getFailedAt())
+                .cancelledAt(generation.getCancelledAt())
+                .lastError(generation.getLastError())
+                .attempts(generation.getAttempts())
+                .quiz(quizInfo)
+                .build();
+    }
+
+    // ------------------------------------------------------------------------
+    // Phase Multi Auto Quiz 2 — owner-facing plural read & additional create
+    // ------------------------------------------------------------------------
+
+    @Transactional(readOnly = true)
+    @Override
+    public List<MyDocumentAutoQuizDto> getMyDocumentAutoQuizzes(
+            UUID documentId,
+            User currentUser) {
+        // Owner check (identical to singular endpoint).
+        Document document = getById(documentId);
+        if (Boolean.TRUE.equals(document.getDeleted())) {
+            throw new NoSuchElementException("Document not found: " + documentId);
+        }
+        if (document.getCreatedBy() == null
+                || !document.getCreatedBy().getId().equals(currentUser.getId())) {
+            throw new AccessDeniedException("You do not have access to this document");
+        }
+
+        List<com.cmcu.itstudy.entity.QuizGeneration> generations =
+                quizGenerationService.findAllByDocumentId(documentId);
+        if (generations.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // Phase Multi Auto Quiz 2 — avoid N+1 question count:
+        // collect quiz IDs from READY generations in one batch query.
+        List<UUID> quizIds = generations.stream()
+                .filter(g -> g.getQuiz() != null)
+                .map(g -> g.getQuiz().getId())
+                .collect(Collectors.toList());
+
+        Map<UUID, Long> questionCountMap = new HashMap<>();
+        if (!quizIds.isEmpty()) {
+            List<Object[]> rows =
+                    quizQuestionRepository.countQuestionsGroupedByQuizId(quizIds);
+            for (Object[] row : rows) {
+                questionCountMap.put((UUID) row[0], (Long) row[1]);
+            }
+        }
+
+        return generations.stream()
+                .map(gen -> {
+                    Long qCount = null;
+                    if (gen.getQuiz() != null) {
+                        qCount = questionCountMap.getOrDefault(
+                                gen.getQuiz().getId(), 0L);
+                    }
+                    return toMyDocumentAutoQuizDto(gen, qCount);
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    @Override
+    public MyDocumentAutoQuizDto createMyDocumentAutoQuiz(
+            UUID documentId,
+            MyDocumentAutoQuizCreateRequestDto request,
+            User currentUser) {
+        // A. Verify owner / document existence / not-deleted.
+        Document document = getById(documentId);
+        if (Boolean.TRUE.equals(document.getDeleted())) {
+            throw new NoSuchElementException("Document not found: " + documentId);
+        }
+        if (document.getCreatedBy() == null
+                || !document.getCreatedBy().getId().equals(currentUser.getId())) {
+            throw new AccessDeniedException("You do not have access to this document");
+        }
+
+        // B. Find the primary DocumentFile.
+        DocumentFile primaryFile = documentFileRepository
+                .findByDocumentIdAndPrimaryTrue(documentId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Primary file not found for document: " + documentId));
+
+        // C. Resolve and validate file type.
+        String ext = primaryFile.getFileExtension();
+        if (ext == null || ext.isBlank()) {
+            throw new IllegalArgumentException(
+                    QuizGenerationServiceImpl.UNSUPPORTED_AUTO_QUIZ_MESSAGE);
+        }
+        com.cmcu.itstudy.enums.AllowedDocumentFileType fileType =
+                com.cmcu.itstudy.enums.AllowedDocumentFileType.fromExtension(ext)
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                QuizGenerationServiceImpl.UNSUPPORTED_AUTO_QUIZ_MESSAGE));
+
+        // D. Enqueue — each call creates a brand-new generation.
+        LocalDateTime now = LocalDateTime.now();
+        com.cmcu.itstudy.entity.QuizGeneration generation =
+                quizGenerationService.enqueueForDocument(
+                        documentId,
+                        primaryFile.getId(),
+                        fileType,
+                        request.getRequestedQuestionCount(),
+                        request.getFocusTopic(),
+                        now);
+
+        // E. For DOC / DOCX: if the FULL preview is already READY,
+        //    promote the new generation to QUEUED so it is picked up
+        //    by the scheduler without waiting for another preview event.
+        if (fileType == com.cmcu.itstudy.enums.AllowedDocumentFileType.DOC
+                || fileType == com.cmcu.itstudy.enums.AllowedDocumentFileType.DOCX) {
+            var latestFullArtifact =
+                    documentPreviewArtifactRepository
+                            .findFirstByDocumentFileIdAndArtifactKindOrderByCreatedAtDescIdDesc(
+                                    primaryFile.getId(),
+                                    com.cmcu.itstudy.enums.DocumentPreviewArtifactKind.FULL);
+            if (latestFullArtifact.isPresent()
+                    && latestFullArtifact.get().getStatus()
+                            == com.cmcu.itstudy.enums.DocumentPreviewArtifactStatus.READY) {
+                quizGenerationService.queueWhenSourceReady(
+                        documentId, primaryFile.getId(), now);
+                // Reload the generation so the response reflects the
+                // DB status after the atomic UPDATE (avoid stale
+                // persistence-context snapshot).
+                generation = quizGenerationRepository.findById(generation.getId())
+                        .orElse(generation);
+            }
+        }
+
+        // F. Map to DTO (question count is 0 / null at creation time).
+        return toMyDocumentAutoQuizDto(generation, null);
+    }
+
+    /**
+     * Map a {@link com.cmcu.itstudy.entity.QuizGeneration} to a
+     * {@link MyDocumentAutoQuizDto}.
+     *
+     * <p>Uses {@link com.cmcu.itstudy.entity.QuizGeneration#getQuiz()} —
+     * the quiz already attached to the generation entity — so there is
+     * no extra query for the quiz itself.</p>
+     *
+     * @param generation      the source entity
+     * @param questionCount   pre-fetched question count for the attached quiz,
+     *                       or {@code null} if no quiz is attached
+     */
+    private MyDocumentAutoQuizDto toMyDocumentAutoQuizDto(
+            com.cmcu.itstudy.entity.QuizGeneration generation,
+            Long questionCount) {
+        MyDocumentAutoQuizDto.QuizInfo quizInfo = null;
+        Quiz quizEntity = generation.getQuiz();
+        if (quizEntity != null) {
+            quizInfo = MyDocumentAutoQuizDto.QuizInfo.builder()
+                    .quizId(quizEntity.getId().toString())
+                    .title(quizEntity.getTitle())
+                    .description(quizEntity.getDescription())
+                    .totalQuestions(
+                            questionCount != null ? questionCount : 0L)
+                    .durationMinutes(quizEntity.getDurationMinutes())
+                    .passScorePercent(quizEntity.getPassScorePercent())
+                    .build();
+        }
+
+        return MyDocumentAutoQuizDto.builder()
+                .documentId(generation.getDocument().getId().toString())
+                .generationId(generation.getId().toString())
+                .status(generation.getStatus())
+                .requestedQuestionCount(generation.getRequestedQuestionCount())
+                .focusTopic(generation.getFocusTopic())
                 .requestedAt(generation.getRequestedAt())
                 .processingAt(generation.getProcessingAt())
                 .readyAt(generation.getReadyAt())

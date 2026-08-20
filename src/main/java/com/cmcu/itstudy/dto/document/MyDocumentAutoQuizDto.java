@@ -20,6 +20,10 @@ public class MyDocumentAutoQuizDto {
     private String generationId;
     private QuizGenerationStatus status;
     private Integer requestedQuestionCount;
+
+    /** Focus topic the owner supplied when requesting this generation. */
+    private String focusTopic;
+
     private LocalDateTime requestedAt;
     private LocalDateTime processingAt;
     private LocalDateTime readyAt;
