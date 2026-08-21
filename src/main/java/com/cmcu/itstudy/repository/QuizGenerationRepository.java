@@ -2,7 +2,9 @@ package com.cmcu.itstudy.repository;
 
 import com.cmcu.itstudy.entity.QuizGeneration;
 import com.cmcu.itstudy.enums.QuizGenerationStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -524,4 +526,38 @@ public interface QuizGenerationRepository
     int releaseStaleDispatchLeases(
             @Param("staleBefore") LocalDateTime staleBefore,
             @Param("now") LocalDateTime now);
+
+    /**
+     * Phase 6C — pessimistic-write lock used by the owner-initiated
+     * delete path.
+     *
+     * <p>The DELETE flow (see
+     * {@code QuizGenerationServiceImpl.deleteForOwner}) must read the
+     * current status while holding an exclusive lock so that:</p>
+     * <ul>
+     *   <li>a concurrent dispatcher {@code markProcessingFromQueued}
+     *       cannot flip a {@code QUEUED} row to {@code PROCESSING}
+     *       between our SELECT and our DELETE;</li>
+     *   <li>a concurrent user-initiated delete on the same id cannot
+     *       race past the status guard.</li>
+     * </ul>
+     *
+     * <p>The query fetches the {@code Document} association so the
+     * service can validate ownership and documentId binding without
+     * triggering a second round trip, and the {@code quiz} association
+     * is left-joined so READY generations do not pay an extra
+     * lazy-init cost.</p>
+     *
+     * @param generationId id of the row to lock
+     * @return the locked row, or empty if it does not exist
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select qg
+            from QuizGeneration qg
+            join fetch qg.document d
+            left join fetch qg.quiz q
+            where qg.id = :generationId
+            """)
+    Optional<QuizGeneration> findByIdForUpdate(@Param("generationId") UUID generationId);
 }

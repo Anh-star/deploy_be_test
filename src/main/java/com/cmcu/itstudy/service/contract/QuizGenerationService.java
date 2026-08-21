@@ -132,4 +132,62 @@ public interface QuizGenerationService {
      * @param now           caller-supplied timestamp
      */
     void queueWhenSourceReady(UUID documentId, UUID documentFileId, LocalDateTime now);
+
+    /**
+     * Phase 6C — owner-initiated delete of a single
+     * {@link QuizGeneration} row, including its associated {@code Quiz}
+     * when the generation is {@code READY}.
+     *
+     * <p>Authorisation: the caller must be the document owner.
+     * Document lookup uses {@code id = documentId} but does NOT enforce
+     * {@code deleted = false}; a soft-deleted document's generations
+     * are still owned by the same user (the {@code cancelForDocument}
+     * path keeps READY intact).</p>
+     *
+     * <p>Status matrix:</p>
+     * <ul>
+     *   <li>{@code FAILED} → delete the row only. Defensive: if
+     *       {@code generation.quiz} is non-null for any reason, the
+     *       method refuses to silently cascade into the Quiz and
+     *       throws {@code InternalError}.</li>
+     *   <li>{@code CANCELLED} → delete the row only (quiz must be
+     *       null per the {@code cancelForDocument} contract).</li>
+     *   <li>{@code READY} → if the underlying {@code Quiz} has any
+     *       {@code QuizAttempt}, reject with
+     *       {@code AutoQuizAlreadyHasAttemptsException} (HTTP 409).
+     *       Otherwise cascade-delete in the order required by the
+     *       FK constraints documented in Phase 6B.</li>
+     *   <li>{@code WAITING_SOURCE}, {@code QUEUED}, {@code PROCESSING}
+     *       → reject with
+     *       {@code AutoQuizGenerationNotInTerminalStateException}
+     *       (HTTP 409).</li>
+     * </ul>
+     *
+     * <p>Race guards (per Phase 6B recommendations):</p>
+     * <ol>
+     *   <li>{@code QuizGeneration} is loaded with
+     *       {@code PESSIMISTIC_WRITE} so a concurrent dispatcher
+     *       transition cannot flip status mid-check.</li>
+     *   <li>For {@code READY} branches, the underlying {@code Quiz}
+     *       is also locked with {@code PESSIMISTIC_WRITE} between the
+     *       attempt-existence probe and the actual delete, so a
+     *       concurrent {@code /quizzes/{id}/start} cannot create a
+     *       new {@code QuizAttempt} after the probe returned zero.</li>
+     * </ol>
+     *
+     * <p>The whole flow runs in a single {@code @Transactional}
+     * unit so any FK violation rolls back atomically — no partial
+     * delete.</p>
+     *
+     * @throws java.util.NoSuchElementException if the generation does
+     *         not exist, or exists but belongs to a different document
+     *         (treated as not-found to avoid leaking resource existence)
+     * @throws SecurityException if the current user is not the document owner
+     * @throws com.cmcu.itstudy.handle.AutoQuizGenerationNotInTerminalStateException
+     *         if the generation is in {@code WAITING_SOURCE},
+     *         {@code QUEUED}, or {@code PROCESSING}
+     * @throws com.cmcu.itstudy.handle.AutoQuizAlreadyHasAttemptsException
+     *         if the underlying Quiz has at least one attempt
+     */
+    void deleteForOwner(UUID documentId, UUID generationId, com.cmcu.itstudy.entity.User currentUser);
 }

@@ -15,6 +15,7 @@ import com.cmcu.itstudy.security.UserDetailsImpl;
 import com.cmcu.itstudy.service.contract.DocumentCommandRouter;
 import com.cmcu.itstudy.service.contract.DocumentService;
 import com.cmcu.itstudy.service.contract.PaidUploadTargetOrchestrator;
+import com.cmcu.itstudy.service.contract.QuizGenerationService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,14 +33,17 @@ public class MyDocumentController {
     private final DocumentService documentService;
     private final PaidUploadTargetOrchestrator paidUploadTargetOrchestrator;
     private final DocumentCommandRouter documentCommandRouter;
+    private final QuizGenerationService quizGenerationService;
 
     public MyDocumentController(
             DocumentService documentService,
             PaidUploadTargetOrchestrator paidUploadTargetOrchestrator,
-            DocumentCommandRouter documentCommandRouter) {
+            DocumentCommandRouter documentCommandRouter,
+            QuizGenerationService quizGenerationService) {
         this.documentService = documentService;
         this.paidUploadTargetOrchestrator = paidUploadTargetOrchestrator;
         this.documentCommandRouter = documentCommandRouter;
+        this.quizGenerationService = quizGenerationService;
     }
 
     @GetMapping
@@ -98,6 +102,45 @@ public class MyDocumentController {
                 documentService.createMyDocumentAutoQuiz(documentId, request, user);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(created, "Auto quiz generation queued"));
+    }
+
+    /**
+     * Phase 6C — owner-initiated delete of a single auto-quiz
+     * generation row, including its associated Quiz when the generation
+     * is {@code READY}.
+     *
+     * <p>The endpoint is owner-authenticated only
+     * (Spring Security's {@code .anyRequest().authenticated()} already
+     * covers this route — NO {@code permitAll}, NO dispatch-token
+     * header). The business authorisation (caller must be the document
+     * owner) is enforced inside
+     * {@link QuizGenerationService#deleteForOwner}.</p>
+     *
+     * <p>Status mapping mirrors the rest of the controller's mutation
+     * endpoints — 200 + {@code ApiResponse.success(null, ...)} on
+     * success to keep client handling symmetric with the create /
+     * update paths.</p>
+     *
+     * <p>Error contract (handled by {@code GlobalExceptionHandler}):</p>
+     * <ul>
+     *   <li>{@code NoSuchElementException} → 404</li>
+     *   <li>{@code SecurityException} → 500 (pre-existing convention;
+     *       the controller surface mirrors {@code updateDocument} and
+     *       {@code deleteDocument})</li>
+     *   <li>{@code AutoQuizGenerationNotInTerminalStateException}
+     *       → 409 (WAITING_SOURCE / QUEUED / PROCESSING)</li>
+     *   <li>{@code AutoQuizAlreadyHasAttemptsException} → 409 (READY
+     *       with at least one QuizAttempt)</li>
+     * </ul>
+     */
+    @DeleteMapping("/{documentId}/auto-quizzes/{generationId}")
+    public ResponseEntity<ApiResponse<Void>> deleteMyDocumentAutoQuiz(
+            @PathVariable UUID documentId,
+            @PathVariable UUID generationId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        User user = currentUser.getUser();
+        quizGenerationService.deleteForOwner(documentId, generationId, user);
+        return ResponseEntity.ok(ApiResponse.success(null, "Auto quiz deleted successfully"));
     }
 
     @GetMapping("/quizzes")

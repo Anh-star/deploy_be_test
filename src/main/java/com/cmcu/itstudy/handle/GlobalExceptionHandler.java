@@ -2,7 +2,9 @@ package com.cmcu.itstudy.handle;
 
 import com.cmcu.itstudy.dto.common.ApiResponse;
 import com.cmcu.itstudy.handle.AIGeneratedQuizValidationException;
+import com.cmcu.itstudy.handle.AutoQuizAlreadyHasAttemptsException;
 import com.cmcu.itstudy.handle.AutoQuizCallbackAccessDeniedException;
+import com.cmcu.itstudy.handle.AutoQuizGenerationNotInTerminalStateException;
 import com.cmcu.itstudy.handle.WithdrawalStateConflictException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -308,6 +310,26 @@ public class GlobalExceptionHandler {
                 : "Withdrawal request has already been processed";
         ApiResponse<Void> body = ApiResponse.failure(message);
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(AutoQuizAlreadyHasAttemptsException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAutoQuizAlreadyHasAttempts(
+            AutoQuizAlreadyHasAttemptsException ex) {
+        String message = ex.getMessage() != null
+                ? ex.getMessage()
+                : "Bài đánh giá đã có người làm nên không thể xóa.";
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.failure(message));
+    }
+
+    @ExceptionHandler(AutoQuizGenerationNotInTerminalStateException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAutoQuizGenerationNotInTerminalState(
+            AutoQuizGenerationNotInTerminalStateException ex) {
+        String message = ex.getMessage() != null
+                ? ex.getMessage()
+                : "Không thể xóa bài đánh giá đang được xử lý.";
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.failure(message));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
