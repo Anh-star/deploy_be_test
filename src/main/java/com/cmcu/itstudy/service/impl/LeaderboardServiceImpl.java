@@ -26,7 +26,11 @@ public class LeaderboardServiceImpl implements LeaderboardService {
     public List<LeaderboardUserDto> getLeaderboard(int size, String sortBy) {
         Pageable pageable = PageRequest.of(0, size);
         List<Object[]> rows;
-        if (sortBy != null && sortBy.equalsIgnoreCase("downloads")) {
+        if (sortBy != null && sortBy.equalsIgnoreCase("freeDownloads")) {
+            rows = documentRepository.findLeaderboardUsersByFreeDownloads(pageable);
+        } else if (sortBy != null && sortBy.equalsIgnoreCase("paidDownloads")) {
+            rows = documentRepository.findLeaderboardUsersByPaidDownloads(pageable);
+        } else if (sortBy != null && sortBy.equalsIgnoreCase("downloads")) {
             rows = documentRepository.findLeaderboardUsersByDownloads(pageable);
         } else {
             rows = documentRepository.findLeaderboardUsersByViews(pageable);

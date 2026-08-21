@@ -50,8 +50,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
                     if (userDetails instanceof UserDetailsImpl userDetailsImpl
-                            && userDetails.isEnabled()
                             && jwtService.isTokenValid(token, userDetailsImpl.getUser())) {
+
+                        boolean isLocked = !"ACTIVE".equalsIgnoreCase(userDetailsImpl.getUser().getStatus());
+                        String uri = request.getRequestURI();
+
+                        if (isLocked) {
+                            if (uri.endsWith("/api/auth/me") || uri.endsWith("/api/auth/logout") || uri.endsWith("/api/auth/logout-all")) {
+                                UsernamePasswordAuthenticationToken authentication =
+                                        new UsernamePasswordAuthenticationToken(
+                                                userDetails,
+                                                null,
+                                                userDetails.getAuthorities()
+                                        );
+                                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                                SecurityContextHolder.getContext().setAuthentication(authentication);
+                                filterChain.doFilter(request, response);
+                                return;
+                            } else {
+                                response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                                response.setContentType("application/json;charset=UTF-8");
+                                response.getWriter().write("{\"success\":false,\"message\":\"Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động. Không thể thực hiện thao tác này.\",\"status\":403}");
+                                return;
+                            }
+                        }
+
                         UsernamePasswordAuthenticationToken authentication =
                                 new UsernamePasswordAuthenticationToken(
                                         userDetails,

@@ -14,6 +14,10 @@ import lombok.Setter;
 public class DocumentUploaderDto {
     private String id;
     private String fullName;
-    private Boolean hasManyDownloads;
-    private Boolean hasManyDocuments;
+    /** Thứ hạng cao nhất trong top 10 (1-10) ở bất kỳ bảng xếp hạng nào. Null nếu ngoài top 10. */
+    private Integer bestRank;
+    /** Tên bảng xếp hạng tương ứng với bestRank: "views", "freeDownloads", "paidDownloads". */
+    private String bestRankCategory;
+    /** true nếu tổng lượt tải >= 50 HOẶC tổng lượt xem >= 100 (dù ngoài top 10). */
+    private Boolean verified;
 }
