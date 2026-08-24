@@ -29,4 +29,6 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
     Optional<Category> findByIdWithParent(@Param("id") UUID id);
 
     Optional<Category> findByName(String name);
+
+    Optional<Category> findBySlug(String slug);
 }

@@ -48,5 +48,14 @@ public class CategoryTagController {
                 .collect(Collectors.toList());
         return ResponseEntity.ok(ApiResponse.success(data, "Popular tags"));
     }
+
+    @GetMapping("/tags")
+    public ResponseEntity<ApiResponse<List<TagResponseDto>>> getAllTags() {
+        List<Tag> tags = tagRepository.findByActiveTrueOrderByNameAsc();
+        List<TagResponseDto> data = tags.stream()
+                .map(TagMapper::toDto)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(ApiResponse.success(data, "All active tags"));
+    }
 }
 

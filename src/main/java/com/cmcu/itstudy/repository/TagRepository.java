@@ -32,5 +32,7 @@ public interface TagRepository extends JpaRepository<Tag, UUID> {
     Optional<Tag> findByName(String name);
 
     Optional<Tag> findBySlug(String slug);
+
+    List<Tag> findByActiveTrueOrderByNameAsc();
 }
 
