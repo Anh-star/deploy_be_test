@@ -34,6 +34,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
      */
     boolean existsBySlug(String slug);
 
+    Optional<Document> findBySlug(String slug);
+
     /**
      * Slug existence check that excludes the supplied document id. Used by
      * the update path so a document whose title is unchanged does not collide
