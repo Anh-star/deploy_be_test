@@ -1,6 +1,7 @@
 package com.cmcu.itstudy.service.impl;
 
 import com.cmcu.itstudy.dto.contributor.CertificateDto;
+import com.cmcu.itstudy.dto.contributor.ContributorProfileDto;
 import com.cmcu.itstudy.dto.contributor.ContributorRegistrationRequestDto;
 import com.cmcu.itstudy.dto.contributor.ContributorStatusDto;
 import com.cmcu.itstudy.entity.ContributorCertificate;
@@ -166,6 +167,66 @@ public class ContributorServiceImpl implements ContributorService {
                 .portfolioLink(request.getPortfolioLink())
                 .experience(request.getExperience())
                 .certificates(certificatesDto)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ContributorProfileDto getContributorProfile(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // APPROVED request phù hợp gần nhất — dùng cho experience, portfolio, certificates, contributorApprovedAt, requestStatus.
+        Optional<ContributorRequest> approvedRequest =
+                contributorRequestRepository.findFirstByUserAndStatusOrderByUpdatedAtDesc(user, ContributorRequestStatus.APPROVED);
+
+        // Request mới nhất bất kể status — chỉ dùng cho latestRequestSubmittedAt.
+        Optional<ContributorRequest> latestRequest =
+                contributorRequestRepository.findFirstByUserOrderByCreatedAtDesc(user);
+
+        String requestStatus = null;
+        LocalDateTime latestRequestSubmittedAt = null;
+        LocalDateTime contributorApprovedAt = null;
+        String experience = null;
+        String portfolioLink = null;
+        List<CertificateDto> certificates = Collections.emptyList();
+
+        // approvedRequest dùng cho contributor profile data.
+        if (approvedRequest.isPresent()) {
+            ContributorRequest req = approvedRequest.get();
+            requestStatus = req.getStatus().name();
+            contributorApprovedAt = req.getUpdatedAt();
+            experience = req.getExperience();
+            portfolioLink = req.getPortfolioLink();
+
+            if (req.getCertificates() != null && !req.getCertificates().isEmpty()) {
+                certificates = req.getCertificates().stream()
+                        .map(cert -> CertificateDto.builder()
+                                .url(cert.getCertificateUrl())
+                                .certificateName(cert.getCertificateName())
+                                .build())
+                        .collect(Collectors.toList());
+            }
+        }
+
+        // latestRequest chỉ dùng cho latestRequestSubmittedAt — tách riêng khỏi approved profile.
+        if (latestRequest.isPresent()) {
+            latestRequestSubmittedAt = latestRequest.get().getCreatedAt();
+        }
+
+        return ContributorProfileDto.builder()
+                .fullName(user.getFullName())
+                .email(user.getEmail())
+                .phone(user.getPhone())
+                .bio(user.getBio())
+                .avatarUrl(user.getAvatarUrl())
+                .userCreatedAt(user.getCreatedAt())
+                .contributorApprovedAt(contributorApprovedAt)
+                .latestRequestSubmittedAt(latestRequestSubmittedAt)
+                .requestStatus(requestStatus)
+                .experience(experience)
+                .portfolioLink(portfolioLink)
+                .certificates(certificates)
                 .build();
     }
 }

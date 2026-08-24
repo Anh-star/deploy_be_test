@@ -2,6 +2,7 @@ package com.cmcu.itstudy.controller;
 
 import com.cmcu.itstudy.dto.common.ApiResponse;
 import com.cmcu.itstudy.dto.common.MessageResponseDto;
+import com.cmcu.itstudy.dto.contributor.ContributorProfileDto;
 import com.cmcu.itstudy.dto.contributor.ContributorRegistrationRequestDto;
 import com.cmcu.itstudy.dto.contributor.ContributorStatusDto;
 import com.cmcu.itstudy.security.UserDetailsImpl;
@@ -58,5 +59,19 @@ public class ContributorController {
         ContributorStatusDto status = contributorService.getRegistrationStatus(userId);
 
         return ResponseEntity.ok(ApiResponse.success(status, "Lấy trạng thái đăng ký thành công."));
+    }
+
+    @GetMapping("/profile")
+    public ResponseEntity<ApiResponse<ContributorProfileDto>> getContributorProfile(
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        if (currentUser == null) {
+            throw new RuntimeException("Bạn cần đăng nhập để xem hồ sơ.");
+        }
+
+        UUID userId = currentUser.getUser().getId();
+        ContributorProfileDto profile = contributorService.getContributorProfile(userId);
+
+        return ResponseEntity.ok(ApiResponse.success(profile, "Lấy hồ sơ contributor thành công."));
     }
 }

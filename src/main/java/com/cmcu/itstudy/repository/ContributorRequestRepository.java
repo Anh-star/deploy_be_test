@@ -19,6 +19,8 @@ public interface ContributorRequestRepository extends JpaRepository<ContributorR
 
     Optional<ContributorRequest> findFirstByUserOrderByCreatedAtDesc(User user);
 
+    Optional<ContributorRequest> findFirstByUserAndStatusOrderByUpdatedAtDesc(User user, ContributorRequestStatus status);
+
     // Custom query to fetch all ContributorRequests with their associated User and Certificates eagerly
     @Query("SELECT DISTINCT cr FROM ContributorRequest cr LEFT JOIN FETCH cr.user LEFT JOIN FETCH cr.certificates")
     List<ContributorRequest> findAllWithUserAndCertificates();
