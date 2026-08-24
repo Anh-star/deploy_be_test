@@ -259,7 +259,8 @@ public class QuizServiceImpl implements QuizService {
             attempt.setStatus(scorePercent >= passScorePercent ? "PASSED" : "FAILED");
             QuizAttempt saved = quizAttemptRepository.save(attempt);
 
-            return QuizMapper.toQuizResultResponseDto(saved);
+            String documentId = resolveUniqueDocumentId(quiz.getId());
+            return QuizMapper.toQuizResultResponseDto(saved, quiz.getId() != null ? quiz.getId().toString() : null, documentId);
         } catch (Exception e) {
             log.error("Submit quiz error", e);
             throw e;
@@ -273,7 +274,61 @@ public class QuizServiceImpl implements QuizService {
         QuizAttempt attempt = quizAttemptRepository.findByIdWithAnswers(attemptId)
                 .orElseThrow(() -> new NoSuchElementException("Attempt not found"));
         validateAttemptOwner(attempt, userId);
-        return QuizMapper.toQuizResultResponseDto(attempt);
+        // Phase 6H — fetch kèm quiz để có quizId authoritative, không lazy-load.
+        UUID quizId = quizAttemptRepository.findByIdWithQuiz(attemptId)
+                .map(a -> a.getQuiz() != null ? a.getQuiz().getId() : null)
+                .orElseGet(() -> attempt.getQuiz() != null ? attempt.getQuiz().getId() : null);
+        String documentId = resolveUniqueDocumentId(quizId);
+        return QuizMapper.toQuizResultResponseDto(attempt, uuidToString(quizId), documentId);
+    }
+
+    /**
+     * Phase 6H.1 — resolve documentId một cách an toàn, không đoán.
+     *
+     * Background:
+     * - QuizAttempt KHÔNG giữ documentId, chỉ có quizId.
+     * - Một Quiz có thể được link từ nhiều Document (multi-document edge case
+     *   đã được nhắc tới trong DocumentQuizRepository.deleteByDocument_IdAndQuiz_Id).
+     * - Không có source authoritative nào chứng minh attempt này bắt nguồn
+     *   từ document nào nếu quiz có > 1 active mapping.
+     *
+     * Rule:
+     *   0 distinct active document → null
+     *   1 distinct active document → id đó
+     *   > 1 distinct active documents → null (không đoán, không sort, không first)
+     *
+     * Distinct theo documentId đề phòng query join bị duplicate (vd. fetch questions).
+     */
+    private String resolveUniqueDocumentId(UUID quizId) {
+        if (quizId == null) {
+            return null;
+        }
+        List<DocumentQuiz> links = documentQuizRepository.findAllByQuizIdWithDocument(quizId);
+        if (links == null || links.isEmpty()) {
+            return null;
+        }
+
+        java.util.Set<UUID> distinctActiveDocIds = new java.util.LinkedHashSet<>();
+        for (DocumentQuiz link : links) {
+            com.cmcu.itstudy.entity.Document doc = link.getDocument();
+            if (doc == null || Boolean.TRUE.equals(doc.getDeleted())) {
+                continue;
+            }
+            UUID id = doc.getId();
+            if (id != null) {
+                distinctActiveDocIds.add(id);
+            }
+        }
+
+        if (distinctActiveDocIds.size() == 1) {
+            return distinctActiveDocIds.iterator().next().toString();
+        }
+        // 0 hoặc >1 → không trả gì để FE biết mà disable nút "Xem tài liệu".
+        return null;
+    }
+
+    private String uuidToString(UUID id) {
+        return id != null ? id.toString() : null;
     }
 
     @Override

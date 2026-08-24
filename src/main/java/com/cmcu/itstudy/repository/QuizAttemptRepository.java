@@ -103,6 +103,19 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> 
             """)
     Optional<QuizAttempt> findByIdWithAnswers(@Param("id") UUID id);
 
+    /**
+     * Phase 6H — fetch attempt + quiz để service có thể trả {@code quizId}
+     * authoritative trong QuizResultResponseDto mà không phải lazy-load
+     * ngoài transaction.
+     */
+    @Query("""
+            select qa
+            from QuizAttempt qa
+            join fetch qa.quiz q
+            where qa.id = :id
+            """)
+    Optional<QuizAttempt> findByIdWithQuiz(@Param("id") UUID id);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select qa from QuizAttempt qa where qa.id = :id")
     Optional<QuizAttempt> findByIdForUpdate(@Param("id") UUID id);

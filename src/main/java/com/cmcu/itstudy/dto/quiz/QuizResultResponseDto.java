@@ -27,4 +27,10 @@ public class QuizResultResponseDto {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private List<QuizResultQuestionDto> questions;
+
+    /** Phase 6H — quiz id từ attempt.quiz, dùng cho nút "Làm lại". */
+    private String quizId;
+
+    /** Phase 6H — document id thật của quiz (qua DocumentQuiz). Có thể null nếu quiz không gắn document. */
+    private String documentId;
 }

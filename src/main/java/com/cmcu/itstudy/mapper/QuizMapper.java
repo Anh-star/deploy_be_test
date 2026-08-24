@@ -29,8 +29,26 @@ public final class QuizMapper {
     }
 
     public static QuizResultResponseDto toQuizResultResponseDto(QuizAttempt attempt) {
+        return toQuizResultResponseDto(attempt, null, null);
+    }
+
+    /**
+     * Phase 6H — phiên bản cho phép truyền sẵn {@code quizId} và {@code documentId}
+     * authoritative để tránh lazy-load ngoài transaction. {@code quizId} lấy từ
+     * {@code attempt.getQuiz().getId()} (đã được fetch trước đó). {@code documentId}
+     * lấy từ DocumentQuiz repository.
+     */
+    public static QuizResultResponseDto toQuizResultResponseDto(
+            QuizAttempt attempt,
+            String quizId,
+            String documentId) {
         if (attempt == null) {
             return null;
+        }
+
+        String resolvedQuizId = quizId;
+        if (resolvedQuizId == null && attempt.getQuiz() != null && attempt.getQuiz().getId() != null) {
+            resolvedQuizId = attempt.getQuiz().getId().toString();
         }
 
         return QuizResultResponseDto.builder()
@@ -45,6 +63,8 @@ public final class QuizMapper {
                 .startTime(attempt.getStartTime())
                 .endTime(attempt.getEndTime())
                 .questions(toResultQuestionDtos(attempt.getAnswers()))
+                .quizId(resolvedQuizId)
+                .documentId(documentId)
                 .build();
     }
 
