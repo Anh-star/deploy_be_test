@@ -167,24 +167,74 @@ BEGIN TRY
         PRINT ' - Đã xóa toàn bộ dữ liệu tbl_categories';
     END
 
-    -- 8. Tự động chuyển đổi các cột text sang NVARCHAR (hỗ trợ Tiếng Việt có dấu 100%)
-    PRINT '>>> ĐỒNG BỘ CẤU TRÚC NVARCHAR CHO TIẾNG VIỆT...';
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_categories') AND name = N'name')
-        ALTER TABLE dbo.tbl_categories ALTER COLUMN name NVARCHAR(150) NOT NULL;
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_categories') AND name = N'description')
-        ALTER TABLE dbo.tbl_categories ALTER COLUMN description NVARCHAR(500) NULL;
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_tags') AND name = N'name')
-        ALTER TABLE dbo.tbl_tags ALTER COLUMN name NVARCHAR(100) NOT NULL;
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_documents') AND name = N'title')
-        ALTER TABLE dbo.tbl_documents ALTER COLUMN title NVARCHAR(255) NOT NULL;
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_documents') AND name = N'file_name')
-        ALTER TABLE dbo.tbl_documents ALTER COLUMN file_name NVARCHAR(255) NULL;
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_documents') AND name = N'description')
-        ALTER TABLE dbo.tbl_documents ALTER COLUMN description NVARCHAR(MAX) NULL;
-    IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_documents') AND name = N'reject_reason')
-        ALTER TABLE dbo.tbl_documents ALTER COLUMN reject_reason NVARCHAR(MAX) NULL;
+    -- 8. Tự động gỡ các Index và Unique Constraint cản trở việc đổi cột sang NVARCHAR
+    PRINT '>>> GỠ BỎ CÁC INDEX/CONSTRAINT TẠM THỜI ĐỂ ĐỔI SANG NVARCHAR...';
+    DECLARE @DropSql NVARCHAR(MAX) = N'';
 
-    -- 9. Nạp lại 8 Danh mục CNTT Tiếng Việt chuẩn
+    -- Xóa các Indexes không phải Primary Key trên các cột name, description, title, etc.
+    SELECT @DropSql += N'DROP INDEX ' + QUOTENAME(i.name) + N' ON ' + QUOTENAME(SCHEMA_NAME(t.schema_id)) + N'.' + QUOTENAME(t.name) + N'; '
+    FROM sys.indexes i
+    JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+    JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+    JOIN sys.tables t ON t.object_id = i.object_id
+    WHERE t.name IN ('tbl_categories', 'tbl_tags', 'tbl_documents', 'tbl_post_tags')
+      AND c.name IN ('name', 'description', 'title', 'file_name', 'tag_name', 'reject_reason')
+      AND i.is_primary_key = 0;
+
+    -- Xóa Unique Constraints trên các cột này nếu có
+    SELECT @DropSql += N'ALTER TABLE ' + QUOTENAME(SCHEMA_NAME(t.schema_id)) + N'.' + QUOTENAME(t.name) + N' DROP CONSTRAINT ' + QUOTENAME(con.name) + N'; '
+    FROM sys.key_constraints con
+    JOIN sys.index_columns ic ON con.parent_object_id = ic.object_id AND con.unique_index_id = ic.index_id
+    JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+    JOIN sys.tables t ON t.object_id = con.parent_object_id
+    WHERE t.name IN ('tbl_categories', 'tbl_tags', 'tbl_documents', 'tbl_post_tags')
+      AND c.name IN ('name', 'description', 'title', 'file_name', 'tag_name', 'reject_reason')
+      AND con.type = 'UQ';
+
+    IF LEN(@DropSql) > 0
+    BEGIN
+        EXEC sp_executesql @DropSql;
+        PRINT ' - Đã gỡ bỏ các index/constraint phụ thuộc';
+    END
+
+    -- 9. Chuyển đổi các cột text sang NVARCHAR (hỗ trợ Tiếng Việt có dấu 100%)
+    PRINT '>>> ĐỒNG BỘ CẤU TRÚC NVARCHAR CHO TIẾNG VIỆT...';
+    BEGIN TRY
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_categories') AND name = N'name')
+            ALTER TABLE dbo.tbl_categories ALTER COLUMN name NVARCHAR(150) NOT NULL;
+    END TRY BEGIN CATCH PRINT ' - Bỏ qua alter tbl_categories.name: ' + ERROR_MESSAGE(); END CATCH;
+
+    BEGIN TRY
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_categories') AND name = N'description')
+            ALTER TABLE dbo.tbl_categories ALTER COLUMN description NVARCHAR(500) NULL;
+    END TRY BEGIN CATCH PRINT ' - Bỏ qua alter tbl_categories.description: ' + ERROR_MESSAGE(); END CATCH;
+
+    BEGIN TRY
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_tags') AND name = N'name')
+            ALTER TABLE dbo.tbl_tags ALTER COLUMN name NVARCHAR(100) NOT NULL;
+    END TRY BEGIN CATCH PRINT ' - Bỏ qua alter tbl_tags.name: ' + ERROR_MESSAGE(); END CATCH;
+
+    BEGIN TRY
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_documents') AND name = N'title')
+            ALTER TABLE dbo.tbl_documents ALTER COLUMN title NVARCHAR(255) NOT NULL;
+    END TRY BEGIN CATCH PRINT ' - Bỏ qua alter tbl_documents.title: ' + ERROR_MESSAGE(); END CATCH;
+
+    BEGIN TRY
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_documents') AND name = N'file_name')
+            ALTER TABLE dbo.tbl_documents ALTER COLUMN file_name NVARCHAR(255) NULL;
+    END TRY BEGIN CATCH PRINT ' - Bỏ qua alter tbl_documents.file_name: ' + ERROR_MESSAGE(); END CATCH;
+
+    BEGIN TRY
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_documents') AND name = N'description')
+            ALTER TABLE dbo.tbl_documents ALTER COLUMN description NVARCHAR(MAX) NULL;
+    END TRY BEGIN CATCH PRINT ' - Bỏ qua alter tbl_documents.description: ' + ERROR_MESSAGE(); END CATCH;
+
+    BEGIN TRY
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.tbl_documents') AND name = N'reject_reason')
+            ALTER TABLE dbo.tbl_documents ALTER COLUMN reject_reason NVARCHAR(MAX) NULL;
+    END TRY BEGIN CATCH PRINT ' - Bỏ qua alter tbl_documents.reject_reason: ' + ERROR_MESSAGE(); END CATCH;
+
+    -- 10. Nạp lại 8 Danh mục CNTT Tiếng Việt chuẩn
     PRINT '>>> NẠP MỚI 8 DANH MỤC CNTT CHUẨN...';
     DECLARE @Now DATETIME2 = SYSDATETIME();
 
@@ -198,7 +248,7 @@ BEGIN TRY
     (NEWID(), N'Thuật toán & Cấu trúc dữ liệu', N'thuat-toan-cau-truc-du-lieu', N'Giáo trình CTDL & GT, Giải thuật nâng cao, Luyện thi thuật toán, Lập trình thi đấu ACM/ICPC...', 7, 1, @Now, @Now),
     (NEWID(), N'Công nghệ phần mềm & Đồ án', N'cong-nghe-phan-mem-do-an', N'Phân tích thiết kế hệ thống (UML), Quản lý dự án Agile/Scrum, Hướng dẫn làm Khóa luận & Đồ án tốt nghiệp...', 8, 1, @Now, @Now);
 
-    -- 10. Nạp lại 40 Thẻ công nghệ Tiếng Việt / Chuẩn quốc tế
+    -- 11. Nạp lại 40 Thẻ công nghệ Tiếng Việt / Chuẩn quốc tế
     PRINT '>>> NẠP MỚI 40 THẺ CÔNG NGHỆ CHUẨN...';
     INSERT INTO dbo.tbl_tags (id, name, slug, usage_count, is_active, created_at, updated_at) VALUES
     -- Ngôn ngữ lập trình
