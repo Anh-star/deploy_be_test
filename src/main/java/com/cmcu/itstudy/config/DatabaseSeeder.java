@@ -197,14 +197,20 @@ public class DatabaseSeeder implements CommandLineRunner {
             jdbcTemplate.execute("IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_documents') AND name = N'reject_reason') " +
                     "ALTER TABLE tbl_documents ALTER COLUMN reject_reason NVARCHAR(MAX) NULL;");
 
-            // Clean up old corrupted tags with '?' characters
-            jdbcTemplate.execute("DELETE FROM tbl_document_tags WHERE tag_id IN (" +
-                    "SELECT id FROM tbl_tags WHERE CHARINDEX('?', name) > 0);");
-            jdbcTemplate.execute("DELETE FROM tbl_tags WHERE CHARINDEX('?', name) > 0;");
-            jdbcTemplate.execute("DELETE FROM tbl_categories WHERE CHARINDEX('?', name) > 0 " +
-                    "AND id NOT IN (SELECT DISTINCT category_id FROM tbl_documents WHERE category_id IS NOT NULL);");
+            // Make tbl_documents.category_id nullable if needed so foreign keys can be safely cleared
+            jdbcTemplate.execute("IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_documents') AND name = N'category_id' AND is_nullable = 0) " +
+                    "ALTER TABLE tbl_documents ALTER COLUMN category_id UNIQUEIDENTIFIER NULL;");
+
+            // Complete wipe of all old/garbage tags and document tag mappings
+            jdbcTemplate.execute("DELETE FROM tbl_document_tags;");
+            jdbcTemplate.execute("DELETE FROM tbl_tags;");
+
+            // Complete wipe of all old/garbage/corrupted categories
+            jdbcTemplate.execute("UPDATE tbl_documents SET category_id = NULL;");
+            jdbcTemplate.execute("UPDATE tbl_categories SET parent_id = NULL;");
+            jdbcTemplate.execute("DELETE FROM tbl_categories;");
         } catch (Exception e) {
-            System.err.println("[DatabaseSeeder] Column migration: " + e.getMessage());
+            System.err.println("[DatabaseSeeder] Column migration & cleanup: " + e.getMessage());
         }
 
         // 1. Seed Roles
@@ -224,14 +230,21 @@ public class DatabaseSeeder implements CommandLineRunner {
         seedUser("community_moderator@example.com", "Community Moderator User", communityModeratorRole);
 
         // 3. Seed Standard IT Categories (Tiếng Việt chuẩn)
-        seedCategory("Lập trình Web", "lap-trinh-web", "Tài liệu phát triển Web: Frontend, Backend, Fullstack (HTML, CSS, React, Vue, Angular, Node.js, Spring Boot, ASP.NET...)", 1);
-        seedCategory("Lập trình Di động", "lap-trinh-di-dong", "Tài liệu phát triển ứng dụng di động: Android, iOS, Flutter, React Native, Kotlin, Swift...", 2);
-        seedCategory("Cơ sở dữ liệu", "co-so-du-lieu", "Hệ quản trị CSDL quan hệ & NoSQL: SQL Server, MySQL, PostgreSQL, Oracle, MongoDB, Redis...", 3);
-        seedCategory("Trí tuệ nhân tạo & Khoa học dữ liệu", "tri-tue-nhan-tao-khoa-hoc-du-lieu", "Tài liệu AI, Machine Learning, Deep Learning, Phân tích dữ liệu, Python, TensorFlow, PyTorch...", 4);
-        seedCategory("Mạng máy tính & An toàn thông tin", "mang-may-tinh-an-toan-thong-tin", "Quản trị mạng, CCNA, An ninh mạng, Bảo mật hệ thống, Hacking đạo đức, SOC, Mật mã học...", 5);
-        seedCategory("Kiến trúc phần mềm & DevOps", "kien-truc-phan-mem-devops", "Docker, Kubernetes, CI/CD, Microservices, Điện toán đám mây (AWS, Azure, GCP), System Design...", 6);
-        seedCategory("Thuật toán & Cấu trúc dữ liệu", "thuat-toan-cau-truc-du-lieu", "Giáo trình CTDL & GT, Giải thuật nâng cao, Luyện thi thuật toán, Lập trình thi đấu ACM/ICPC...", 7);
-        seedCategory("Công nghệ phần mềm & Đồ án", "cong-nghe-phan-mem-do-an", "Phân tích thiết kế hệ thống (UML), Quản lý dự án Agile/Scrum, Hướng dẫn làm Khóa luận & Đồ án tốt nghiệp...", 8);
+        Category catWeb = seedCategory("Lập trình Web", "lap-trinh-web", "Tài liệu phát triển Web: Frontend, Backend, Fullstack (HTML, CSS, React, Vue, Angular, Node.js, Spring Boot, ASP.NET...)", 1);
+        Category catMobile = seedCategory("Lập trình Di động", "lap-trinh-di-dong", "Tài liệu phát triển ứng dụng di động: Android, iOS, Flutter, React Native, Kotlin, Swift...", 2);
+        Category catDb = seedCategory("Cơ sở dữ liệu", "co-so-du-lieu", "Hệ quản trị CSDL quan hệ & NoSQL: SQL Server, MySQL, PostgreSQL, Oracle, MongoDB, Redis...", 3);
+        Category catAi = seedCategory("Trí tuệ nhân tạo & Khoa học dữ liệu", "tri-tue-nhan-tao-khoa-hoc-du-lieu", "Tài liệu AI, Machine Learning, Deep Learning, Phân tích dữ liệu, Python, TensorFlow, PyTorch...", 4);
+        Category catNet = seedCategory("Mạng máy tính & An toàn thông tin", "mang-may-tinh-an-toan-thong-tin", "Quản trị mạng, CCNA, An ninh mạng, Bảo mật hệ thống, Hacking đạo đức, SOC, Mật mã học...", 5);
+        Category catDevOps = seedCategory("Kiến trúc phần mềm & DevOps", "kien-truc-phan-mem-devops", "Docker, Kubernetes, CI/CD, Microservices, Điện toán đám mây (AWS, Azure, GCP), System Design...", 6);
+        Category catAlgo = seedCategory("Thuật toán & Cấu trúc dữ liệu", "thuat-toan-cau-truc-du-lieu", "Giáo trình CTDL & GT, Giải thuật nâng cao, Luyện thi thuật toán, Lập trình thi đấu ACM/ICPC...", 7);
+        Category catSe = seedCategory("Công nghệ phần mềm & Đồ án", "cong-nghe-phan-mem-do-an", "Phân tích thiết kế hệ thống (UML), Quản lý dự án Agile/Scrum, Hướng dẫn làm Khóa luận & Đồ án tốt nghiệp...", 8);
+
+        // Re-link any existing documents in DB to default web category if null
+        try {
+            jdbcTemplate.execute("UPDATE tbl_documents SET category_id = '" + catWeb.getId() + "' WHERE category_id IS NULL;");
+        } catch (Exception e) {
+            System.err.println("[DatabaseSeeder] Re-linking existing documents to default category: " + e.getMessage());
+        }
 
         // 4. Seed Standard IT Tags (Phổ biến theo nhóm)
         // Ngôn ngữ lập trình
