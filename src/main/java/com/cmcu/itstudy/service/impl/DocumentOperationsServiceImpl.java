@@ -32,7 +32,9 @@ import jakarta.persistence.criteria.Predicate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
@@ -211,6 +213,58 @@ public class DocumentOperationsServiceImpl implements DocumentOperationsService 
                 .collect(Collectors.toList());
 
         return documentCardEnrichmentService.toEnrichedCardDtosWithLastViewedAt(documents, userId);
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public PagedResponseDocumentCardDto getMyViewHistory(int page, int size, UUID currentUserId) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, Math.min(size, 100));
+
+        // Page by distinct document id — GROUP BY + ORDER BY MAX(viewedAt) in JPQL.
+        // Pageable carries only page + size; sort is already in the query.
+        Pageable pageable = PageRequest.of(safePage, safeSize);
+
+        Page<UUID> documentIdPage = documentViewRepository
+                .findDistinctDocumentIdsByUserId(currentUserId, pageable);
+
+        List<UUID> orderedIds = documentIdPage.getContent();
+
+        if (orderedIds.isEmpty()) {
+            return PagedResponseDocumentCardDto.builder()
+                    .content(Collections.emptyList())
+                    .page(safePage)
+                    .size(safeSize)
+                    .totalElements(0)
+                    .totalPages(0)
+                    .build();
+        }
+
+        // Batch-fetch documents by ids — single query, no N+1.
+        // Documents already filtered by deleted=false in the repository query,
+        // so only accessible non-deleted documents are returned.
+        List<Document> fetched = documentRepository.findAllById(orderedIds);
+
+        // Reorder to match history order — findAllById does not preserve input order.
+        Map<UUID, Document> byId = fetched.stream()
+                .collect(Collectors.toMap(Document::getId, d -> d, (a, b) -> a, LinkedHashMap::new));
+
+        List<Document> orderedDocs = orderedIds.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        // lastViewedAt from user-specific DocumentView rows, not global document.lastViewedAt
+        List<DocumentCardResponseDto> content = documentCardEnrichmentService
+                .toEnrichedCardDtosWithLastViewedAt(orderedDocs, currentUserId);
+
+        return PagedResponseDocumentCardDto.builder()
+                .content(content)
+                .page(documentIdPage.getNumber())
+                .size(documentIdPage.getSize())
+                .totalElements((int) documentIdPage.getTotalElements())
+                .totalPages(documentIdPage.getTotalPages())
+                .build();
     }
 
     private Specification<Document> buildSpecification(DocumentListRequestDto request) {

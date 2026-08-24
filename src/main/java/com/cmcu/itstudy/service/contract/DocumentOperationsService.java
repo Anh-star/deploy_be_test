@@ -18,4 +18,6 @@ public interface DocumentOperationsService {
     void toggleBookmark(UUID documentId, UUID userId);
 
     List<DocumentCardResponseDto> getMyBookmarks(UUID userId);
+
+    PagedResponseDocumentCardDto getMyViewHistory(int page, int size, UUID currentUserId);
 }

@@ -9,6 +9,7 @@ import com.cmcu.itstudy.service.contract.DocumentOperationsService;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -84,5 +85,17 @@ public class DocumentBrowseController {
                 .message("Download recorded")
                 .build();
         return ResponseEntity.ok(ApiResponse.success(body, body.getMessage()));
+    }
+
+    @GetMapping("/documents/view-history")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<PagedResponseDocumentCardDto>> getMyViewHistory(
+            @RequestParam(name = "page", defaultValue = "0") @Min(0) Integer page,
+            @RequestParam(name = "size", defaultValue = "10") @Min(1) @Max(100) Integer size,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID currentUserId = currentUser != null ? currentUser.getUser().getId() : null;
+        PagedResponseDocumentCardDto data = documentOperationsService.getMyViewHistory(page, size, currentUserId);
+        return ResponseEntity.ok(ApiResponse.success(data, "View history"));
     }
 }

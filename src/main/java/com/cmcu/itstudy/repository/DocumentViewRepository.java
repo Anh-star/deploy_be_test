@@ -3,6 +3,8 @@ package com.cmcu.itstudy.repository;
 import com.cmcu.itstudy.entity.DocumentView;
 import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.entity.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -63,4 +65,37 @@ public interface DocumentViewRepository extends JpaRepository<DocumentView, Long
             order by d asc
             """, nativeQuery = true)
     List<Object[]> countDistinctUsersByViewDaySince(@Param("since") LocalDateTime since);
+
+    /**
+     * Paged distinct documents viewed by a user, ordered by most recently viewed.
+     * Each document appears at most once per page.
+     *
+     * <p>The query uses explicit {@code GROUP BY v.document.id ORDER BY max(v.viewedAt) DESC}
+     * so the ordering is deterministic at the SQL level — no Pageable Sort needed.</p>
+     *
+     * @param userId  the authenticated user id (must be non-null)
+     * @param pageable page + size only (order is in the JPQL)
+     * @return page of document ids, one row per distinct document
+     */
+    @Query(value = """
+            select v.document.id
+            from DocumentView v
+            join v.document d
+            where v.user is not null
+              and v.user.id = :userId
+              and d.deleted = false
+            group by v.document.id
+            order by max(v.viewedAt) desc
+            """,
+            countQuery = """
+            select count(distinct v.document.id)
+            from DocumentView v
+            join v.document d
+            where v.user is not null
+              and v.user.id = :userId
+              and d.deleted = false
+            """)
+    Page<UUID> findDistinctDocumentIdsByUserId(
+            @Param("userId") UUID userId,
+            Pageable pageable);
 }
