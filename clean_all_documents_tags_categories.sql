@@ -167,35 +167,39 @@ BEGIN TRY
         PRINT ' - Đã xóa toàn bộ dữ liệu tbl_categories';
     END
 
-    -- 8. Tự động gỡ các Index và Unique Constraint cản trở việc đổi cột sang NVARCHAR
-    PRINT '>>> GỠ BỎ CÁC INDEX/CONSTRAINT TẠM THỜI ĐỂ ĐỔI SANG NVARCHAR...';
-    DECLARE @DropSql NVARCHAR(MAX) = N'';
+    -- 8. Gỡ Unique Key Constraints và Index phụ thuộc trước khi đổi sang NVARCHAR
+    PRINT '>>> GỠ BỎ RÀNG BUỘC UNIQUE/INDEX PHỤ THUỘC (NẾU CÓ)...';
+    BEGIN TRY
+        DECLARE @DropUQ NVARCHAR(MAX) = N'';
+        SELECT @DropUQ += N'ALTER TABLE ' + QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + N'.' + QUOTENAME(OBJECT_NAME(parent_object_id)) + N' DROP CONSTRAINT ' + QUOTENAME(name) + N'; '
+        FROM sys.key_constraints
+        WHERE type = 'UQ'
+          AND OBJECT_NAME(parent_object_id) IN ('tbl_categories', 'tbl_tags', 'tbl_documents', 'tbl_post_tags');
 
-    -- Xóa các Indexes không phải Primary Key trên các cột name, description, title, etc.
-    SELECT @DropSql += N'DROP INDEX ' + QUOTENAME(i.name) + N' ON ' + QUOTENAME(SCHEMA_NAME(t.schema_id)) + N'.' + QUOTENAME(t.name) + N'; '
-    FROM sys.indexes i
-    JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-    JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-    JOIN sys.tables t ON t.object_id = i.object_id
-    WHERE t.name IN ('tbl_categories', 'tbl_tags', 'tbl_documents', 'tbl_post_tags')
-      AND c.name IN ('name', 'description', 'title', 'file_name', 'tag_name', 'reject_reason')
-      AND i.is_primary_key = 0;
+        IF LEN(@DropUQ) > 0
+        BEGIN
+            EXEC sp_executesql @DropUQ;
+            PRINT ' - Đã gỡ bỏ Unique Key Constraints';
+        END
 
-    -- Xóa Unique Constraints trên các cột này nếu có
-    SELECT @DropSql += N'ALTER TABLE ' + QUOTENAME(SCHEMA_NAME(t.schema_id)) + N'.' + QUOTENAME(t.name) + N' DROP CONSTRAINT ' + QUOTENAME(con.name) + N'; '
-    FROM sys.key_constraints con
-    JOIN sys.index_columns ic ON con.parent_object_id = ic.object_id AND con.unique_index_id = ic.index_id
-    JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-    JOIN sys.tables t ON t.object_id = con.parent_object_id
-    WHERE t.name IN ('tbl_categories', 'tbl_tags', 'tbl_documents', 'tbl_post_tags')
-      AND c.name IN ('name', 'description', 'title', 'file_name', 'tag_name', 'reject_reason')
-      AND con.type = 'UQ';
+        DECLARE @DropIdx NVARCHAR(MAX) = N'';
+        SELECT @DropIdx += N'DROP INDEX ' + QUOTENAME(i.name) + N' ON ' + QUOTENAME(SCHEMA_NAME(t.schema_id)) + N'.' + QUOTENAME(t.name) + N'; '
+        FROM sys.indexes i
+        JOIN sys.tables t ON t.object_id = i.object_id
+        WHERE t.name IN ('tbl_categories', 'tbl_tags', 'tbl_documents', 'tbl_post_tags')
+          AND i.is_primary_key = 0
+          AND i.is_unique_constraint = 0
+          AND i.name IS NOT NULL;
 
-    IF LEN(@DropSql) > 0
-    BEGIN
-        EXEC sp_executesql @DropSql;
-        PRINT ' - Đã gỡ bỏ các index/constraint phụ thuộc';
-    END
+        IF LEN(@DropIdx) > 0
+        BEGIN
+            EXEC sp_executesql @DropIdx;
+            PRINT ' - Đã gỡ bỏ Non-PK Indexes';
+        END
+    END TRY
+    BEGIN CATCH
+        PRINT ' - Bỏ qua gỡ bỏ index/constraint: ' + ERROR_MESSAGE();
+    END CATCH;
 
     -- 9. Chuyển đổi các cột text sang NVARCHAR (hỗ trợ Tiếng Việt có dấu 100%)
     PRINT '>>> ĐỒNG BỘ CẤU TRÚC NVARCHAR CHO TIẾNG VIỆT...';
