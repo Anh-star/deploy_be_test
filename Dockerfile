@@ -55,5 +55,5 @@ COPY --from=build /app/target/*.jar app.jar
 # Ultra-low memory footprint for 512MB RAM cap:
 # - C1 compiler only (-XX:TieredStopAtLevel=1) to eliminate heavy C2 JIT compiler threads and RAM spikes
 # - SerialGC to minimize GC thread overhead
-# - Capped heap (-Xmx140m), Metaspace (72m), CodeCache (20m), DirectMemory (12m)
-ENTRYPOINT ["java", "-Xms32m", "-Xmx140m", "-Xss256k", "-XX:MaxMetaspaceSize=72m", "-XX:ReservedCodeCacheSize=20m", "-XX:CompressedClassSpaceSize=20m", "-XX:MaxDirectMemorySize=12m", "-XX:+UseSerialGC", "-XX:+TieredCompilation", "-XX:TieredStopAtLevel=1", "-jar", "app.jar"]
+# - Capped heap (-Xmx130m), Metaspace (140m), CodeCache (32m), DirectMemory (12m)
+ENTRYPOINT ["java", "-Xms32m", "-Xmx130m", "-Xss256k", "-XX:MaxMetaspaceSize=140m", "-XX:ReservedCodeCacheSize=32m", "-XX:CompressedClassSpaceSize=32m", "-XX:MaxDirectMemorySize=12m", "-XX:+UseSerialGC", "-XX:+TieredCompilation", "-XX:TieredStopAtLevel=1", "-jar", "app.jar"]
