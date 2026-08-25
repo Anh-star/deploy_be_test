@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class CertificateDto {
     @NotBlank(message = "URL chứng chỉ không được để trống")
-    @Pattern(regexp = "^https://res.cloudinary.com/doac10qib/.*", message = "URL chứng chỉ không hợp lệ")
+    @Pattern(regexp = "^https?://.*", message = "URL chứng chỉ không hợp lệ")
     private String url;
 
     @NotBlank(message = "Tên chứng chỉ không được để trống")
