@@ -54,6 +54,6 @@ COPY --from=build /app/target/*.jar app.jar
 
 EXPOSE 8080
 # Limit JVM memory footprint so Spring Boot + LibreOffice runs safely under Render's 512MB RAM cap.
-ENV JAVA_TOOL_OPTIONS="-Xms128m -Xmx256m -XX:MaxMetaspaceSize=128m -XX:+UseSerialGC"
+ENV JAVA_TOOL_OPTIONS="-Xms64m -Xmx192m -Xss256k -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=32m -XX:+UseSerialGC"
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
