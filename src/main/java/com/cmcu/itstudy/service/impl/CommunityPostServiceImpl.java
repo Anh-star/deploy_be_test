@@ -630,11 +630,11 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         return CommunityPostMapper.toPollDto(poll, updatedOptions, userVotes);
     }
 
-    private void sendNotificationIfUnmuted(UUID recipientId, UUID senderId, UUID postId, NotificationType type, String message) {
+    private void sendNotificationIfUnmuted(UUID recipientId, UUID senderId, UUID postId, String referenceId, NotificationType type, String message) {
         if (recipientId == null || recipientId.equals(senderId)) return;
         try {
             if (!notificationMuteRepository.existsByPost_IdAndUser_Id(postId, recipientId)) {
-                notificationService.createAndPush(recipientId, senderId, type, postId.toString(), "COMMUNITY_POST", message);
+                notificationService.createAndPush(recipientId, senderId, type, referenceId != null ? referenceId : postId.toString(), "COMMUNITY_POST", message);
             }
         } catch (Exception ignored) {}
     }
@@ -692,19 +692,20 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         eventData.put("comment", commentDto);
         sseService.broadcast("new-comment", eventData);
 
-        // 2. Create and push notification to post author or parent comment author
+        // 2. Create and push notification to post author or parent comment author with target commentId
         String commenterName = (author.getFullName() != null) ? author.getFullName() : "Ai đó";
         String snippet = body != null && body.length() > 50 ? body.substring(0, 50) + "..." : (body != null ? body : "");
+        String targetRefId = post.getId() + "?commentId=" + saved.getId();
 
         UUID postAuthorId = post.getAuthor() != null ? post.getAuthor().getId() : null;
         if (parent != null && parent.getAuthor() != null) {
             UUID parentAuthorId = parent.getAuthor().getId();
-            sendNotificationIfUnmuted(parentAuthorId, userId, post.getId(), NotificationType.COMMENT_REPLIED, commenterName + " đã phản hồi bình luận của bạn: \"" + snippet + "\"");
+            sendNotificationIfUnmuted(parentAuthorId, userId, post.getId(), targetRefId, NotificationType.COMMENT_REPLIED, commenterName + " đã phản hồi bình luận của bạn: \"" + snippet + "\"");
             if (postAuthorId != null && !postAuthorId.equals(parentAuthorId)) {
-                sendNotificationIfUnmuted(postAuthorId, userId, post.getId(), NotificationType.POST_COMMENTED, commenterName + " đã bình luận về bài viết của bạn: \"" + snippet + "\"");
+                sendNotificationIfUnmuted(postAuthorId, userId, post.getId(), targetRefId, NotificationType.POST_COMMENTED, commenterName + " đã bình luận về bài viết của bạn: \"" + snippet + "\"");
             }
         } else if (postAuthorId != null) {
-            sendNotificationIfUnmuted(postAuthorId, userId, post.getId(), NotificationType.POST_COMMENTED, commenterName + " đã bình luận về bài viết của bạn: \"" + snippet + "\"");
+            sendNotificationIfUnmuted(postAuthorId, userId, post.getId(), targetRefId, NotificationType.POST_COMMENTED, commenterName + " đã bình luận về bài viết của bạn: \"" + snippet + "\"");
         }
 
         return commentDto;
@@ -894,7 +895,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                             comment.getAuthor().getId(),
                             userId,
                             NotificationType.COMMENT_LIKED,
-                            comment.getPost().getId().toString(),
+                            comment.getPost().getId().toString() + "?commentId=" + comment.getId(),
                             "COMMUNITY_POST",
                             likerName + " đã thích bình luận của bạn."
                     );

@@ -175,7 +175,7 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
                         ownerId,
                         userId,
                         NotificationType.DOCUMENT_COMMENTED,
-                        documentId.toString(),
+                        documentId.toString() + "?commentId=" + saved.getId(),
                         "DOCUMENT",
                         commenterName + " đã bình luận về tài liệu của bạn."
                 );
@@ -220,7 +220,7 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
                     parent.getAuthor().getId(),
                     userId,
                     NotificationType.COMMENT_REPLIED,
-                    parent.getDocument().getId().toString(),
+                    parent.getDocument().getId().toString() + "?commentId=" + saved.getId(),
                     "DOCUMENT",
                     replierName + " đã phản hồi bình luận của bạn."
             );
