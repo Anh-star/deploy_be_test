@@ -42,10 +42,11 @@ public class AdminDocumentController {
     @GetMapping("/pending")
     @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminPendingDocumentsPageResponseDto>> listPending(
+            @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
-        AdminPendingDocumentsPageResponseDto data = adminDocumentService.listPendingDocuments(page, size);
+        AdminPendingDocumentsPageResponseDto data = adminDocumentService.listPendingDocuments(status, page, size);
         return ResponseEntity.ok(ApiResponse.success(data, "Pending documents"));
     }
 

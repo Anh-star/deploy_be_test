@@ -47,6 +47,10 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @Query("select d from Document d where d.status = :status and d.deleted = false order by d.createdAt desc")
     Page<Document> findPendingPageWithCategoryAndCreator(@Param("status") DocumentStatus status, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"category", "createdBy"})
+    @Query("select d from Document d where d.deleted = false order by d.createdAt desc")
+    Page<Document> findAllPageWithCategoryAndCreator(Pageable pageable);
+
     Page<Document> findByStatusAndDeletedFalseOrderByCreatedAtDesc(DocumentStatus status, Pageable pageable);
 
     Page<Document> findByStatusOrderByCreatedAtDesc(DocumentStatus status, Pageable pageable);

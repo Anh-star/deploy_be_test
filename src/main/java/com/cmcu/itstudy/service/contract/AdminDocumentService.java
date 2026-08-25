@@ -10,7 +10,11 @@ import java.util.UUID;
 
 public interface AdminDocumentService {
 
-    AdminPendingDocumentsPageResponseDto listPendingDocuments(int page, int size);
+    AdminPendingDocumentsPageResponseDto listPendingDocuments(String status, int page, int size);
+
+    default AdminPendingDocumentsPageResponseDto listPendingDocuments(int page, int size) {
+        return listPendingDocuments(null, page, size);
+    }
 
     DocumentAdminDetailDto getDocumentDetail(UUID documentId);
 

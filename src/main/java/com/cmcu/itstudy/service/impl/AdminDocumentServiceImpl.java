@@ -117,13 +117,31 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
 
     @Override
     @Transactional(readOnly = true)
-    public AdminPendingDocumentsPageResponseDto listPendingDocuments(int page, int size) {
+    public AdminPendingDocumentsPageResponseDto listPendingDocuments(String status, int page, int size) {
         int p = Math.max(0, page);
         int s = size < 1 ? 10 : Math.min(size, 100);
-        Page<Document> result = documentRepository.findPendingPageWithCategoryAndCreator(
-                DocumentStatus.PENDING,
-                PageRequest.of(p, s)
-        );
+
+        DocumentStatus docStatus = null;
+        if (status != null && !status.isBlank() && !status.equalsIgnoreCase("ALL")) {
+            try {
+                docStatus = DocumentStatus.valueOf(status.trim().toUpperCase());
+            } catch (IllegalArgumentException ignored) {
+                // If invalid status string, docStatus stays null
+            }
+        }
+
+        Page<Document> result;
+        if (docStatus != null) {
+            result = documentRepository.findPendingPageWithCategoryAndCreator(
+                    docStatus,
+                    PageRequest.of(p, s)
+            );
+        } else {
+            result = documentRepository.findAllPageWithCategoryAndCreator(
+                    PageRequest.of(p, s)
+            );
+        }
+
         List<DocumentCardDto> content = result.getContent().stream()
                 .map(this::toPendingCardDto)
                 .collect(Collectors.toList());
