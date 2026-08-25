@@ -52,11 +52,8 @@ COPY --from=build /app/target/*.jar app.jar
 # Render assigns a port dynamically via the PORT env var.
 # Keep the existing application port configuration.
 
-EXPOSE 8080
 # Ultra-low memory footprint for 512MB RAM cap:
 # - C1 compiler only (-XX:TieredStopAtLevel=1) to eliminate heavy C2 JIT compiler threads and RAM spikes
 # - SerialGC to minimize GC thread overhead
-# - Capped heap (-Xmx112m), Metaspace (72m), CodeCache (20m), DirectMemory (12m) to leave 340MB+ RAM for LibreOffice
-ENV JAVA_TOOL_OPTIONS="-Xms32m -Xmx112m -Xss256k -XX:MaxMetaspaceSize=72m -XX:ReservedCodeCacheSize=20m -XX:CompressedClassSpaceSize=20m -XX:MaxDirectMemorySize=12m -XX:+UseSerialGC -XX:+TieredCompilation -XX:TieredStopAtLevel=1"
-
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# - Capped heap (-Xmx140m), Metaspace (72m), CodeCache (20m), DirectMemory (12m)
+ENTRYPOINT ["java", "-Xms32m", "-Xmx140m", "-Xss256k", "-XX:MaxMetaspaceSize=72m", "-XX:ReservedCodeCacheSize=20m", "-XX:CompressedClassSpaceSize=20m", "-XX:MaxDirectMemorySize=12m", "-XX:+UseSerialGC", "-XX:+TieredCompilation", "-XX:TieredStopAtLevel=1", "-jar", "app.jar"]

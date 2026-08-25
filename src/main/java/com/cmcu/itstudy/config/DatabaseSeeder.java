@@ -40,7 +40,7 @@ import java.util.List;
         prefix = "app.database.seeder",
         name = "enabled",
         havingValue = "true",
-        matchIfMissing = true
+        matchIfMissing = false
 )
 public class DatabaseSeeder implements CommandLineRunner {
 
