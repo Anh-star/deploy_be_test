@@ -85,7 +85,7 @@ public class AdminUserController {
     }
 
     @PostMapping("/{id}/roles")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminUserResponseDto>> assignRole(
             @PathVariable UUID id,
             @Valid @RequestBody AdminAssignRoleRequestDto request
@@ -95,7 +95,7 @@ public class AdminUserController {
     }
 
     @DeleteMapping("/{id}/roles/{roleId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
     public ResponseEntity<ApiResponse<MessageResponseDto>> removeRole(
             @PathVariable UUID id,
             @PathVariable UUID roleId

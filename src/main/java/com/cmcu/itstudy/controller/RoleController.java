@@ -40,7 +40,7 @@ public class RoleController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminRolePageResponseDto>> listRoles(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
@@ -50,7 +50,7 @@ public class RoleController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminRoleResponseDto>> getRole(@PathVariable UUID id) {
         AdminRoleResponseDto data = roleService.getRole(id);
         return ResponseEntity.ok(ApiResponse.success(data, "Role detail"));
