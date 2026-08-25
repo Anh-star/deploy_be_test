@@ -2,6 +2,7 @@ package com.cmcu.itstudy.controller;
 
 import com.cmcu.itstudy.dto.autoquiz.AutoQuizCallbackRequestDto;
 import com.cmcu.itstudy.dto.autoquiz.AutoQuizCallbackResponseDto;
+import com.cmcu.itstudy.dto.autoquiz.AutoQuizTechnicalFailureRequestDto;
 import com.cmcu.itstudy.handle.AutoQuizCallbackAccessDeniedException;
 import com.cmcu.itstudy.handle.AutoQuizSourceAccessDeniedException;
 import com.cmcu.itstudy.service.contract.AutoQuizCallbackService;
@@ -152,6 +153,88 @@ public class AutoQuizCallbackController {
         AutoQuizCallbackResponseDto response =
                 callbackService.processBusinessRejection(
                         generationId, suppliedToken);
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(response);
+    }
+
+    /**
+     * Phase 7B.3 — n8n technical-failure callback.
+     *
+     * <p>Used by the dispatch worker to report a TECHNICAL failure
+     * (Structured Output Parser failed, JSON schema invalid,
+     * upstream node crashed before any AI output, etc.). This is
+     * distinct from the {@code /reject} business-rejection path:
+     * the {@code /reject} endpoint hard-codes
+     * {@code FOCUS_TOPIC_MISMATCH} which would lie about the
+     * document-content match if it were used to report a parser
+     * failure.</p>
+     *
+     * <h3>Authentication</h3>
+     * <p>Identical to {@code /complete} and {@code /reject}: the
+     * endpoint is permit-all at Spring Security level; the
+     * per-row {@code dispatchToken} guards access via the service
+     * layer.</p>
+     *
+     * <h3>Request</h3>
+     * <ul>
+     *   <li>Path: {@code POST /api/auto-quiz/generations/{generationId}/fail}</li>
+     *   <li>Header: {@code X-Auto-Quiz-Dispatch-Token: <uuid>}</li>
+     *   <li>Body: {@link AutoQuizTechnicalFailureRequestDto}
+     *       <ul>
+     *         <li>{@code errorCode} (required, server-whitelisted:
+     *             {@code AI_OUTPUT_INVALID},
+     *             {@code AI_SCHEMA_INVALID} or
+     *             {@code AI_WORKFLOW_FAILED})</li>
+     *         <li>{@code message} (optional, bounded to 200 chars;
+     *             sanitised server-side; logged but never echoed
+     *             back to client; never persisted as
+     *             {@code lastError})</li>
+     *       </ul>
+     *   </li>
+     * </ul>
+     *
+     * <h3>Response</h3>
+     * <ul>
+     *   <li>HTTP 200 &mdash; technical failure accepted:
+     *       {@code {accepted: true, status: "FAILED", generationId, message: "Generation failed"}}</li>
+     *   <li>HTTP 403 &mdash; rejected (wrong/missing token, not in
+     *       PROCESSING state, lease invalidated by CANCELLED race):
+     *       {@code {accepted: false, status, generationId, message}}</li>
+     *   <li>HTTP 400 &mdash; malformed body, missing errorCode, or
+     *       non-whitelisted errorCode:
+     *       {@code {success: false, message: "..."}}</li>
+     * </ul>
+     *
+     * <h3>Side effects</h3>
+     * <p>On HTTP 200 the generation row transitions
+     * {@code PROCESSING -> FAILED} with {@code lastError} set to
+     * the whitelisted {@code errorCode}. No {@code Quiz}, no
+     * questions, no options, no {@code DocumentQuiz} association
+     * is created. The row remains in history; the FE retry button
+     * creates a brand-new {@code QuizGeneration} row.</p>
+     */
+    @PostMapping(
+            value = "/generations/{generationId}/fail",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<AutoQuizCallbackResponseDto> failGeneration(
+            @PathVariable("generationId") UUID generationId,
+            @RequestHeader(value = HEADER_DISPATCH_TOKEN, required = false)
+                    String dispatchTokenRaw,
+            @Valid @RequestBody AutoQuizTechnicalFailureRequestDto request) {
+
+        UUID suppliedToken = parseDispatchToken(dispatchTokenRaw);
+
+        log.info(
+                "Auto Quiz technical-failure callback received: "
+                        + "generationId={}",
+                generationId);
+
+        AutoQuizCallbackResponseDto response =
+                callbackService.processTechnicalFailure(
+                        generationId, suppliedToken, request);
 
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_JSON)

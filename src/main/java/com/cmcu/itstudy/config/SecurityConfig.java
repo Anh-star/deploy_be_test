@@ -93,6 +93,8 @@ public class SecurityConfig {
                                 "/api/auto-quiz/generations/*/complete").permitAll()
                         .requestMatchers(HttpMethod.POST,
                                 "/api/auto-quiz/generations/*/reject").permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/auto-quiz/generations/*/fail").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/payments/return").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/payments/ipn").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/payments/webhook").permitAll()

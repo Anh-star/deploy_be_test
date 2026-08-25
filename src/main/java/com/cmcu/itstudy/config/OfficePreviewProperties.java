@@ -90,17 +90,27 @@ public class OfficePreviewProperties {
     private Duration semaphoreWaitTimeout = Duration.ofSeconds(10);
 
     /**
-     * Hard cap on the number of concurrent LibreOffice conversions
-     * running inside this JVM. Default 2 keeps memory and CPU bounded
-     * while still letting a small DOCX start while a larger one is
-     * still mid-conversion. The cap is enforced by a {@link Semaphore}
-     * inside {@code LibreOfficeDocumentConverter}; each conversion
-     * acquires a permit before any temporary directory is created and
-     * releases it in the same {@code finally} block that owns the
-     * temporary directories, so permits are never leaked on
-     * retryable failure, interruption, or shutdown.
+     * Phase 7B — tightened the default from {@code 2} to {@code 1} so a
+     * DOC/DOCX FULL conversion can run inside the Render Free 512 MB
+     * cgroup without OOM-killing the JVM. Each LibreOffice child
+     * process can hold 100–200 MB of native memory on a complex DOCX;
+     * running two in parallel would push the working set over the
+     * cgroup limit and force a container restart, leaving the
+     * PROCESSING row stranded (stale-PROCESSING reclaim picks it up
+     * on the next cycle, but the user-facing OOM restart remains).
+     *
+     * <p>The cap is enforced by a {@link Semaphore} inside
+     * {@code LibreOfficeDocumentConverter}; each conversion acquires a
+     * permit before any temporary directory is created and releases it
+     * in the same {@code finally} block that owns the temporary
+     * directories, so permits are never leaked on retryable failure,
+     * interruption, or shutdown.</p>
+     *
+     * <p>Operators that deploy to a larger memory budget (>= 2 GB)
+     * can override the default per environment via the env name
+     * {@code APP_PREVIEW_OFFICE_MAX_CONCURRENT_CONVERSIONS}.</p>
      */
-    private int maxConcurrentConversions = 2;
+    private int maxConcurrentConversions = 1;
 
     /**
      * Maximum accepted Office input size in bytes. Inputs that exceed

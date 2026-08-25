@@ -359,48 +359,61 @@ public class DocumentPreviewArtifactProcessor {
                             claim.maxAttempts()),
                     failureClassifier.safeOperationalCode(e), now);
         }
+        // Phase 7B — drop the strong reference to the downloaded
+        // Office bytes as soon as the converter returns. The converter
+        // has already streamed them to a temp file and consumed them;
+        // keeping the byte[] alive any longer forces the JVM to hold
+        // BOTH the source DOC/DOCX bytes AND the freshly generated PDF
+        // bytes simultaneously in heap. On the Render Free 512 MB
+        // cgroup this dual residency has been observed to push the
+        // working set over the limit during validation/upload and
+        // trigger a container OOM kill. The reference is nulled here
+        // so the GC can reclaim the source buffer before validation
+        // and upload run.
+        originalBytes = null;
+        request = null;
 
         // Checkpoint #4: immediately after conversion, before
         // validation. A failure here leaves no object on Supabase; the
         // worker simply reports INTERRUPTED.
         ensureNotInterrupted("full.after-conversion", null, null);
 
-        // 5. Validate the generated PDF on disk through the frozen
-        //    validator. The validator already counts pages, so we
-        //    reuse the count for the guarded markReady.
-        int pageCount;
-        Path tempPdf = null;
-        try {
-            tempPdf = Files.createTempFile("preview-full-", ".pdf");
-            Files.write(tempPdf, result.pdfBytes());
-            pageCount = officePdfValidationService.validateAndCountPages(
-                    tempPdf);
-        } catch (IOException e) {
-            return applyDecision(claim,
-                    DocumentPreviewFailureClassifier.Decision.RETRYABLE,
-                    "O3_VALIDATION_IO", now);
-        } catch (RuntimeException e) {
-            return applyDecision(claim,
-                    failureClassifier.classify(e, claim.attemptCount(),
-                            claim.maxAttempts()),
-                    failureClassifier.safeOperationalCode(e), now);
-        } finally {
-            if (tempPdf != null) {
-                try {
-                    Files.deleteIfExists(tempPdf);
-                } catch (IOException ignored) {
-                    // The temp file lives in the JVM default temp dir;
-                    // the OS reclaims it on next boot.
-                }
-            }
-        }
+        // 5. Phase 7B.1 — page count reuse, NOT a redundant
+        //    re-validation. The PDF was already validated inside
+        //    LibreOfficeDocumentConverter.convert() (the validator
+        //    counted pages on the converter-side output file BEFORE
+        //    the bytes were packaged into OfficeConversionResult).
+        //    Re-running validateAndCountPages here would re-read the
+        //    PDF bytes via Files.readAllBytes, re-load the PDF into
+        //    PDFBox, and write+delete a temp file — duplicating one
+        //    full PDF read plus one PDFBox load. On the Render Free
+        //    512 MB cgroup this duplication is observable as a second
+        //    full-size PDF byte[] + a second PDFBox document resident
+        //    in heap simultaneously with the original.
+        //
+        //    The validator contract that matters for the
+        //    REQUIRES_NEW transition is the pageCount field on
+        //    OfficeConversionResult: pageCount > 0 is enforced by
+        //    the record constructor and by the converter's own
+        //    OfficeConversionInvalidOutputException path
+        //    (validateAndCountPages already returns > 0 or throws).
+        //    The same bytes flow into result.pdfBytes() in the same
+        //    thread, so a defensive re-validation here cannot
+        //    observe a different answer.
+        int pageCount = result.pageCount();
         if (pageCount <= 0) {
             return applyDecision(claim,
                     DocumentPreviewFailureClassifier.Decision.PERMANENT_DEAD,
                     "O3_INVALID_OUTPUT", now);
         }
 
-        // Checkpoint #5: after PDF validation.
+        // Checkpoint #5: kept for backwards-compatible interrupt
+        // semantics. The validation that previously ran here has
+        // been hoisted into the converter and is now reused as
+        // result.pageCount() above. The interrupt boundary itself
+        // is unchanged — operators reading logs from older versions
+        // continue to see the same checkpoint id at the same
+        // logical position.
         ensureNotInterrupted("full.after-validation", null, null);
 
         // 6. Build the deterministic, attempt-owned preview path.
@@ -439,6 +452,13 @@ public class DocumentPreviewArtifactProcessor {
                             claim.maxAttempts()),
                     failureClassifier.safeOperationalCode(e), now);
         }
+
+        // Phase 7B — drop the strong reference to the generated PDF
+        // bytes once the upload has committed. The PDF is now in
+        // Supabase; the JVM does not need to keep the full byte[]
+        // alive any longer. This frees one more 25 MB-class buffer
+        // before the bridge / markReady work runs.
+        result = null;
 
         // Checkpoint #7: immediately after upload, before markReady.
         // The uploaded object belongs to this EXACT attempt and MUST

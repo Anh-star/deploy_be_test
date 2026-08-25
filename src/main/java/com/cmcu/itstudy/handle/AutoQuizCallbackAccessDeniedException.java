@@ -22,7 +22,8 @@ public class AutoQuizCallbackAccessDeniedException extends RuntimeException {
         QUESTION_COUNT_MISMATCH,
         QUESTIONS_EMPTY,
         ANSWER_COUNT_WRONG,
-        CORRECT_INDEX_OUT_OF_RANGE
+        CORRECT_INDEX_OUT_OF_RANGE,
+        UNKNOWN_ERROR_CODE
     }
 
     private final Reason reason;

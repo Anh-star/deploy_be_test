@@ -3,6 +3,7 @@ package com.cmcu.itstudy.service.impl;
 import com.cmcu.itstudy.dto.autoquiz.AutoQuizCallbackRequestDto;
 import com.cmcu.itstudy.dto.autoquiz.AutoQuizCallbackResponseDto;
 import com.cmcu.itstudy.dto.autoquiz.AutoQuizCallbackRequestDto.AutoQuizCallbackQuestionDto;
+import com.cmcu.itstudy.dto.autoquiz.AutoQuizTechnicalFailureRequestDto;
 import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.entity.DocumentQuiz;
 import com.cmcu.itstudy.entity.Quiz;
@@ -628,6 +629,194 @@ public class AutoQuizCallbackServiceImpl implements AutoQuizCallbackService {
                 .status(QuizGenerationStatus.FAILED.name())
                 .generationId(generationId)
                 .message(BUSINESS_REJECTION_RESPONSE_MESSAGE)
+                .build();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 7B.3 — technical-failure callback.
+    //
+    // Distinct from {@link #processBusinessRejection}: this path is
+    // for n8n to report a TECHNICAL failure (Structured Output
+    // Parser failed, JSON schema invalid, upstream node crashed
+    // before any AI output, etc.). The supplied {@code errorCode}
+    // is whitelisted server-side so the client cannot smuggle an
+    // arbitrary {@code lastError} string. The supplied
+    // {@code message} is logged for operator diagnostics but
+    // sanitised through {@link SafeArtifactLastError} before
+    // storage; it is NEVER echoed back to the client and it does
+    // NOT form part of the persisted {@code lastError}.
+    //
+    // NO {@code Quiz}, NO questions, NO options, NO
+    // {@code DocumentQuiz} association is created. The generation
+    // row is terminalised to {@code FAILED} with the sanitised
+    // whitelisted code. The row remains in history; the FE retry
+    // button creates a brand-new {@code QuizGeneration} row
+    // through {@code createMyDocumentAutoQuiz} and the existing
+    // Phase 7B.2 lineage mechanism tags the new attempt as
+    // "Đã chỉnh sửa".
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Whitelist of error codes accepted on the technical-failure
+     * callback. Mirrors the {@code FOCUS_TOPIC_MISMATCH} whitelist
+     * on the business-rejection path: server-owned, not
+     * caller-supplied.
+     */
+    private static final java.util.Set<String> ALLOWED_TECHNICAL_ERROR_CODES =
+            java.util.Set.of(
+                    AutoQuizTechnicalFailureRequestDto.CODE_AI_OUTPUT_INVALID,
+                    AutoQuizTechnicalFailureRequestDto.CODE_AI_SCHEMA_INVALID,
+                    AutoQuizTechnicalFailureRequestDto.CODE_AI_WORKFLOW_FAILED);
+
+    /**
+     * Public-safe response message echoed back to the caller for
+     * the technical-failure path. A single safe constant; never
+     * echoes the supplied error code or message.
+     */
+    private static final String TECHNICAL_FAILURE_RESPONSE_MESSAGE =
+            "Generation failed";
+
+    @Override
+    @Transactional
+    public AutoQuizCallbackResponseDto processTechnicalFailure(
+            UUID generationId,
+            UUID dispatchToken,
+            AutoQuizTechnicalFailureRequestDto request) {
+
+        // Step 1: minimal input validation. Token is REQUIRED
+        // (parity with /complete and /reject).
+        if (generationId == null) {
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.GENERATION_NOT_FOUND,
+                    "Generation not found");
+        }
+        if (dispatchToken == null) {
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.MISSING_TOKEN,
+                    "Dispatch token is required");
+        }
+        if (request == null
+                || request.getErrorCode() == null
+                || request.getErrorCode().isBlank()) {
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.UNKNOWN_ERROR_CODE,
+                    "errorCode is required");
+        }
+
+        // Step 2: whitelist gate. The supplied errorCode MUST be
+        // one of the server-owned values; otherwise the caller is
+        // trying to smuggle an arbitrary lastError into the
+        // database. Reject with a safe envelope.
+        String requestedCode = request.getErrorCode().trim();
+        if (!ALLOWED_TECHNICAL_ERROR_CODES.contains(requestedCode)) {
+            log.warn(
+                    "Auto Quiz technical-failure callback rejected: "
+                            + "errorCode not in whitelist generationId={} "
+                            + "requestedCode={}",
+                    generationId, requestedCode);
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.UNKNOWN_ERROR_CODE,
+                    "errorCode is not whitelisted");
+        }
+
+        // Step 3: load the generation row. NOT_FOUND uses the
+        // same safe envelope as the other callbacks so the
+        // caller cannot probe for row existence.
+        QuizGeneration generation = generationRepository.findById(generationId)
+                .orElseThrow(() -> new AutoQuizCallbackAccessDeniedException(
+                        Reason.GENERATION_NOT_FOUND,
+                        "Generation not found"));
+
+        // Step 4: constant-time token validation. Mirrors the
+        // semantics of processCallback and processBusinessRejection
+        // exactly.
+        if (!constantTimeTokenEquals(
+                generation.getDispatchToken(), dispatchToken)) {
+            log.warn(
+                    "Auto Quiz technical-failure callback rejected: "
+                            + "token mismatch generationId={}",
+                    generationId);
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.TOKEN_MISMATCH,
+                    "Dispatch token does not match this generation");
+        }
+
+        // Step 5: status gate. The technical-failure path is ONLY
+        // valid for PROCESSING. CANCELLED wins (cannot be
+        // resurrected). Any other status is rejected with the
+        // same "not in PROCESSING state" envelope used by
+        // /complete and /reject.
+        if (generation.getStatus() != QuizGenerationStatus.PROCESSING) {
+            log.warn(
+                    "Auto Quiz technical-failure callback rejected: "
+                            + "unexpected status={} generationId={}",
+                    generation.getStatus(),
+                    generationId);
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.GENERATION_NOT_FOUND,
+                    "Generation is not in PROCESSING state");
+        }
+
+        // Step 6: sanitise the message. The whitelisted code is
+        // already safe (no caller-supplied bytes reach this
+        // point); we still run it through SafeArtifactLastError
+        // for defence-in-depth parity with the
+        // business-rejection path.
+        String reasonCode = SafeArtifactLastError.sanitize(
+                requestedCode, 80);
+        if (reasonCode == null || reasonCode.isBlank()) {
+            reasonCode = requestedCode;
+        }
+        String sanitisedMessage = request.getMessage() == null
+                ? null
+                : SafeArtifactLastError.sanitize(
+                        request.getMessage(), 200);
+        // Log the sanitised message so an operator reading the
+        // log can correlate the failure. NEVER store it on
+        // lastError (lastError = the whitelist code only).
+        if (sanitisedMessage != null && !sanitisedMessage.isBlank()) {
+            log.info(
+                    "Auto Quiz technical-failure accepted: "
+                            + "generationId={} errorCode={} "
+                            + "diagnosticMessage={}",
+                    generationId, reasonCode, sanitisedMessage);
+        } else {
+            log.info(
+                    "Auto Quiz technical-failure accepted: "
+                            + "generationId={} errorCode={}",
+                    generationId, reasonCode);
+        }
+
+        // Step 7: atomic PROCESSING -> FAILED transition. Same
+        // UPDATE the business-rejection callback uses; the
+        // dispatchToken guard means affectedRows == 0 if a
+        // CANCELLED race or a lease rotation already terminalised
+        // the row.
+        LocalDateTime now = LocalDateTime.now();
+        int updated = generationRepository.markFailedFromProcessing(
+                generationId, dispatchToken, reasonCode, now);
+
+        if (updated != 1) {
+            log.warn(
+                    "Auto Quiz technical-failure callback: "
+                            + "PROCESSING -> FAILED update affected "
+                            + "no rows (generationId={}). Likely a "
+                            + "CANCELLED race or stale lease.",
+                    generationId);
+            throw new AutoQuizCallbackAccessDeniedException(
+                    Reason.GENERATION_NOT_FOUND,
+                    "Generation is not in PROCESSING state");
+        }
+
+        // Step 8: response envelope. A single safe constant — it
+        // never echoes the supplied errorCode or message. The
+        // status string reflects the terminal state the caller
+        // should now observe.
+        return AutoQuizCallbackResponseDto.builder()
+                .accepted(true)
+                .status(QuizGenerationStatus.FAILED.name())
+                .generationId(generationId)
+                .message(TECHNICAL_FAILURE_RESPONSE_MESSAGE)
                 .build();
     }
 }

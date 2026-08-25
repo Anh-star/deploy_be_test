@@ -84,4 +84,77 @@ public interface AutoQuizCallbackService {
     AutoQuizCallbackResponseDto processBusinessRejection(
             UUID generationId,
             UUID dispatchToken);
+
+    /**
+     * Phase 7B.3 — terminal technical-failure callback.
+     *
+     * <p>Used by n8n to report that the workflow could NOT produce a
+     * structurally valid quiz output (Structured Output Parser
+     * failed, JSON schema invalid, upstream node crashed before any
+     * AI output was emitted, etc.). This is a <strong>technical</strong>
+     * failure path that is distinct from the business / semantic
+     * {@link #processBusinessRejection} callback. A technical
+     * failure MUST NOT be reported via {@code /reject}: that
+     * endpoint hard-codes {@code FOCUS_TOPIC_MISMATCH} which would
+     * lie about the document-content match.</p>
+     *
+     * <h3>Security model</h3>
+     * <ul>
+     *   <li>The supplied {@code dispatchToken} must match the row's
+     *       stored token (constant-time comparison). Identical to
+     *       the other two callbacks.</li>
+     *   <li>The {@code errorCode} field is whitelisted server-side;
+     *       only {@code AI_OUTPUT_INVALID}, {@code AI_SCHEMA_INVALID}
+     *       and {@code AI_WORKFLOW_FAILED} are accepted. Any other
+     *       value is rejected with HTTP 400.</li>
+     *   <li>The supplied {@code message} is bounded to 200 chars at
+     *       the DTO level AND sanitised through
+     *       {@code SafeArtifactLastError} before storage, so a raw
+     *       stack trace / model output / secrets never lands in the
+     *       database. The message is logged but never echoed back
+     *       to the client.</li>
+     * </ul>
+     *
+     * <h3>Side effects (atomic via
+     * {@code QuizGenerationRepository.markFailedFromProcessing})</h3>
+     * <ul>
+     *   <li>{@code status = FAILED} (terminal)</li>
+     *   <li>{@code failedAt = now}</li>
+     *   <li>{@code lastError} = the whitelisted error code
+     *       (never the raw {@code message})</li>
+     *   <li>{@code dispatchToken} and {@code nextAttemptAt} cleared</li>
+     *   <li>NO {@code Quiz} row is created. NO questions, options
+     *       or DocumentQuiz association.</li>
+     *   <li>NO QuizGeneration history is deleted &mdash; the row
+     *       becomes the immutable historical record of this
+     *       technical attempt.</li>
+     * </ul>
+     *
+     * <h3>Retry UI</h3>
+     * <p>Because the row is terminal, the existing retry UI flow
+     * (FE creates a NEW {@code QuizGeneration} via
+     * {@code createMyDocumentAutoQuiz}) works without any change.
+     * The Phase 7B.2 lineage mechanism keeps the old FAILED row
+     * in history and the new generation as the current attempt.</p>
+     *
+     * @param generationId the generation ID from the URL path
+     * @param dispatchToken the token from the
+     *        {@code X-Auto-Quiz-Dispatch-Token} header
+     * @param request the technical-failure body. {@code errorCode}
+     *        is required and must be whitelisted;
+     *        {@code message} is optional and bounded.
+     * @return a response carrying {@code status = FAILED} and a
+     *         safe {@code message} so the caller never sees raw
+     *         error text
+     * @throws com.cmcu.itstudy.handle.AutoQuizCallbackAccessDeniedException
+     *         when the generation does not exist, the token does
+     *         not match, the generation is not in PROCESSING state,
+     *         the lease was invalidated by another writer, or the
+     *         supplied {@code errorCode} is not whitelisted
+     */
+    AutoQuizCallbackResponseDto processTechnicalFailure(
+            UUID generationId,
+            UUID dispatchToken,
+            com.cmcu.itstudy.dto.autoquiz
+                    .AutoQuizTechnicalFailureRequestDto request);
 }
