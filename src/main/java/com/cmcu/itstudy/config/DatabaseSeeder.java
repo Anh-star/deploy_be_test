@@ -377,20 +377,21 @@ public class DatabaseSeeder implements CommandLineRunner {
             seedRolePermission(adminRole, perm);
         }
 
-        // CONTENT_MODERATOR gets document and contributor request permissions + respective menus + user permissions
+        // CONTENT_MODERATOR gets category, tag, document, and report permissions + respective menus + user permissions
         List<Permission> contentModPermissions = List.of(
-            pContribRead, pContribWrite, pDocRead, pDocWrite,
-            pMenuDashboard, pMenuContribs, pMenuDocs,
+            pCatRead, pCatWrite, pTagRead, pTagWrite,
+            pDocRead, pDocWrite, pReportRead, pReportWrite,
+            pMenuDashboard, pMenuCats, pMenuTags, pMenuDocs, pMenuReports,
             pProfileView, pUserStatsView, pBookmarkView, pHistQuizView, pHistDocView
         );
         for (Permission perm : contentModPermissions) {
             seedRolePermission(contentModeratorRole, perm);
         }
 
-        // USER_MODERATOR gets user read and report permissions + respective menus + user permissions
+        // USER_MODERATOR gets user and contributor request permissions + respective menus + user permissions
         List<Permission> userModPermissions = List.of(
-            pUserRead, pReportRead, pReportWrite,
-            pMenuReports,
+            pUserRead, pUserWrite, pContribRead, pContribWrite,
+            pMenuDashboard, pMenuUsers, pMenuContribs,
             pProfileView, pUserStatsView, pBookmarkView, pHistQuizView, pHistDocView
         );
         for (Permission perm : userModPermissions) {
