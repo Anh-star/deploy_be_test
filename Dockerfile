@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy pom.xml and download dependencies (cached layer)
 
-ENV MAVEN_OPTS="-Xmx256m -Xms128m"
+ENV MAVEN_OPTS="-Xmx256m -Xms64m -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
 
 COPY pom.xml .
 RUN mvn dependency:go-offline -B
@@ -53,7 +53,10 @@ COPY --from=build /app/target/*.jar app.jar
 # Keep the existing application port configuration.
 
 EXPOSE 8080
-# Limit JVM memory footprint so Spring Boot + LibreOffice runs safely under Render's 512MB RAM cap.
-ENV JAVA_TOOL_OPTIONS="-Xms64m -Xmx192m -Xss256k -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=32m -XX:+UseSerialGC"
+# Ultra-low memory footprint for 512MB RAM cap:
+# - C1 compiler only (-XX:TieredStopAtLevel=1) to eliminate heavy C2 JIT compiler threads and RAM spikes
+# - SerialGC to minimize GC thread overhead
+# - Capped heap (-Xmx160m), Metaspace (80m), CodeCache (24m), DirectMemory (16m)
+ENV JAVA_TOOL_OPTIONS="-Xms32m -Xmx160m -Xss256k -XX:MaxMetaspaceSize=80m -XX:ReservedCodeCacheSize=24m -XX:CompressedClassSpaceSize=24m -XX:MaxDirectMemorySize=16m -XX:+UseSerialGC -XX:+TieredCompilation -XX:TieredStopAtLevel=1"
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
