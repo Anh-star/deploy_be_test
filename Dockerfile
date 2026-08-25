@@ -56,7 +56,7 @@ EXPOSE 8080
 # Ultra-low memory footprint for 512MB RAM cap:
 # - C1 compiler only (-XX:TieredStopAtLevel=1) to eliminate heavy C2 JIT compiler threads and RAM spikes
 # - SerialGC to minimize GC thread overhead
-# - Capped heap (-Xmx160m), Metaspace (80m), CodeCache (24m), DirectMemory (16m)
-ENV JAVA_TOOL_OPTIONS="-Xms32m -Xmx160m -Xss256k -XX:MaxMetaspaceSize=80m -XX:ReservedCodeCacheSize=24m -XX:CompressedClassSpaceSize=24m -XX:MaxDirectMemorySize=16m -XX:+UseSerialGC -XX:+TieredCompilation -XX:TieredStopAtLevel=1"
+# - Capped heap (-Xmx112m), Metaspace (72m), CodeCache (20m), DirectMemory (12m) to leave 340MB+ RAM for LibreOffice
+ENV JAVA_TOOL_OPTIONS="-Xms32m -Xmx112m -Xss256k -XX:MaxMetaspaceSize=72m -XX:ReservedCodeCacheSize=20m -XX:CompressedClassSpaceSize=20m -XX:MaxDirectMemorySize=12m -XX:+UseSerialGC -XX:+TieredCompilation -XX:TieredStopAtLevel=1"
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

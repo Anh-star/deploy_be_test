@@ -314,10 +314,13 @@ public class LibreOfficeDocumentConverter implements OfficeDocumentConverter {
         List<String> argv = new ArrayList<>();
         argv.add(executable);
         argv.add("--headless");
+        argv.add("--invisible");
         argv.add("--nologo");
         argv.add("--nodefault");
+        argv.add("--norestore");
         argv.add("--nolockcheck");
         argv.add("--nofirststartwizard");
+        argv.add("-env:UNO_JAVA_JFW_INSTALL_DATA=");
         argv.add(userInstallation);
         argv.add("--convert-to");
         argv.add("pdf:writer_pdf_Export");
