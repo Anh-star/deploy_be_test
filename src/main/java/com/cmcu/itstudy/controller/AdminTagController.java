@@ -34,7 +34,7 @@ public class AdminTagController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminTagPageResponseDto>> listTags(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
@@ -44,14 +44,14 @@ public class AdminTagController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminTagResponseDto>> getTag(@PathVariable UUID id) {
         AdminTagResponseDto data = adminTagService.getTag(id);
         return ResponseEntity.ok(ApiResponse.success(data, "Tag detail"));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminTagResponseDto>> createTag(
             @Valid @RequestBody AdminTagCreateRequestDto request
     ) {
@@ -61,7 +61,7 @@ public class AdminTagController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminTagResponseDto>> updateTag(
             @PathVariable UUID id,
             @Valid @RequestBody AdminTagUpdateRequestDto request
@@ -71,7 +71,7 @@ public class AdminTagController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminTagResponseDto>> patchStatus(
             @PathVariable UUID id,
             @Valid @RequestBody AdminTagStatusPatchRequestDto request

@@ -34,7 +34,7 @@ public class AdminCategoryController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminCategoryPageResponseDto>> listCategories(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
@@ -44,14 +44,14 @@ public class AdminCategoryController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminCategoryResponseDto>> getCategory(@PathVariable UUID id) {
         AdminCategoryResponseDto data = adminCategoryService.getCategory(id);
         return ResponseEntity.ok(ApiResponse.success(data, "Category detail"));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminCategoryResponseDto>> createCategory(
             @Valid @RequestBody AdminCategoryCreateRequestDto request
     ) {
@@ -61,7 +61,7 @@ public class AdminCategoryController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminCategoryResponseDto>> updateCategory(
             @PathVariable UUID id,
             @Valid @RequestBody AdminCategoryUpdateRequestDto request
@@ -71,7 +71,7 @@ public class AdminCategoryController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('ADMIN', 'USER_MODERATOR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminCategoryResponseDto>> patchStatus(
             @PathVariable UUID id,
             @Valid @RequestBody AdminCategoryStatusPatchRequestDto request
