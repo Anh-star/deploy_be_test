@@ -103,14 +103,17 @@ public class PreviewAccessDecisionServiceImpl implements PreviewAccessDecisionSe
                            boolean hasPurchaserAccess) {
         Objects.requireNonNull(document, "document");
 
-        // The moderator branch is permission-only. ROLE_CONTENT_MODERATOR,
-        // ROLE_ADMIN, and ROLE_USER_MODERATOR are deliberately ignored.
-        boolean moderatorAccess = hasAuthority(authorities, PERMISSION_APPROVE_DOCUMENT);
+        // Content Moderator or Admin gets full preview to evaluate pending / reported documents.
+        boolean moderatorAccess = hasAuthority(authorities,
+                PERMISSION_APPROVE_DOCUMENT,
+                ROLE_CONTENT_MODERATOR,
+                "CONTENT_MODERATOR",
+                "DOCUMENT_WRITE",
+                ROLE_ADMIN,
+                "ADMIN");
 
-        // The super-admin branch is the exact (ROLE_ADMIN +
-        // SUPER_ADMIN) combination. ROLE_ADMIN alone is not enough.
-        boolean superAdminAccess = hasAuthority(authorities, ROLE_ADMIN)
-                && hasAuthority(authorities, PERMISSION_SUPER_ADMIN);
+        // The super-admin branch:
+        boolean superAdminAccess = hasAuthority(authorities, ROLE_ADMIN, "ADMIN");
 
         boolean ownerAccess = isOwner(document, currentUser);
 
