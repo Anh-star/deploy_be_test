@@ -33,7 +33,7 @@ public class CategoryTagController {
 
     @GetMapping("/categories")
     public ResponseEntity<ApiResponse<List<CategoryResponseDto>>> getCategories() {
-        List<Category> categories = categoryRepository.findAll();
+        List<Category> categories = categoryRepository.findByActiveTrueOrderByDisplayOrderAscNameAsc();
         List<CategoryResponseDto> data = categories.stream()
                 .map(CategoryMapper::toDto)
                 .collect(Collectors.toList());

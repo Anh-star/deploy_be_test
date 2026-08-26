@@ -16,6 +16,8 @@ public final class CategoryMapper {
         return CategoryResponseDto.builder()
                 .id(category.getId() != null ? category.getId().toString() : null)
                 .name(category.getName())
+                .slug(category.getSlug())
+                .displayOrder(category.getDisplayOrder())
                 .build();
     }
 }

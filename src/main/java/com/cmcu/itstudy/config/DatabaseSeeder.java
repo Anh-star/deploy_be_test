@@ -229,15 +229,23 @@ public class DatabaseSeeder implements CommandLineRunner {
         seedUser("content_moderator@example.com", "Content Moderator User", contentModeratorRole);
         seedUser("community_moderator@example.com", "Community Moderator User", communityModeratorRole);
 
-        // 3. Seed Standard IT Categories (Tiếng Việt chuẩn)
-        Category catWeb = seedCategory("Lập trình Web", "lap-trinh-web", "Tài liệu phát triển Web: Frontend, Backend, Fullstack (HTML, CSS, React, Vue, Angular, Node.js, Spring Boot, ASP.NET...)", 1);
-        Category catMobile = seedCategory("Lập trình Di động", "lap-trinh-di-dong", "Tài liệu phát triển ứng dụng di động: Android, iOS, Flutter, React Native, Kotlin, Swift...", 2);
-        Category catDb = seedCategory("Cơ sở dữ liệu", "co-so-du-lieu", "Hệ quản trị CSDL quan hệ & NoSQL: SQL Server, MySQL, PostgreSQL, Oracle, MongoDB, Redis...", 3);
-        Category catAi = seedCategory("Trí tuệ nhân tạo & Khoa học dữ liệu", "tri-tue-nhan-tao-khoa-hoc-du-lieu", "Tài liệu AI, Machine Learning, Deep Learning, Phân tích dữ liệu, Python, TensorFlow, PyTorch...", 4);
-        Category catNet = seedCategory("Mạng máy tính & An toàn thông tin", "mang-may-tinh-an-toan-thong-tin", "Quản trị mạng, CCNA, An ninh mạng, Bảo mật hệ thống, Hacking đạo đức, SOC, Mật mã học...", 5);
-        Category catDevOps = seedCategory("Kiến trúc phần mềm & DevOps", "kien-truc-phan-mem-devops", "Docker, Kubernetes, CI/CD, Microservices, Điện toán đám mây (AWS, Azure, GCP), System Design...", 6);
-        Category catAlgo = seedCategory("Thuật toán & Cấu trúc dữ liệu", "thuat-toan-cau-truc-du-lieu", "Giáo trình CTDL & GT, Giải thuật nâng cao, Luyện thi thuật toán, Lập trình thi đấu ACM/ICPC...", 7);
-        Category catSe = seedCategory("Công nghệ phần mềm & Đồ án", "cong-nghe-phan-mem-do-an", "Phân tích thiết kế hệ thống (UML), Quản lý dự án Agile/Scrum, Hướng dẫn làm Khóa luận & Đồ án tốt nghiệp...", 8);
+        // 3. Seed Featured IT Categories (Trang chủ hiển thị top 6 tương ứng icon)
+        Category catDocker = seedCategory("Docker", "docker", "Nền tảng container hóa ứng dụng: Dockerfile, Docker Compose, Images, Containers...", 1);
+        Category catJava = seedCategory("Java", "java", "Lập trình Java Core, OOP, Đa luồng, Collection, JVM, Spring Framework, Spring Boot...", 2);
+        Category catUnity = seedCategory("Unity", "unity", "Phát triển Game 2D/3D, C# Scripting, Vật lý, Hoạt ảnh và tối ưu hóa Game trên Unity Engine...", 3);
+        Category catMysql = seedCategory("MySQL", "mysql", "Hệ quản trị cơ sở dữ liệu quan hệ mã nguồn mở: SQL, Indexing, Khóa chính/ngoại, Tối ưu hóa truy vấn...", 4);
+        Category catSqlServer = seedCategory("SQL Server", "sql-server", "Hệ quản trị CSDL của Microsoft: T-SQL, Stored Procedures, Functions, Triggers, Transactions...", 5);
+        Category catFirebase = seedCategory("Firebase", "firebase", "Nền tảng đám mây của Google: Authentication, Cloud Firestore, Realtime Database, Cloud Functions...", 6);
+
+        // Seed General IT Categories (Hiển thị tiếp theo)
+        Category catWeb = seedCategory("Lập trình Web", "lap-trinh-web", "Tài liệu phát triển Web: Frontend, Backend, Fullstack (HTML, CSS, React, Vue, Angular, Node.js, Spring Boot, ASP.NET...)", 7);
+        Category catMobile = seedCategory("Lập trình Di động", "lap-trinh-di-dong", "Tài liệu phát triển ứng dụng di động: Android, iOS, Flutter, React Native, Kotlin, Swift...", 8);
+        Category catDb = seedCategory("Cơ sở dữ liệu", "co-so-du-lieu", "Hệ quản trị CSDL quan hệ & NoSQL: SQL Server, MySQL, PostgreSQL, Oracle, MongoDB, Redis...", 9);
+        Category catAi = seedCategory("Trí tuệ nhân tạo & Khoa học dữ liệu", "tri-tue-nhan-tao-khoa-hoc-du-lieu", "Tài liệu AI, Machine Learning, Deep Learning, Phân tích dữ liệu, Python, TensorFlow, PyTorch...", 10);
+        Category catNet = seedCategory("Mạng máy tính & An toàn thông tin", "mang-may-tinh-an-toan-thong-tin", "Quản trị mạng, CCNA, An ninh mạng, Bảo mật hệ thống, Hacking đạo đức, SOC, Mật mã học...", 11);
+        Category catDevOps = seedCategory("Kiến trúc phần mềm & DevOps", "kien-truc-phan-mem-devops", "Docker, Kubernetes, CI/CD, Microservices, Điện toán đám mây (AWS, Azure, GCP), System Design...", 12);
+        Category catAlgo = seedCategory("Thuật toán & Cấu trúc dữ liệu", "thuat-toan-cau-truc-du-lieu", "Giáo trình CTDL & GT, Giải thuật nâng cao, Luyện thi thuật toán, Lập trình thi đấu ACM/ICPC...", 13);
+        Category catSe = seedCategory("Công nghệ phần mềm & Đồ án", "cong-nghe-phan-mem-do-an", "Phân tích thiết kế hệ thống (UML), Quản lý dự án Agile/Scrum, Hướng dẫn làm Khóa luận & Đồ án tốt nghiệp...", 14);
 
         // Re-link any existing documents in DB to default web category if null
         try {
