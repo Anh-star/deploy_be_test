@@ -47,19 +47,41 @@ public class DocumentUpdateRequestDto {
     @NotEmpty(message = "Tags cannot be empty")
     private List<String> tags;
 
-    @NotBlank(message = "Document URL cannot be empty")
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase 7B.6A — asset fields are OPTIONAL on update.
+    //
+    // A metadata-only edit (title / description / category / tags / pricing)
+    // must NOT be blocked because:
+    //   • the existing document legitimately has no cover (thumbnailUrl = null);
+    //   • the FE cannot round-trip an ephemeral Supabase signed/preview URL
+    //     for the file (resolveOwnerPreviewUrl may return null when the
+    //     DocumentFile row has no cached URL);
+    //   • the contributor did not pick a replacement file.
+    //
+    // Semantics are decided in {@code DocumentServiceImpl#updateDocument}:
+    //   • null / blank with no replacement file ⇒ preserve current DB value,
+    //     including a null thumbnail (a document that never had a cover stays
+    //     without a cover);
+    //   • non-blank value             ⇒ treat as replacement.
+    //
+    // CREATE-flow validation in DocumentCreateRequestDto is intentionally
+    // untouched — every new document still requires a non-blank URL, file
+    // name, size, and thumbnail at create time.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /** Optional on update. Preserved when null/blank and no replacement file. */
     private String documentUrl;
 
-    /** Supabase object path; optional when only metadata changes (keep existing primary file path). */
+    /** Supabase object path; optional on update. When present it signals a real file replacement. */
     private String storagePath;
 
-    @NotBlank(message = "Thumbnail URL cannot be empty")
+    /** Optional on update. null/blank preserves current thumbnail (including null). */
     private String thumbnailUrl;
 
-    @NotBlank(message = "File name cannot be empty")
+    /** Optional on update. Preserved when null/blank and no replacement file. */
     private String fileName;
 
-    @NotNull(message = "File size cannot be empty")
+    /** Optional on update. Preserved when null and no replacement file. */
     private Long fileSizeBytes;
 
     /**

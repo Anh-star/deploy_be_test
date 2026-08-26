@@ -251,10 +251,66 @@ public class DocumentServiceImpl implements DocumentService {
                     documentUpdateRequestDto.getTitle(),
                     candidate -> documentRepository.existsBySlugAndIdNot(candidate, existingDocument.getId())));
         }
-        existingDocument.setFileUrl(documentUpdateRequestDto.getDocumentUrl());
-        existingDocument.setFileName(documentUpdateRequestDto.getFileName());
-        existingDocument.setFileSize(documentUpdateRequestDto.getFileSizeBytes());
-        existingDocument.setThumbnailUrl(documentUpdateRequestDto.getThumbnailUrl());
+
+        // ─────────────────────────────────────────────────────────────────
+        // Phase 7B.6A — asset preservation on metadata-only updates.
+        //
+        // The update DTO now allows null/blank values for thumbnailUrl,
+        // documentUrl, fileName, and fileSizeBytes. The previous behaviour
+        // unconditionally overwrote the persisted columns with whatever
+        // the FE sent (often ""), which silently erased metadata-only
+        // edits. We now treat null/blank as "no replacement":
+        //
+        //   • thumbnailUrl null/blank  ⇒ keep current value, INCLUDING null
+        //     when the document has never had a cover.
+        //   • documentUrl  null/blank  ⇒ keep current value.
+        //   • fileName     null/blank  ⇒ keep current value.
+        //   • fileSizeBytes null       ⇒ keep current value. A non-null but
+        //     zero/negative value is treated as a metadata round-trip
+        //     placeholder and is also preserved.
+        //
+        // If the request carries a non-blank storagePath it ALWAYS signals
+        // a real file replacement; in that case the caller is responsible
+        // for sending the matching documentUrl/fileName/fileSizeBytes. The
+        // detailed DocumentFile sync below follows the same rule.
+        //
+        // We deliberately do NOT interpret null as "delete cover" — there
+        // is no remove-cover product action.
+        // ─────────────────────────────────────────────────────────────────
+        if (StringUtils.hasText(documentUpdateRequestDto.getThumbnailUrl())) {
+            existingDocument.setThumbnailUrl(documentUpdateRequestDto.getThumbnailUrl().trim());
+        }
+        boolean fileReplacementRequested =
+                StringUtils.hasText(documentUpdateRequestDto.getStoragePath());
+        if (fileReplacementRequested) {
+            // Caller is uploading a replacement file. All file-shaped fields
+            // must come from the request verbatim.
+            if (StringUtils.hasText(documentUpdateRequestDto.getDocumentUrl())) {
+                existingDocument.setFileUrl(documentUpdateRequestDto.getDocumentUrl().trim());
+            }
+            if (StringUtils.hasText(documentUpdateRequestDto.getFileName())) {
+                existingDocument.setFileName(documentUpdateRequestDto.getFileName());
+            }
+            if (documentUpdateRequestDto.getFileSizeBytes() != null
+                    && documentUpdateRequestDto.getFileSizeBytes() >= 0L) {
+                existingDocument.setFileSize(documentUpdateRequestDto.getFileSizeBytes());
+            }
+        } else {
+            // Metadata-only edit (or replacement without a storagePath, which
+            // we treat as no-op on file metadata). Preserve the existing
+            // document file metadata so an empty/zero round-trip cannot wipe
+            // the file.
+            if (StringUtils.hasText(documentUpdateRequestDto.getDocumentUrl())) {
+                existingDocument.setFileUrl(documentUpdateRequestDto.getDocumentUrl().trim());
+            }
+            if (StringUtils.hasText(documentUpdateRequestDto.getFileName())) {
+                existingDocument.setFileName(documentUpdateRequestDto.getFileName());
+            }
+            if (documentUpdateRequestDto.getFileSizeBytes() != null
+                    && documentUpdateRequestDto.getFileSizeBytes() > 0L) {
+                existingDocument.setFileSize(documentUpdateRequestDto.getFileSizeBytes());
+            }
+        }
         existingDocument.setCategory(category); // Link to updated Category
         existingDocument.setUpdatedBy(currentUser); // Set updater
         boolean finalIsPaid = Boolean.TRUE.equals(documentUpdateRequestDto.getIsPaid());
@@ -590,12 +646,45 @@ public class DocumentServiceImpl implements DocumentService {
         Optional<DocumentFile> existing = documentFileRepository.findByDocumentIdAndPrimaryTrue(document.getId());
         if (existing.isPresent()) {
             DocumentFile df = existing.get();
-            df.setFileUrl(dto.getDocumentUrl());
-            df.setOriginalFileName(dto.getFileName());
-            df.setFileExtension(extractFileExtension(dto.getFileName()));
-            df.setSizeBytes(dto.getFileSizeBytes() != null ? dto.getFileSizeBytes() : 0L);
-            if (StringUtils.hasText(dto.getStoragePath())) {
+            // Phase 7B.6A — preserve existing primary-file metadata when the
+            // request does not carry a replacement storagePath. A metadata-only
+            // PUT must not wipe the DocumentFile row's URL / filename / size /
+            // extension simply because the FE round-trips blanks.
+            //
+            // Semantics:
+            //   • dto.storagePath non-blank            ⇒ real replacement,
+            //     overwrite every field the request supplies (a missing field
+            //     here means the binder will fill it elsewhere).
+            //   • dto.storagePath null/blank AND the request supplies a
+            //     non-blank documentUrl/fileName/fileSizeBytes  ⇒ metadata
+            //     round-trip of those values (caller refreshed the cached
+            //     URL, etc.); update only the fields that are present.
+            //   • everything blank                     ⇒ preserve all
+            //     existing fields verbatim. Do NOT delete the row.
+            boolean replacementRequested = StringUtils.hasText(dto.getStoragePath());
+            if (replacementRequested) {
                 df.setStoragePath(dto.getStoragePath().trim());
+                if (StringUtils.hasText(dto.getDocumentUrl())) {
+                    df.setFileUrl(dto.getDocumentUrl().trim());
+                }
+                if (StringUtils.hasText(dto.getFileName())) {
+                    df.setOriginalFileName(dto.getFileName());
+                    df.setFileExtension(extractFileExtension(dto.getFileName()));
+                }
+                if (dto.getFileSizeBytes() != null && dto.getFileSizeBytes() >= 0L) {
+                    df.setSizeBytes(dto.getFileSizeBytes());
+                }
+            } else {
+                if (StringUtils.hasText(dto.getDocumentUrl())) {
+                    df.setFileUrl(dto.getDocumentUrl().trim());
+                }
+                if (StringUtils.hasText(dto.getFileName())) {
+                    df.setOriginalFileName(dto.getFileName());
+                    df.setFileExtension(extractFileExtension(dto.getFileName()));
+                }
+                if (dto.getFileSizeBytes() != null && dto.getFileSizeBytes() > 0L) {
+                    df.setSizeBytes(dto.getFileSizeBytes());
+                }
             }
             documentFileRepository.save(df);
             return;
