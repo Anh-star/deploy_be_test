@@ -105,6 +105,27 @@ class JacksonUnknownFieldsBehaviourTest {
         });
     }
 
+    @Test
+    @DisplayName("configured mapper serializes LocalDateTime as UTC ISO-8601 string with Z suffix")
+    void serializesLocalDateTimeWithZ() throws Exception {
+        ObjectMapper configured = new JacksonConfig().objectMapper();
+        java.time.LocalDateTime dt = java.time.LocalDateTime.of(2026, 8, 26, 21, 0, 0);
+        String json = configured.writeValueAsString(dt);
+        assertTrue(json.contains("2026-08-26T21:00:00") && json.endsWith("Z\""),
+                "Serialized LocalDateTime must end with Z to be correctly recognized as UTC by browser: " + json);
+    }
+
+    @Test
+    @DisplayName("configured mapper deserializes LocalDateTime from strings with or without Z")
+    void deserializesLocalDateTime() throws Exception {
+        ObjectMapper configured = new JacksonConfig().objectMapper();
+        java.time.LocalDateTime dtWithZ = configured.readValue("\"2026-08-26T21:00:00Z\"", java.time.LocalDateTime.class);
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.LocalDateTime.of(2026, 8, 26, 21, 0, 0), dtWithZ);
+
+        java.time.LocalDateTime dtWithoutZ = configured.readValue("\"2026-08-26T21:00:00\"", java.time.LocalDateTime.class);
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.LocalDateTime.of(2026, 8, 26, 21, 0, 0), dtWithoutZ);
+    }
+
     /**
      * Minimal strongly-typed probe POJO with ONE declared field.
      * Used to prove the deserialiser's unknown-field policy.
@@ -114,4 +135,4 @@ class JacksonUnknownFieldsBehaviourTest {
         public String getKnown() { return known; }
         public void setKnown(String known) { this.known = known; }
     }
-}
+}
