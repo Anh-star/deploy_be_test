@@ -19,21 +19,19 @@ public class PaidPdfPageRuleServiceImpl implements PaidPdfPageRuleService {
 
     private static final int LOCKED_MAX_PAGE_COUNT = 1;
 
-    private static final int FULL_PREVIEW_MAX_PAGE_COUNT = 5;
-
     @Override
     public int calculateLimitedPreviewPageCount(int totalPages) {
-        if (totalPages > FULL_PREVIEW_MAX_PAGE_COUNT) {
-            // totalPages >= 6
-            return FULL_PREVIEW_MAX_PAGE_COUNT;
+        if (totalPages >= 20) {
+            // Tài liệu trên 20 trang (>= 20 trang): hiện 5 trang
+            return 5;
         }
-        if (totalPages == FULL_PREVIEW_MAX_PAGE_COUNT) {
-            // totalPages == 5
-            return FULL_PREVIEW_MAX_PAGE_COUNT - 1;
+        if (totalPages >= 5) {
+            // Tài liệu dưới 20 trang (5..19 trang): hiện 2 trang
+            return 2;
         }
         if (totalPages > LOCKED_MAX_PAGE_COUNT) {
-            // 2..4
-            return totalPages - 1;
+            // Tài liệu dưới 5 trang (2..4 trang): hiện 1 trang
+            return 1;
         }
         if (totalPages == LOCKED_MAX_PAGE_COUNT) {
             // Exactly one page — exposing any portion of it would expose
@@ -47,4 +45,4 @@ public class PaidPdfPageRuleServiceImpl implements PaidPdfPageRuleService {
                 PreviewLockedReason.PREVIEW_UNAVAILABLE,
                 "Paid document page count is invalid");
     }
-}
+}
