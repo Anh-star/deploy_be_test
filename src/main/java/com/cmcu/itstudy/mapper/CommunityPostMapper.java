@@ -4,11 +4,13 @@ import com.cmcu.itstudy.dto.community.CommunityPostResponseDto;
 import com.cmcu.itstudy.dto.community.PollDto;
 import com.cmcu.itstudy.dto.community.PollOptionDto;
 import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
+import com.cmcu.itstudy.dto.community.PostEditHistoryDto;
 import com.cmcu.itstudy.entity.CommunityPoll;
 import com.cmcu.itstudy.entity.CommunityPollOption;
 import com.cmcu.itstudy.entity.CommunityPollVote;
 import com.cmcu.itstudy.entity.CommunityPost;
 import com.cmcu.itstudy.entity.CommunityPostComment;
+import com.cmcu.itstudy.entity.CommunityPostEditHistory;
 import com.cmcu.itstudy.entity.CommunityPostImage;
 
 import java.util.Arrays;

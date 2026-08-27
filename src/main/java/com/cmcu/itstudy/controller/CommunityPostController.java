@@ -6,6 +6,7 @@ import com.cmcu.itstudy.dto.community.CreatePostCommentRequestDto;
 import com.cmcu.itstudy.dto.community.CreatePostRequestDto;
 import com.cmcu.itstudy.dto.community.PollDto;
 import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
+import com.cmcu.itstudy.dto.community.PostEditHistoryDto;
 import com.cmcu.itstudy.dto.community.VotePostRequestDto;
 import com.cmcu.itstudy.dto.community.VoterDto;
 import com.cmcu.itstudy.security.UserDetailsImpl;

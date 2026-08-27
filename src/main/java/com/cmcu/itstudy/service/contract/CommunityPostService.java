@@ -5,6 +5,7 @@ import com.cmcu.itstudy.dto.community.CreatePollRequestDto;
 import com.cmcu.itstudy.dto.community.CreatePostRequestDto;
 import com.cmcu.itstudy.dto.community.PollDto;
 import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
+import com.cmcu.itstudy.dto.community.PostEditHistoryDto;
 import com.cmcu.itstudy.dto.community.VoterDto;
 
 import java.util.List;
