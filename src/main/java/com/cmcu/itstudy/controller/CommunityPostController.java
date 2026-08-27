@@ -245,6 +245,17 @@ public class CommunityPostController {
         return ResponseEntity.ok(ApiResponse.success(data, "Poll option added"));
     }
 
+    @DeleteMapping("/polls/options/{optionId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<PollDto>> deletePollOption(
+            @PathVariable UUID optionId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        PollDto data = communityPostService.deletePollOption(optionId, userId);
+        return ResponseEntity.ok(ApiResponse.success(data, "Poll option deleted"));
+    }
+
     @GetMapping("/{postId}/comments")
     public ResponseEntity<ApiResponse<List<PostCommentResponseDto>>> getComments(
             @PathVariable UUID postId,
@@ -323,9 +334,7 @@ public class CommunityPostController {
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
         UUID userId = currentUser.getUser().getId();
-        CommunityPostResponseDto data = communityPostService.updatePost(
-                postId, userId, request.getContent(), request.getImageUrls()
-        );
+        CommunityPostResponseDto data = communityPostService.updatePost(postId, userId, request);
         return ResponseEntity.ok(ApiResponse.success(data, "Post updated"));
     }
 

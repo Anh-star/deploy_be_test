@@ -124,6 +124,17 @@ public class DatabaseSchemaMigrationRunner implements ApplicationRunner {
                 log.warn("Schema migration for tbl_community_post_notification_mutes: {}", ex.getMessage());
             }
 
+            // 7. Ensure tbl_community_poll_options has created_by_user_id column
+            try {
+                stmt.execute("IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('tbl_community_poll_options') AND name = 'created_by_user_id') " +
+                             "BEGIN " +
+                             "    ALTER TABLE tbl_community_poll_options ADD created_by_user_id UNIQUEIDENTIFIER NULL; " +
+                             "END");
+                log.info("Schema migration: tbl_community_poll_options.created_by_user_id verified successfully.");
+            } catch (Exception ex) {
+                log.warn("Schema migration for tbl_community_poll_options.created_by_user_id: {}", ex.getMessage());
+            }
+
         } catch (Exception e) {
             log.warn("Schema migration runner error: {}", e.getMessage());
         }

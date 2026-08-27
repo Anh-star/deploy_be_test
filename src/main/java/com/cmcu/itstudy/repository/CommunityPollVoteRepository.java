@@ -27,4 +27,8 @@ public interface CommunityPollVoteRepository extends JpaRepository<CommunityPoll
     @Modifying
     @Query("DELETE FROM CommunityPollVote v WHERE v.poll.id = :pollId AND v.user.id = :userId")
     void deleteAllByPollIdAndUserId(@Param("pollId") UUID pollId, @Param("userId") UUID userId);
+
+    @Modifying
+    @Query("DELETE FROM CommunityPollVote v WHERE v.option.id = :optionId")
+    void deleteAllByOptionId(@Param("optionId") UUID optionId);
 }

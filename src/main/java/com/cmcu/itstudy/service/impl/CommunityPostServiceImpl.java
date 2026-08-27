@@ -3,9 +3,11 @@ package com.cmcu.itstudy.service.impl;
 import com.cmcu.itstudy.dto.community.CommunityModerationStatsDto;
 import com.cmcu.itstudy.dto.community.CommunityPostResponseDto;
 import com.cmcu.itstudy.dto.community.CreatePollRequestDto;
+import com.cmcu.itstudy.dto.community.CreatePostRequestDto;
 import com.cmcu.itstudy.dto.community.PollDto;
 import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
 import com.cmcu.itstudy.dto.community.PostReportResponseDto;
+import com.cmcu.itstudy.dto.community.UpdatePollOptionDto;
 import com.cmcu.itstudy.dto.community.VoterDto;
 import com.cmcu.itstudy.entity.CommunityPoll;
 import com.cmcu.itstudy.entity.CommunityPollOption;
@@ -547,27 +549,26 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             opt.setVoteCount((int) count);
         }
         pollOptionRepository.saveAll(freshOptions);
-        // DO NOT call poll.setOptions(...) — it triggers Hibernate orphan removal error
 
         List<CommunityPollVote> updatedUserVotes = pollVoteRepository.findAllByPoll_IdAndUser_Id(pollId, userId);
-        return CommunityPostMapper.toPollDto(poll, freshOptions, updatedUserVotes);
+        return CommunityPostMapper.toPollDto(poll, freshOptions, updatedUserVotes, userId);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<VoterDto> getPollVoters(UUID optionId, UUID currentUserId) {
         CommunityPollOption option = pollOptionRepository.findById(optionId)
-                .orElseThrow(() -> new NoSuchElementException("Option not found"));
+                .orElseThrow(() -> new NoSuchElementException("Poll option not found"));
 
         if (Boolean.TRUE.equals(option.getPoll().getHideVoters())) {
-            throw new IllegalArgumentException("Khảo sát này đã ẩn người bình chọn.");
+            throw new IllegalArgumentException("Khảo sát này ẩn danh sách người bình chọn.");
         }
 
         List<CommunityPollVote> votes = pollVoteRepository.findByOptionIdWithUser(optionId);
         return votes.stream()
                 .filter(v -> v.getUser() != null)
                 .map(v -> VoterDto.builder()
-                        .userId(v.getUser().getId() != null ? v.getUser().getId().toString() : null)
+                        .userId(v.getUser().getId().toString())
                         .fullName(v.getUser().getFullName())
                         .avatarUrl(v.getUser().getAvatarUrl())
                         .build())
@@ -593,9 +594,15 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         }
 
         List<CommunityPollOption> currentOptions = pollOptionRepository.findByPoll_IdOrderByDisplayOrderAsc(pollId);
+        if (currentOptions.size() >= 10) {
+            throw new IllegalArgumentException("Khảo sát đã đạt tối đa 10 phương án lựa chọn.");
+        }
+
+        User creator = userRepository.findById(userId).orElse(null);
 
         pollOptionRepository.save(CommunityPollOption.builder()
                 .poll(poll)
+                .createdBy(creator)
                 .optionText(optionText.trim())
                 .voteCount(0)
                 .displayOrder(currentOptions.size())
@@ -603,7 +610,55 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         List<CommunityPollOption> updatedOptions = pollOptionRepository.findByPoll_IdOrderByDisplayOrderAsc(pollId);
         List<CommunityPollVote> userVotes = pollVoteRepository.findAllByPoll_IdAndUser_Id(pollId, userId);
-        return CommunityPostMapper.toPollDto(poll, updatedOptions, userVotes);
+        return CommunityPostMapper.toPollDto(poll, updatedOptions, userVotes, userId);
+    }
+
+    @Override
+    @Transactional
+    public PollDto deletePollOption(UUID optionId, UUID userId) {
+        CommunityPollOption option = pollOptionRepository.findById(optionId)
+                .orElseThrow(() -> new NoSuchElementException("Phương án không tồn tại"));
+
+        CommunityPoll poll = option.getPoll();
+        if (poll == null) {
+            throw new NoSuchElementException("Khảo sát không tồn tại");
+        }
+
+        if (poll.getExpiresAt() != null && LocalDateTime.now().isAfter(poll.getExpiresAt())) {
+            throw new IllegalArgumentException("Khảo sát này đã kết thúc, không thể xóa phương án.");
+        }
+
+        List<CommunityPollOption> currentOptions = pollOptionRepository.findByPoll_IdOrderByDisplayOrderAsc(poll.getId());
+        if (currentOptions.size() <= 2) {
+            throw new IllegalArgumentException("Khảo sát cần giữ lại ít nhất 2 phương án lựa chọn.");
+        }
+
+        boolean isOptionCreator = (option.getCreatedBy() != null && option.getCreatedBy().getId().equals(userId));
+        boolean isPostAuthor = (poll.getPost() != null && poll.getPost().getAuthor() != null && poll.getPost().getAuthor().getId().equals(userId));
+
+        if (!isOptionCreator && !isPostAuthor) {
+            throw new IllegalArgumentException("Bạn chỉ có thể xóa phương án do chính mình thêm hoặc khảo sát trong bài viết của bạn.");
+        }
+
+        // Delete all votes on this option
+        pollVoteRepository.deleteAllByOptionId(optionId);
+        pollVoteRepository.flush();
+
+        // Delete option
+        pollOptionRepository.delete(option);
+        pollOptionRepository.flush();
+
+        // Re-order remaining options
+        List<CommunityPollOption> remaining = pollOptionRepository.findByPoll_IdOrderByDisplayOrderAsc(poll.getId());
+        for (int i = 0; i < remaining.size(); i++) {
+            CommunityPollOption opt = remaining.get(i);
+            opt.setDisplayOrder(i);
+            pollOptionRepository.save(opt);
+        }
+        pollOptionRepository.flush();
+
+        List<CommunityPollVote> userVotes = pollVoteRepository.findAllByPoll_IdAndUser_Id(poll.getId(), userId);
+        return CommunityPostMapper.toPollDto(poll, remaining, userVotes, userId);
     }
 
     private void sendNotificationIfUnmuted(UUID recipientId, UUID senderId, UUID postId, String referenceId, NotificationType type, String message) {
@@ -1213,6 +1268,15 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     @Override
     @Transactional
     public CommunityPostResponseDto updatePost(UUID postId, UUID userId, String content, List<String> imageUrls) {
+        return updatePost(postId, userId, CreatePostRequestDto.builder()
+                .content(content)
+                .imageUrls(imageUrls)
+                .build());
+    }
+
+    @Override
+    @Transactional
+    public CommunityPostResponseDto updatePost(UUID postId, UUID userId, CreatePostRequestDto request) {
         CommunityPost post = postRepository.findById(postId)
                 .orElseThrow(() -> new NoSuchElementException("Post not found"));
         if (Boolean.TRUE.equals(post.getDeleted())) {
@@ -1223,18 +1287,88 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             throw new IllegalArgumentException("You can only edit your own post");
         }
 
-        post.setContent(content);
+        if (request.getContent() != null) {
+            post.setContent(request.getContent());
+        }
+        if (request.getTitle() != null) {
+            post.setTitle(request.getTitle());
+        }
+        if (request.getAllowComments() != null) {
+            post.setAllowComments(request.getAllowComments());
+        }
         postRepository.save(post);
 
-        if (imageUrls != null) {
+        CommunityPoll existingPoll = pollRepository.findByPost_Id(postId).orElse(null);
+
+        // For non-poll posts: update images
+        if (existingPoll == null && request.getImageUrls() != null) {
             imageRepository.deleteByPostId(postId);
             imageRepository.flush();
-            for (int i = 0; i < Math.min(imageUrls.size(), 4); i++) {
+            for (int i = 0; i < Math.min(request.getImageUrls().size(), 4); i++) {
                 imageRepository.save(CommunityPostImage.builder()
                         .post(post)
-                        .imageUrl(imageUrls.get(i))
+                        .imageUrl(request.getImageUrls().get(i))
                         .displayOrder(i)
                         .build());
+            }
+        }
+
+        // For poll posts: update poll question and options
+        if (existingPoll != null && request.getPoll() != null) {
+            CreatePollRequestDto pollReq = request.getPoll();
+            if (pollReq.getQuestion() != null && !pollReq.getQuestion().isBlank()) {
+                existingPoll.setQuestion(pollReq.getQuestion().trim());
+                pollRepository.save(existingPoll);
+            }
+
+            List<CommunityPollOption> currentOptions = pollOptionRepository.findByPoll_IdOrderByDisplayOrderAsc(existingPoll.getId());
+            Map<UUID, CommunityPollOption> currentOptionMap = currentOptions.stream()
+                    .collect(Collectors.toMap(CommunityPollOption::getId, opt -> opt));
+
+            List<UpdatePollOptionDto> targetOptions = pollReq.getPollOptions();
+            if (targetOptions == null && pollReq.getOptions() != null) {
+                targetOptions = pollReq.getOptions().stream()
+                        .map(txt -> UpdatePollOptionDto.builder().optionText(txt).build())
+                        .collect(Collectors.toList());
+            }
+
+            if (targetOptions != null && !targetOptions.isEmpty()) {
+                Set<UUID> keptOptionIds = new HashSet<>();
+                int order = 0;
+                for (UpdatePollOptionDto optDto : targetOptions) {
+                    if (optDto.getOptionText() == null || optDto.getOptionText().isBlank()) {
+                        continue;
+                    }
+                    String cleanText = optDto.getOptionText().trim();
+                    if (optDto.getId() != null && currentOptionMap.containsKey(optDto.getId())) {
+                        // Existing option: update text & display order (preserve votes)
+                        CommunityPollOption existingOpt = currentOptionMap.get(optDto.getId());
+                        existingOpt.setOptionText(cleanText);
+                        existingOpt.setDisplayOrder(order++);
+                        pollOptionRepository.save(existingOpt);
+                        keptOptionIds.add(existingOpt.getId());
+                    } else {
+                        // New option: create new
+                        CommunityPollOption newOpt = CommunityPollOption.builder()
+                                .poll(existingPoll)
+                                .optionText(cleanText)
+                                .voteCount(0)
+                                .displayOrder(order++)
+                                .build();
+                        CommunityPollOption savedOpt = pollOptionRepository.save(newOpt);
+                        keptOptionIds.add(savedOpt.getId());
+                    }
+                }
+
+                // Delete any removed options and their votes
+                for (CommunityPollOption oldOpt : currentOptions) {
+                    if (!keptOptionIds.contains(oldOpt.getId())) {
+                        pollVoteRepository.deleteAllByOptionId(oldOpt.getId());
+                        pollVoteRepository.flush();
+                        pollOptionRepository.delete(oldOpt);
+                    }
+                }
+                pollOptionRepository.flush();
             }
         }
 

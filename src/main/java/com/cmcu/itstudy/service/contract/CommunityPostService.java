@@ -2,6 +2,7 @@ package com.cmcu.itstudy.service.contract;
 
 import com.cmcu.itstudy.dto.community.CommunityPostResponseDto;
 import com.cmcu.itstudy.dto.community.CreatePollRequestDto;
+import com.cmcu.itstudy.dto.community.CreatePostRequestDto;
 import com.cmcu.itstudy.dto.community.PollDto;
 import com.cmcu.itstudy.dto.community.PostCommentResponseDto;
 import com.cmcu.itstudy.dto.community.VoterDto;
@@ -41,6 +42,8 @@ public interface CommunityPostService {
 
     PollDto addPollOption(UUID pollId, String optionText, UUID userId);
 
+    PollDto deletePollOption(UUID optionId, UUID userId);
+
     PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId);
 
     void deleteComment(UUID commentId, UUID userId);
@@ -54,6 +57,8 @@ public interface CommunityPostService {
     PostCommentResponseDto voteComment(UUID commentId, UUID userId, String voteType);
 
     CommunityPostResponseDto updatePost(UUID postId, UUID userId, String content, List<String> imageUrls);
+
+    CommunityPostResponseDto updatePost(UUID postId, UUID userId, CreatePostRequestDto request);
 
     void hardDeletePostPhysics(UUID postId);
 

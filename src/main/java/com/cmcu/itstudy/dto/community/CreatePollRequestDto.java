@@ -16,6 +16,7 @@ import java.util.List;
 public class CreatePollRequestDto {
     private String question;
     private List<String> options;
+    private List<UpdatePollOptionDto> pollOptions;
     private Integer durationDays;
     private Boolean allowMultiple;
     private Boolean allowAddOptions;

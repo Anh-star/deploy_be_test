@@ -44,6 +44,12 @@ public class CommunityPollOption {
     @JsonIgnore
     private CommunityPoll poll;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_user_id")
+    @ToString.Exclude
+    @JsonIgnore
+    private User createdBy;
+
     @Column(name = "option_text", nullable = false, columnDefinition = "nvarchar(255)")
     private String optionText;
 

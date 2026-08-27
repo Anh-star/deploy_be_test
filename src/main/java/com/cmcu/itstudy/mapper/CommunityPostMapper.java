@@ -82,6 +82,23 @@ public final class CommunityPostMapper {
             Long reportCount,
             Boolean isMuted
     ) {
+        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, isReported, isReportDismissed, reportCount, isMuted, null);
+    }
+
+    public static CommunityPostResponseDto toPostResponse(
+            CommunityPost post,
+            List<CommunityPostImage> images,
+            Boolean isLiked,
+            String currentUserVote,
+            Boolean isSaved,
+            CommunityPoll poll,
+            List<CommunityPollVote> userPollVotes,
+            Boolean isReported,
+            Boolean isReportDismissed,
+            Long reportCount,
+            Boolean isMuted,
+            UUID currentUserId
+    ) {
         if (post == null) return null;
 
         String authorName = null;
@@ -109,7 +126,7 @@ public final class CommunityPostMapper {
                     .collect(Collectors.toList());
         }
 
-        PollDto pollDto = toPollDto(poll, userPollVotes);
+        PollDto pollDto = toPollDto(poll, userPollVotes, currentUserId);
 
         return CommunityPostResponseDto.builder()
                 .id(uuidToString(post.getId()))
@@ -143,10 +160,18 @@ public final class CommunityPostMapper {
     }
 
     public static PollDto toPollDto(CommunityPoll poll, List<CommunityPollVote> userPollVotes) {
-        return toPollDto(poll, poll != null ? poll.getOptions() : null, userPollVotes);
+        return toPollDto(poll, poll != null ? poll.getOptions() : null, userPollVotes, null);
+    }
+
+    public static PollDto toPollDto(CommunityPoll poll, List<CommunityPollVote> userPollVotes, UUID currentUserId) {
+        return toPollDto(poll, poll != null ? poll.getOptions() : null, userPollVotes, currentUserId);
     }
 
     public static PollDto toPollDto(CommunityPoll poll, List<CommunityPollOption> options, List<CommunityPollVote> userPollVotes) {
+        return toPollDto(poll, options, userPollVotes, null);
+    }
+
+    public static PollDto toPollDto(CommunityPoll poll, List<CommunityPollOption> options, List<CommunityPollVote> userPollVotes, UUID currentUserId) {
         if (poll == null) return null;
 
         Set<UUID> votedOptionIds = (userPollVotes != null && !userPollVotes.isEmpty())
@@ -158,16 +183,25 @@ public final class CommunityPostMapper {
 
         boolean hasCurrentUserVoted = !votedOptionIds.isEmpty();
         boolean hideResults = Boolean.TRUE.equals(poll.getHideResultsBeforeVote()) && !hasCurrentUserVoted;
+        boolean isPostAuthor = (poll.getPost() != null && poll.getPost().getAuthor() != null && currentUserId != null
+                && currentUserId.equals(poll.getPost().getAuthor().getId()));
 
         List<PollOptionDto> optionDtos = (options != null)
                 ? options.stream()
                         .filter(opt -> opt != null)
-                        .map(opt -> PollOptionDto.builder()
-                                .id(uuidToString(opt.getId()))
-                                .optionText(opt.getOptionText())
-                                .voteCount(hideResults ? 0 : (opt.getVoteCount() != null ? opt.getVoteCount() : 0))
-                                .isVotedByCurrentUser(opt.getId() != null && votedOptionIds.contains(opt.getId()))
-                                .build())
+                        .map(opt -> {
+                            UUID createdById = opt.getCreatedBy() != null ? opt.getCreatedBy().getId() : null;
+                            boolean isCreator = (createdById != null && currentUserId != null && createdById.equals(currentUserId));
+                            boolean canDelete = isCreator || isPostAuthor;
+                            return PollOptionDto.builder()
+                                    .id(uuidToString(opt.getId()))
+                                    .optionText(opt.getOptionText())
+                                    .createdById(uuidToString(createdById))
+                                    .canDelete(canDelete)
+                                    .voteCount(hideResults ? 0 : (opt.getVoteCount() != null ? opt.getVoteCount() : 0))
+                                    .isVotedByCurrentUser(opt.getId() != null && votedOptionIds.contains(opt.getId()))
+                                    .build();
+                        })
                         .collect(Collectors.toList())
                 : List.of();
 
