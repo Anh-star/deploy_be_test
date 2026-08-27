@@ -331,27 +331,41 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
 
         // Push notification when comment is upvoted / cancelled
         if ("UPVOTE".equals(targetVote) && "UPVOTE".equals(resultVote)) {
-            if (comment.getAuthor() != null && !comment.getAuthor().getId().equals(userId)) {
+            UUID authorId = (comment.getAuthor() != null) ? comment.getAuthor().getId() : null;
+            if (authorId != null && !authorId.equals(userId)) {
                 try {
                     User liker = userRepository.findById(userId).orElse(null);
-                    String likerName = (liker != null && liker.getFullName() != null) ? liker.getFullName() : "Ai đó";
+                    String likerName = (liker != null && liker.getFullName() != null && !liker.getFullName().isBlank())
+                            ? liker.getFullName() : "Ai đó";
                     Document doc = comment.getDocument();
-                    String docTitle = (doc != null && doc.getTitle() != null) ? doc.getTitle() : "tài liệu";
+                    if (doc == null && comment.getParent() != null) {
+                        doc = comment.getParent().getDocument();
+                    }
+                    String docTitle = (doc != null && doc.getTitle() != null && !doc.getTitle().isBlank())
+                            ? doc.getTitle() : "tài liệu";
+                    String docIdStr = (doc != null && doc.getId() != null) ? doc.getId().toString() : "";
                     notificationService.createAndPush(
-                            comment.getAuthor().getId(),
+                            authorId,
                             userId,
                             NotificationType.COMMENT_LIKED,
-                            (doc != null ? doc.getId() : "") + "?commentId=" + comment.getId(),
+                            docIdStr + "?commentId=" + comment.getId(),
                             "DOCUMENT",
                             likerName + " đã thích bình luận của bạn trong tài liệu \"" + docTitle + "\""
                     );
-                } catch (Exception ignored) {}
+                    log.info("Pushed COMMENT_LIKED notification to authorId={}, likerId={}, commentId={}", authorId, userId, comment.getId());
+                } catch (Exception ex) {
+                    log.warn("Failed to push comment like notification: {}", ex.getMessage());
+                }
+            } else {
+                log.info("Skipped COMMENT_LIKED notification: authorId={}, userId={}", authorId, userId);
             }
         } else {
             // Cancelled comment upvote
             try {
                 notificationRepository.deleteByReferenceIdContaining("commentId=" + commentId);
-            } catch (Exception ignored) {}
+            } catch (Exception ex) {
+                log.warn("Failed to delete cancelled comment like notification: {}", ex.getMessage());
+            }
         }
 
         return CommentLikeToggleResponseDto.builder()

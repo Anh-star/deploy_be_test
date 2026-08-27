@@ -32,12 +32,15 @@ public interface DocumentCommentRepository extends JpaRepository<DocumentComment
     @EntityGraph(attributePaths = {"author", "replyToUser"})
     List<DocumentComment> findByParent_IdAndDeletedFalseOrderByCreatedAtAsc(UUID parentId);
 
-    @EntityGraph(attributePaths = {"document", "author"})
-    @Query("select c from DocumentComment c where c.id = :id and c.deleted = false")
+    @EntityGraph(attributePaths = {"document", "author", "parent"})
+    Optional<DocumentComment> findById(UUID id);
+
+    @EntityGraph(attributePaths = {"document", "author", "parent"})
+    @Query("select c from DocumentComment c where c.id = :id and (c.deleted = false or c.deleted is null)")
     Optional<DocumentComment> findByIdWithDocumentAndAuthor(@Param("id") UUID id);
 
-    @EntityGraph(attributePaths = {"document", "author", "replyToUser"})
-    @Query("select c from DocumentComment c where c.id = :id and c.deleted = false")
+    @EntityGraph(attributePaths = {"document", "author", "replyToUser", "parent"})
+    @Query("select c from DocumentComment c where c.id = :id and (c.deleted = false or c.deleted is null)")
     Optional<DocumentComment> findByIdWithDocumentAuthorAndReplyTo(@Param("id") UUID id);
 
     @Query("""
