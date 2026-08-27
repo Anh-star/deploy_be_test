@@ -48,6 +48,9 @@ public class PaymentServiceImpl implements PaymentService {
     private final PayOsService payOsService;
     private final SellerEarningService sellerEarningService;
     private final NotificationService notificationService;
+    private final com.cmcu.itstudy.repository.UserRepository userRepository;
+    private final com.cmcu.itstudy.repository.NotificationRepository notificationRepository;
+    private final com.cmcu.itstudy.service.impl.SseService sseService;
 
     public PaymentServiceImpl(PaymentRepository paymentRepository,
                              DocumentRepository documentRepository,
@@ -56,7 +59,10 @@ public class PaymentServiceImpl implements PaymentService {
                              DocumentAccessService documentAccessService,
                              PayOsService payOsService,
                              SellerEarningService sellerEarningService,
-                             NotificationService notificationService) {
+                             NotificationService notificationService,
+                             com.cmcu.itstudy.repository.UserRepository userRepository,
+                             com.cmcu.itstudy.repository.NotificationRepository notificationRepository,
+                             com.cmcu.itstudy.service.impl.SseService sseService) {
         this.paymentRepository = paymentRepository;
         this.documentRepository = documentRepository;
         this.documentAccessRepository = documentAccessRepository;
@@ -65,6 +71,9 @@ public class PaymentServiceImpl implements PaymentService {
         this.payOsService = payOsService;
         this.sellerEarningService = sellerEarningService;
         this.notificationService = notificationService;
+        this.userRepository = userRepository;
+        this.notificationRepository = notificationRepository;
+        this.sseService = sseService;
     }
 
     @Override
@@ -347,17 +356,11 @@ public void processReturn(Map<String, String> params) {
         sellerEarningService.recordSuccessfulPayment(paymentId);
 
         try {
-            documentRepository.findById(documentId).ifPresent(document -> {
+            documentRepository.findByIdAndDeletedFalse(documentId)
+                    .or(() -> documentRepository.findById(documentId))
+                    .ifPresent(document -> {
                 if (document.getCreatedBy() != null && document.getCreatedBy().getId() != null) {
-                    String docTitle = document.getTitle() != null ? document.getTitle() : "tài liệu";
-                    notificationService.createAndPush(
-                            document.getCreatedBy().getId(),
-                            userId,
-                            NotificationType.DOCUMENT_PURCHASED,
-                            documentId.toString(),
-                            "DOCUMENT",
-                            "Tài liệu \"" + docTitle + "\" của bạn đã được mua thành công."
-                    );
+                    sendAggregatedDocumentPurchaseNotification(document.getCreatedBy().getId(), userId, document);
                 }
             });
         } catch (Exception e) {
@@ -383,6 +386,94 @@ public void processReturn(Map<String, String> params) {
                 .createdAt(payment.getCreatedAt())
                 .paidAt(payment.getPaidAt())
                 .build();
+    }
+
+    private void sendAggregatedDocumentPurchaseNotification(UUID ownerId, UUID buyerUserId, Document document) {
+        if (ownerId == null || buyerUserId == null || ownerId.equals(buyerUserId)) return;
+        UUID docId = document.getId();
+        String docTitle = (document.getTitle() != null && !document.getTitle().isBlank()) ? document.getTitle() : "tài liệu";
+        User buyer = userRepository.findById(buyerUserId).orElse(null);
+        String singleBuyerName = (buyer != null && buyer.getFullName() != null && !buyer.getFullName().isBlank())
+                ? buyer.getFullName() : "Một người dùng";
+        String singleMsg = singleBuyerName + " đã mua tài liệu \"" + docTitle + "\" của bạn.";
+
+        try {
+            List<com.cmcu.itstudy.entity.Notification> existingList =
+                    notificationRepository.findAllDocumentPurchaseNotifications(ownerId, docId.toString());
+
+            if (existingList.isEmpty()) {
+                notificationService.createAndPush(
+                        ownerId,
+                        buyerUserId,
+                        NotificationType.DOCUMENT_PURCHASED,
+                        docId.toString(),
+                        "DOCUMENT",
+                        singleMsg
+                );
+                return;
+            }
+
+            // Aggregate with existing notification
+            com.cmcu.itstudy.entity.Notification existing = existingList.get(0);
+            List<String> buyerNames = documentAccessRepository.findDistinctBuyerNamesByDocumentOrderedByRecent(docId);
+
+            String aggregatedMessage;
+            if (buyerNames == null || buyerNames.size() <= 1) {
+                aggregatedMessage = singleMsg;
+            } else if (buyerNames.size() == 2) {
+                String first = buyerNames.get(0);
+                String second = buyerNames.get(1);
+                aggregatedMessage = first + " và " + second + " đã mua tài liệu \"" + docTitle + "\" của bạn.";
+            } else {
+                String first = buyerNames.get(0);
+                int othersCount = buyerNames.size() - 1;
+                aggregatedMessage = first + " và " + othersCount + " người khác đã mua tài liệu \"" + docTitle + "\" của bạn.";
+            }
+
+            existing.setMessage(aggregatedMessage);
+            if (buyer != null) {
+                existing.setActor(buyer);
+            }
+            existing.setCreatedAt(java.time.LocalDateTime.now());
+            existing.setRead(false);
+            com.cmcu.itstudy.entity.Notification saved = notificationRepository.save(existing);
+
+            // Clean up any extra duplicates
+            if (existingList.size() > 1) {
+                for (int i = 1; i < existingList.size(); i++) {
+                    com.cmcu.itstudy.entity.Notification dup = existingList.get(i);
+                    notificationRepository.delete(dup);
+                    try {
+                        java.util.Map<String, Object> removeData = new java.util.HashMap<>();
+                        removeData.put("id", dup.getId().toString());
+                        removeData.put("action", "DELETE");
+                        sseService.pushEvent(ownerId, "notification-removed", removeData);
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            // Push updated SSE notification
+            try {
+                com.cmcu.itstudy.dto.notification.NotificationResponseDto dto = com.cmcu.itstudy.dto.notification.NotificationResponseDto.builder()
+                        .id(saved.getId().toString())
+                        .actorId(buyer != null ? buyer.getId().toString() : null)
+                        .actorName(singleBuyerName)
+                        .actorAvatar(buyer != null ? buyer.getAvatarUrl() : null)
+                        .type(saved.getType())
+                        .referenceId(saved.getReferenceId())
+                        .referenceType(saved.getReferenceType())
+                        .message(saved.getMessage())
+                        .isRead(false)
+                        .createdAt(saved.getCreatedAt())
+                        .build();
+                sseService.pushEvent(ownerId, "notification", dto);
+            } catch (Exception sseEx) {
+                log.warn("Failed to push aggregated purchase SSE notification to user {}: {}", ownerId, sseEx.getMessage());
+            }
+
+        } catch (Exception ex) {
+            log.warn("Failed to send aggregated purchase notification: {}", ex.getMessage());
+        }
     }
 
     private UUID getCurrentUserId() {

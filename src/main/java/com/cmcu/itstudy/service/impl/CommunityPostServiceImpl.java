@@ -858,9 +858,10 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     updatedMessage = first + " và " + othersCount + " người khác đã thích bài viết của bạn.";
                 }
 
-                // Update first notification
+                // Update first notification and mark as read because remaining likers were previously seen
                 com.cmcu.itstudy.entity.Notification existing = existingList.get(0);
                 existing.setMessage(updatedMessage);
+                existing.setRead(true);
                 com.cmcu.itstudy.entity.Notification saved = notificationRepository.save(existing);
 
                 // Clean up any extra duplicates
@@ -890,9 +891,11 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                             .referenceId(saved.getReferenceId())
                             .referenceType(saved.getReferenceType())
                             .message(saved.getMessage())
-                            .isRead(saved.isRead())
+                            .isRead(true)
                             .createdAt(saved.getCreatedAt())
+                            .action("UPDATE")
                             .build();
+                    sseService.pushEvent(recipientId, "notification-updated", dto);
                     sseService.pushEvent(recipientId, "notification", dto);
                 } catch (Exception sseEx) {
                     log.warn("Failed to push updated upvote SSE notification to user {}: {}", recipientId, sseEx.getMessage());

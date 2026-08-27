@@ -55,4 +55,10 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             @Param("recipientId") UUID recipientId,
             @Param("docIdPattern") String docIdPattern
     );
+
+    @Query("SELECT n FROM Notification n WHERE n.recipient.id = :recipientId AND n.referenceType = 'DOCUMENT' AND n.type = 'DOCUMENT_PURCHASED' AND n.referenceId = :referenceId ORDER BY n.createdAt DESC")
+    java.util.List<Notification> findAllDocumentPurchaseNotifications(
+            @Param("recipientId") UUID recipientId,
+            @Param("referenceId") String referenceId
+    );
 }

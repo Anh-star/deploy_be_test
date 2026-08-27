@@ -162,7 +162,7 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
         User author = userRepository.findById(userId)
                 .orElseThrow(() -> new NoSuchElementException("User not found"));
 
-        Document document = documentRepository.findById(documentId)
+        Document document = documentRepository.findByIdAndDeletedFalse(documentId)
                 .orElseThrow(() -> new NoSuchElementException("Document not found"));
 
         DocumentComment saved = documentCommentRepository.save(DocumentComment.builder()
@@ -203,7 +203,7 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
     @Override
     @Transactional
     public CommentResponse replyComment(UUID parentCommentId, String body, UUID userId) {
-        DocumentComment parent = documentCommentRepository.findById(parentCommentId)
+        DocumentComment parent = documentCommentRepository.findByIdWithDocumentAndAuthor(parentCommentId)
                 .orElseThrow(() -> new NoSuchElementException("Comment not found"));
         if (Boolean.TRUE.equals(parent.getDeleted())) {
             throw new NoSuchElementException("Comment not found");
@@ -230,7 +230,7 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
 
         Document document = parent.getDocument();
         if (document != null && (document.getCreatedBy() == null || document.getTitle() == null)) {
-            document = documentRepository.findById(document.getId()).orElse(document);
+            document = documentRepository.findByIdAndDeletedFalse(document.getId()).orElse(document);
         }
 
         String docTitle = (document != null && document.getTitle() != null) ? document.getTitle() : "tài liệu";
@@ -283,7 +283,7 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
     public CommentLikeToggleResponseDto voteComment(UUID commentId, UUID userId, String voteType) {
         String targetVote = ("DOWNVOTE".equalsIgnoreCase(voteType)) ? "DOWNVOTE" : "UPVOTE";
 
-        DocumentComment comment = documentCommentRepository.findById(commentId)
+        DocumentComment comment = documentCommentRepository.findByIdWithDocumentAndAuthor(commentId)
                 .orElseThrow(() -> new NoSuchElementException("Comment not found"));
         if (Boolean.TRUE.equals(comment.getDeleted())) {
             throw new NoSuchElementException("Comment not found");
