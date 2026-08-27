@@ -19,4 +19,6 @@ public interface PaymentService {
     List<PaymentHistoryDto> getMyPaymentHistory();
 
     void processPayOsWebhook(PayOsWebhookDto payload);
+
+    int cancelExpiredPendingPayments(int expirationMinutes);
 }

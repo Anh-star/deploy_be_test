@@ -48,8 +48,12 @@ public class PayOsServiceImpl implements PayOsService {
             body.put("cancelUrl", props.getCancelUrl());
             body.put("returnUrl", props.getReturnUrl());
 
+            long expiredAt = (System.currentTimeMillis() / 1000L) + (15 * 60L);
+            body.put("expiredAt", expiredAt);
+
             log.info("PayOS DEBUG returnUrl={}", props.getReturnUrl());
             log.info("PayOS DEBUG cancelUrl={}", props.getCancelUrl());
+            log.info("PayOS DEBUG expiredAt={}", expiredAt);
 
             Map<String, String> signatureData = new TreeMap<>();
             signatureData.put("amount", String.valueOf(amount));

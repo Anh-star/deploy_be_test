@@ -3,10 +3,12 @@ package com.cmcu.itstudy.repository;
 import com.cmcu.itstudy.entity.Payment;
 import com.cmcu.itstudy.enums.PaymentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -20,6 +22,10 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
     List<Payment> findAllByUserIdOrderByCreatedAtDesc(UUID userId);
 
     Optional<Payment> findByOrderCodeAndUserId(String orderCode, UUID userId);
+
+    @Modifying
+    @Query("UPDATE Payment p SET p.status = com.cmcu.itstudy.enums.PaymentStatus.CANCELLED WHERE p.status = com.cmcu.itstudy.enums.PaymentStatus.PENDING AND p.createdAt < :threshold")
+    int cancelExpiredPendingPayments(@Param("threshold") LocalDateTime threshold);
 
     /**
      * True iff there exists a payment on {@code documentId} with the given

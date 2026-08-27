@@ -230,8 +230,11 @@ public void processReturn(Map<String, String> params) {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<PaymentHistoryDto> getMyPaymentHistory() {
+        // Auto-cancel any pending payments older than 15 minutes before fetching
+        cancelExpiredPendingPayments(15);
+
         UUID userId = getCurrentUserId();
         List<Payment> payments = paymentRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
 
@@ -250,6 +253,17 @@ public void processReturn(Map<String, String> params) {
         return payments.stream()
                 .map(payment -> toPaymentHistoryDto(payment, titleByDocumentId))
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public int cancelExpiredPendingPayments(int expirationMinutes) {
+        LocalDateTime threshold = LocalDateTime.now().minusMinutes(expirationMinutes);
+        int count = paymentRepository.cancelExpiredPendingPayments(threshold);
+        if (count > 0) {
+            log.info("Auto-cancelled {} expired pending payments (threshold: older than {} minutes)", count, expirationMinutes);
+        }
+        return count;
     }
 
     @Override
@@ -281,8 +295,8 @@ public void processReturn(Map<String, String> params) {
             }
             log.info("PayOS webhook: payment SUCCESS updated: orderCode={}", orderCode);
         } else {
-            payment.setStatus(PaymentStatus.FAILED);
-            log.info("PayOS webhook: payment FAILED updated: orderCode={}", orderCode);
+            payment.setStatus(PaymentStatus.CANCELLED);
+            log.info("PayOS webhook: payment CANCELLED updated: orderCode={}", orderCode);
         }
 
         paymentRepository.save(payment);
