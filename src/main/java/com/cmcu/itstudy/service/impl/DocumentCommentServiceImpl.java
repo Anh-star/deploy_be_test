@@ -13,8 +13,10 @@ import com.cmcu.itstudy.repository.DocumentCommentLikeRepository;
 import com.cmcu.itstudy.repository.DocumentCommentRepository;
 import com.cmcu.itstudy.repository.DocumentRepository;
 import com.cmcu.itstudy.repository.UserRepository;
+import com.cmcu.itstudy.repository.NotificationRepository;
 import com.cmcu.itstudy.service.contract.DocumentCommentService;
 import com.cmcu.itstudy.service.contract.NotificationService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -31,6 +33,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class DocumentCommentServiceImpl implements DocumentCommentService {
 
@@ -40,20 +43,26 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
     private final DocumentCommentLikeRepository documentCommentLikeRepository;
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
+    private final NotificationRepository notificationRepository;
     private final NotificationService notificationService;
+    private final SseService sseService;
 
     public DocumentCommentServiceImpl(
             DocumentCommentRepository documentCommentRepository,
             DocumentCommentLikeRepository documentCommentLikeRepository,
             DocumentRepository documentRepository,
             UserRepository userRepository,
-            NotificationService notificationService
+            NotificationRepository notificationRepository,
+            NotificationService notificationService,
+            SseService sseService
     ) {
         this.documentCommentRepository = documentCommentRepository;
         this.documentCommentLikeRepository = documentCommentLikeRepository;
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
+        this.notificationRepository = notificationRepository;
         this.notificationService = notificationService;
+        this.sseService = sseService;
     }
 
     @Override
@@ -174,14 +183,16 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
             String commenterName = (author.getFullName() != null) ? author.getFullName() : "Ai đó";
             if (!ownerId.equals(userId)) {
                 String docTitle = (document.getTitle() != null) ? document.getTitle() : "tài liệu";
-                String snippet = body != null && body.length() > 50 ? body.substring(0, 50) + "..." : (body != null ? body : "");
-                notificationService.createAndPush(
+                String singleMsg = commenterName + " đã bình luận về tài liệu \"" + docTitle + "\"";
+                sendAggregatedDocumentCommentNotification(
                         ownerId,
-                        userId,
-                        NotificationType.DOCUMENT_COMMENTED,
+                        author,
+                        document,
                         documentId.toString() + "?commentId=" + saved.getId(),
-                        "DOCUMENT",
-                        commenterName + " đã bình luận về tài liệu \"" + docTitle + "\": \"" + snippet + "\""
+                        NotificationType.DOCUMENT_COMMENTED,
+                        singleMsg,
+                        false,
+                        null
                 );
             }
         }
@@ -224,17 +235,19 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
 
         String docTitle = (document != null && document.getTitle() != null) ? document.getTitle() : "tài liệu";
         String replierName = (author.getFullName() != null) ? author.getFullName() : "Ai đó";
-        String snippet = body != null && body.length() > 50 ? body.substring(0, 50) + "..." : (body != null ? body : "");
 
         // 1. Gửi thông báo cho tác giả bình luận gốc khi có phản hồi
         if (parent.getAuthor() != null && !parent.getAuthor().getId().equals(userId)) {
-            notificationService.createAndPush(
+            String parentMsg = replierName + " đã trả lời bình luận của bạn trong tài liệu \"" + docTitle + "\"";
+            sendAggregatedDocumentCommentNotification(
                     parent.getAuthor().getId(),
-                    userId,
-                    NotificationType.COMMENT_REPLIED,
+                    author,
+                    document != null ? document : parent.getDocument(),
                     (document != null ? document.getId() : parent.getDocument().getId()).toString() + "?commentId=" + saved.getId(),
-                    "DOCUMENT",
-                    replierName + " đã phản hồi bình luận của bạn trong tài liệu \"" + docTitle + "\": \"" + snippet + "\""
+                    NotificationType.COMMENT_REPLIED,
+                    parentMsg,
+                    true,
+                    parent.getId()
             );
         }
 
@@ -242,13 +255,16 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
         if (document != null && document.getCreatedBy() != null) {
             UUID ownerId = document.getCreatedBy().getId();
             if (!ownerId.equals(userId) && (parent.getAuthor() == null || !ownerId.equals(parent.getAuthor().getId()))) {
-                notificationService.createAndPush(
+                String docOwnerMsg = replierName + " đã bình luận về tài liệu \"" + docTitle + "\"";
+                sendAggregatedDocumentCommentNotification(
                         ownerId,
-                        userId,
-                        NotificationType.DOCUMENT_COMMENTED,
+                        author,
+                        document,
                         document.getId().toString() + "?commentId=" + saved.getId(),
-                        "DOCUMENT",
-                        replierName + " đã bình luận về tài liệu \"" + docTitle + "\": \"" + snippet + "\""
+                        NotificationType.DOCUMENT_COMMENTED,
+                        docOwnerMsg,
+                        false,
+                        null
                 );
             }
         }
@@ -313,6 +329,31 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
         comment.setLikeCount(upvotes - downvotes);
         documentCommentRepository.saveAndFlush(comment);
 
+        // Push notification when comment is upvoted / cancelled
+        if ("UPVOTE".equals(targetVote) && "UPVOTE".equals(resultVote)) {
+            if (comment.getAuthor() != null && !comment.getAuthor().getId().equals(userId)) {
+                try {
+                    User liker = userRepository.findById(userId).orElse(null);
+                    String likerName = (liker != null && liker.getFullName() != null) ? liker.getFullName() : "Ai đó";
+                    Document doc = comment.getDocument();
+                    String docTitle = (doc != null && doc.getTitle() != null) ? doc.getTitle() : "tài liệu";
+                    notificationService.createAndPush(
+                            comment.getAuthor().getId(),
+                            userId,
+                            NotificationType.COMMENT_LIKED,
+                            (doc != null ? doc.getId() : "") + "?commentId=" + comment.getId(),
+                            "DOCUMENT",
+                            likerName + " đã thích bình luận của bạn trong tài liệu \"" + docTitle + "\""
+                    );
+                } catch (Exception ignored) {}
+            }
+        } else {
+            // Cancelled comment upvote
+            try {
+                notificationRepository.deleteByReferenceIdContaining("commentId=" + commentId);
+            } catch (Exception ignored) {}
+        }
+
         return CommentLikeToggleResponseDto.builder()
                 .likeCount(upvotes - downvotes)
                 .upvoteCount(upvotes)
@@ -320,6 +361,117 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
                 .isLiked("UPVOTE".equals(resultVote))
                 .userVote(resultVote)
                 .build();
+    }
+
+    private void sendAggregatedDocumentCommentNotification(
+            UUID recipientId,
+            User actor,
+            Document document,
+            String targetRefId,
+            NotificationType type,
+            String singleMessage,
+            boolean isParentAuthor,
+            UUID parentCommentId
+    ) {
+        if (recipientId == null || actor == null || recipientId.equals(actor.getId())) return;
+        UUID docId = document.getId();
+        String docTitle = (document.getTitle() != null && !document.getTitle().isBlank()) ? document.getTitle() : "tài liệu";
+        try {
+            // Check if recipient has an existing notification on this document (read or unread)
+            List<com.cmcu.itstudy.entity.Notification> existingList =
+                    notificationRepository.findAllDocumentCommentNotifications(recipientId, docId.toString() + "%");
+
+            if (existingList.isEmpty()) {
+                // No existing notification: create new single notification
+                notificationService.createAndPush(
+                        recipientId,
+                        actor.getId(),
+                        type,
+                        targetRefId != null ? targetRefId : docId.toString(),
+                        "DOCUMENT",
+                        singleMessage
+                );
+                return;
+            }
+
+            // Aggregate with existing notification
+            com.cmcu.itstudy.entity.Notification existing = existingList.get(0);
+
+            // Fetch distinct recent commenters for this document or parent comment (excluding the recipient)
+            List<String> commenterNames;
+            if (isParentAuthor && parentCommentId != null) {
+                commenterNames = documentCommentRepository.findDistinctReplierNamesByParentCommentOrderedByRecent(parentCommentId, recipientId);
+            } else {
+                commenterNames = documentCommentRepository.findDistinctCommenterNamesByDocumentOrderedByRecent(docId, recipientId);
+            }
+
+            String actorName = (actor.getFullName() != null && !actor.getFullName().isBlank()) ? actor.getFullName() : "Ai đó";
+
+            String aggregatedMessage;
+            if (commenterNames == null || commenterNames.size() <= 1) {
+                aggregatedMessage = singleMessage;
+            } else if (commenterNames.size() == 2) {
+                String first = commenterNames.get(0);
+                String second = commenterNames.get(1);
+                if (isParentAuthor) {
+                    aggregatedMessage = first + " và " + second + " đã trả lời bình luận của bạn trong tài liệu \"" + docTitle + "\"";
+                } else {
+                    aggregatedMessage = first + " và " + second + " đã bình luận về tài liệu \"" + docTitle + "\"";
+                }
+            } else {
+                String first = commenterNames.get(0);
+                int othersCount = commenterNames.size() - 1;
+                if (isParentAuthor) {
+                    aggregatedMessage = first + " và " + othersCount + " người khác đã trả lời bình luận của bạn trong tài liệu \"" + docTitle + "\"";
+                } else {
+                    aggregatedMessage = first + " và " + othersCount + " người khác đã bình luận về tài liệu \"" + docTitle + "\"";
+                }
+            }
+
+            existing.setMessage(aggregatedMessage);
+            existing.setActor(actor);
+            existing.setType(type);
+            existing.setReferenceId(targetRefId != null ? targetRefId : docId.toString());
+            existing.setCreatedAt(java.time.LocalDateTime.now());
+            existing.setRead(false);
+            com.cmcu.itstudy.entity.Notification saved = notificationRepository.save(existing);
+
+            // Clean up any duplicates
+            if (existingList.size() > 1) {
+                for (int i = 1; i < existingList.size(); i++) {
+                    com.cmcu.itstudy.entity.Notification dup = existingList.get(i);
+                    notificationRepository.delete(dup);
+                    try {
+                        Map<String, Object> removeData = new HashMap<>();
+                        removeData.put("id", dup.getId().toString());
+                        removeData.put("action", "DELETE");
+                        sseService.pushEvent(recipientId, "notification-removed", removeData);
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            // Push updated notification via SSE to recipient
+            try {
+                com.cmcu.itstudy.dto.notification.NotificationResponseDto dto = com.cmcu.itstudy.dto.notification.NotificationResponseDto.builder()
+                        .id(saved.getId().toString())
+                        .actorId(actor.getId().toString())
+                        .actorName(actorName)
+                        .actorAvatar(actor.getAvatarUrl())
+                        .type(saved.getType())
+                        .referenceId(saved.getReferenceId())
+                        .referenceType(saved.getReferenceType())
+                        .message(saved.getMessage())
+                        .isRead(false)
+                        .createdAt(saved.getCreatedAt())
+                        .build();
+                sseService.pushEvent(recipientId, "notification", dto);
+            } catch (Exception sseEx) {
+                log.warn("Failed to push aggregated SSE notification to user {}: {}", recipientId, sseEx.getMessage());
+            }
+
+        } catch (Exception ex) {
+            log.warn("Failed to send aggregated document comment notification: {}", ex.getMessage());
+        }
     }
 
     private static Map<UUID, Integer> toReplyCountMap(List<Object[]> rows) {

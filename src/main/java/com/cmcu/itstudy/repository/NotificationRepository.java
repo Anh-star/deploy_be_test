@@ -32,9 +32,27 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             @Param("postIdPattern") String postIdPattern
     );
 
+    @Query("SELECT n FROM Notification n WHERE n.recipient.id = :recipientId AND n.referenceType = 'COMMUNITY_POST' AND n.referenceId LIKE :postIdPattern ORDER BY n.createdAt DESC")
+    java.util.List<Notification> findAllCommunityPostCommentNotifications(
+            @Param("recipientId") UUID recipientId,
+            @Param("postIdPattern") String postIdPattern
+    );
+
     @Query("SELECT n FROM Notification n WHERE n.recipient.id = :recipientId AND n.referenceType = 'COMMUNITY_POST' AND n.type = 'POST_UPVOTED' AND n.referenceId = :referenceId AND n.read = false ORDER BY n.createdAt DESC")
     java.util.List<Notification> findUnreadPostUpvoteNotifications(
             @Param("recipientId") UUID recipientId,
             @Param("referenceId") String referenceId
+    );
+
+    @Query("SELECT n FROM Notification n WHERE n.recipient.id = :recipientId AND n.referenceType = 'COMMUNITY_POST' AND n.type = 'POST_UPVOTED' AND n.referenceId = :referenceId ORDER BY n.createdAt DESC")
+    java.util.List<Notification> findAllPostUpvoteNotifications(
+            @Param("recipientId") UUID recipientId,
+            @Param("referenceId") String referenceId
+    );
+
+    @Query("SELECT n FROM Notification n WHERE n.recipient.id = :recipientId AND n.referenceType = 'DOCUMENT' AND n.referenceId LIKE :docIdPattern ORDER BY n.createdAt DESC")
+    java.util.List<Notification> findAllDocumentCommentNotifications(
+            @Param("recipientId") UUID recipientId,
+            @Param("docIdPattern") String docIdPattern
     );
 }

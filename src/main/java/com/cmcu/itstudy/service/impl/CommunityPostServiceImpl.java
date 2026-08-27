@@ -631,12 +631,12 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 return;
             }
 
-            // Check if recipient has an existing unread comment notification on this post
-            List<com.cmcu.itstudy.entity.Notification> unreadList =
-                    notificationRepository.findUnreadCommunityPostNotifications(recipientId, postId.toString() + "%");
+            // Check if recipient has an existing comment notification on this post (read or unread)
+            List<com.cmcu.itstudy.entity.Notification> existingList =
+                    notificationRepository.findAllCommunityPostCommentNotifications(recipientId, postId.toString() + "%");
 
-            if (unreadList.isEmpty()) {
-                // No unread notification: create new single notification
+            if (existingList.isEmpty()) {
+                // No existing notification: create new single notification
                 notificationService.createAndPush(
                         recipientId,
                         actor.getId(),
@@ -648,8 +648,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 return;
             }
 
-            // Aggregate with existing unread notification
-            com.cmcu.itstudy.entity.Notification existing = unreadList.get(0);
+            // Aggregate with existing notification
+            com.cmcu.itstudy.entity.Notification existing = existingList.get(0);
 
             // Fetch distinct recent commenters for this post (excluding the recipient)
             List<String> commenterNames = commentRepository.findDistinctCommenterNamesByPostOrderedByRecent(postId, recipientId);
@@ -683,6 +683,20 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             existing.setCreatedAt(LocalDateTime.now());
             existing.setRead(false);
             com.cmcu.itstudy.entity.Notification saved = notificationRepository.save(existing);
+
+            // Clean up any extra duplicates if any exist
+            if (existingList.size() > 1) {
+                for (int i = 1; i < existingList.size(); i++) {
+                    com.cmcu.itstudy.entity.Notification dup = existingList.get(i);
+                    notificationRepository.delete(dup);
+                    try {
+                        Map<String, Object> removeData = new HashMap<>();
+                        removeData.put("id", dup.getId().toString());
+                        removeData.put("action", "DELETE");
+                        sseService.pushEvent(recipientId, "notification-removed", removeData);
+                    } catch (Exception ignored) {}
+                }
+            }
 
             // Push updated notification via SSE to recipient
             try {
@@ -731,18 +745,21 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             if (upvoterNames.size() == 1) {
                 aggregatedMessage = upvoterNames.get(0) + " đã thích bài viết của bạn.";
             } else if (upvoterNames.size() == 2) {
-                aggregatedMessage = upvoterNames.get(0) + " và " + upvoterNames.get(1) + " đã thích bài viết của bạn.";
+                String first = upvoterNames.get(0);
+                String second = upvoterNames.get(1);
+                aggregatedMessage = first + " và " + second + " đã thích bài viết của bạn.";
             } else {
+                String first = upvoterNames.get(0);
                 int othersCount = upvoterNames.size() - 1;
-                aggregatedMessage = upvoterNames.get(0) + " và " + othersCount + " người khác đã thích bài viết của bạn.";
+                aggregatedMessage = first + " và " + othersCount + " người khác đã thích bài viết của bạn.";
             }
 
-            // Check if recipient has an existing unread upvote notification on this post
-            List<com.cmcu.itstudy.entity.Notification> unreadList =
-                    notificationRepository.findUnreadPostUpvoteNotifications(recipientId, postId.toString());
+            // Check if recipient has ANY existing upvote notification on this post (read or unread)
+            List<com.cmcu.itstudy.entity.Notification> existingList =
+                    notificationRepository.findAllPostUpvoteNotifications(recipientId, postId.toString());
 
-            if (unreadList.isEmpty()) {
-                // No unread notification: create new single notification
+            if (existingList.isEmpty()) {
+                // No notification: create new single notification
                 notificationService.createAndPush(
                         recipientId,
                         actor.getId(),
@@ -754,8 +771,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 return;
             }
 
-            // Aggregate with existing unread notification
-            com.cmcu.itstudy.entity.Notification existing = unreadList.get(0);
+            // Update existing notification
+            com.cmcu.itstudy.entity.Notification existing = existingList.get(0);
             existing.setMessage(aggregatedMessage);
             existing.setActor(actor);
             existing.setType(NotificationType.POST_UPVOTED);
@@ -763,6 +780,20 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             existing.setCreatedAt(LocalDateTime.now());
             existing.setRead(false);
             com.cmcu.itstudy.entity.Notification saved = notificationRepository.save(existing);
+
+            // Clean up any other duplicates in DB
+            if (existingList.size() > 1) {
+                for (int i = 1; i < existingList.size(); i++) {
+                    com.cmcu.itstudy.entity.Notification dup = existingList.get(i);
+                    notificationRepository.delete(dup);
+                    try {
+                        Map<String, Object> removeData = new HashMap<>();
+                        removeData.put("id", dup.getId().toString());
+                        removeData.put("action", "DELETE");
+                        sseService.pushEvent(recipientId, "notification-removed", removeData);
+                    } catch (Exception ignored) {}
+                }
+            }
 
             // Push updated notification via SSE to recipient
             try {
@@ -792,26 +823,25 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         if (recipientId == null || post == null) return;
         UUID postId = post.getId();
         try {
-            List<com.cmcu.itstudy.entity.Notification> unreadList =
-                    notificationRepository.findUnreadPostUpvoteNotifications(recipientId, postId.toString());
-            if (unreadList.isEmpty()) return;
+            List<com.cmcu.itstudy.entity.Notification> existingList =
+                    notificationRepository.findAllPostUpvoteNotifications(recipientId, postId.toString());
+            if (existingList.isEmpty()) return;
 
-            com.cmcu.itstudy.entity.Notification existing = unreadList.get(0);
             List<String> remainingUpvoters = likeRepository.findUpvoterNamesByPostOrderedByRecent(postId, recipientId);
 
             if (remainingUpvoters == null || remainingUpvoters.isEmpty()) {
-                // No upvoters left: delete notification from DB
-                notificationRepository.delete(existing);
-
-                // Push removal event via SSE
-                try {
-                    Map<String, Object> removeData = new HashMap<>();
-                    removeData.put("id", existing.getId().toString());
-                    removeData.put("action", "DELETE");
-                    sseService.pushEvent(recipientId, "notification-removed", removeData);
-                    sseService.pushEvent(recipientId, "notification", removeData);
-                } catch (Exception sseEx) {
-                    log.warn("Failed to push remove upvote notification event to user {}: {}", recipientId, sseEx.getMessage());
+                // No upvoters left: delete ALL existing upvote notifications for this post from DB
+                for (com.cmcu.itstudy.entity.Notification n : existingList) {
+                    notificationRepository.delete(n);
+                    try {
+                        Map<String, Object> removeData = new HashMap<>();
+                        removeData.put("id", n.getId().toString());
+                        removeData.put("action", "DELETE");
+                        sseService.pushEvent(recipientId, "notification-removed", removeData);
+                        sseService.pushEvent(recipientId, "notification", removeData);
+                    } catch (Exception sseEx) {
+                        log.warn("Failed to push remove upvote notification event to user {}: {}", recipientId, sseEx.getMessage());
+                    }
                 }
             } else {
                 // Some upvoters still remain: recalculate message
@@ -819,14 +849,33 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 if (remainingUpvoters.size() == 1) {
                     updatedMessage = remainingUpvoters.get(0) + " đã thích bài viết của bạn.";
                 } else if (remainingUpvoters.size() == 2) {
-                    updatedMessage = remainingUpvoters.get(0) + " và " + remainingUpvoters.get(1) + " đã thích bài viết của bạn.";
+                    String first = remainingUpvoters.get(0);
+                    String second = remainingUpvoters.get(1);
+                    updatedMessage = first + " và " + second + " đã thích bài viết của bạn.";
                 } else {
+                    String first = remainingUpvoters.get(0);
                     int othersCount = remainingUpvoters.size() - 1;
-                    updatedMessage = remainingUpvoters.get(0) + " và " + othersCount + " người khác đã thích bài viết của bạn.";
+                    updatedMessage = first + " và " + othersCount + " người khác đã thích bài viết của bạn.";
                 }
 
+                // Update first notification
+                com.cmcu.itstudy.entity.Notification existing = existingList.get(0);
                 existing.setMessage(updatedMessage);
                 com.cmcu.itstudy.entity.Notification saved = notificationRepository.save(existing);
+
+                // Clean up any extra duplicates
+                if (existingList.size() > 1) {
+                    for (int i = 1; i < existingList.size(); i++) {
+                        com.cmcu.itstudy.entity.Notification dup = existingList.get(i);
+                        notificationRepository.delete(dup);
+                        try {
+                            Map<String, Object> removeData = new HashMap<>();
+                            removeData.put("id", dup.getId().toString());
+                            removeData.put("action", "DELETE");
+                            sseService.pushEvent(recipientId, "notification-removed", removeData);
+                        } catch (Exception ignored) {}
+                    }
+                }
 
                 try {
                     User actor = saved.getActor();
@@ -841,7 +890,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                             .referenceId(saved.getReferenceId())
                             .referenceType(saved.getReferenceType())
                             .message(saved.getMessage())
-                            .isRead(false)
+                            .isRead(saved.isRead())
                             .createdAt(saved.getCreatedAt())
                             .build();
                     sseService.pushEvent(recipientId, "notification", dto);

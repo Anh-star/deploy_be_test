@@ -70,4 +70,16 @@ public interface DocumentCommentRepository extends JpaRepository<DocumentComment
             order by c.createdAt desc
             """)
     List<DocumentComment> findTop5ByDocumentIdOrderByCreatedAtDesc(@Param("documentId") UUID documentId, Pageable pageable);
+
+    @Query("SELECT u.fullName FROM DocumentComment c JOIN c.author u WHERE c.document.id = :documentId AND u.id != :excludedUserId AND (c.deleted = false OR c.deleted IS NULL) GROUP BY u.id, u.fullName ORDER BY MAX(c.createdAt) DESC")
+    List<String> findDistinctCommenterNamesByDocumentOrderedByRecent(
+            @Param("documentId") UUID documentId,
+            @Param("excludedUserId") UUID excludedUserId
+    );
+
+    @Query("SELECT u.fullName FROM DocumentComment c JOIN c.author u WHERE c.parent.id = :parentId AND u.id != :excludedUserId AND (c.deleted = false OR c.deleted IS NULL) GROUP BY u.id, u.fullName ORDER BY MAX(c.createdAt) DESC")
+    List<String> findDistinctReplierNamesByParentCommentOrderedByRecent(
+            @Param("parentId") UUID parentId,
+            @Param("excludedUserId") UUID excludedUserId
+    );
 }
