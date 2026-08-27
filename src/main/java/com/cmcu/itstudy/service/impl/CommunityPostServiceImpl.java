@@ -1829,7 +1829,13 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         PageRequest pageRequest = PageRequest.of(page, size);
         String targetStatus = (status != null && !status.isBlank()) ? status.trim().toUpperCase() : "ESCALATED";
         String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : null;
-        Page<CommunityPostReport> reports = reportRepository.searchReports(targetStatus, kw, startDate, endDate, pageRequest);
+
+        Page<CommunityPostReport> reports;
+        if ("RESOLVED".equals(targetStatus) || "RESOLVED_BAN".equals(targetStatus) || "RESOLVED_ALL".equals(targetStatus) || "HISTORY".equals(targetStatus)) {
+            reports = reportRepository.searchResolvedReportsForAdmin(kw, startDate, endDate, pageRequest);
+        } else {
+            reports = reportRepository.searchReports(targetStatus, kw, startDate, endDate, pageRequest);
+        }
 
         return reports.map(r -> {
             CommunityPost p = r.getPost();
