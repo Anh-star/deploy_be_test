@@ -45,14 +45,38 @@ public class PaymentModeratorWithdrawalController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) WithdrawalStatus status,
-            @RequestParam(required = false) String search
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate
     ) {
+        java.time.LocalDateTime start = null;
+        if (org.springframework.util.StringUtils.hasText(startDate)) {
+            try {
+                start = java.time.LocalDate.parse(startDate.trim()).atStartOfDay();
+            } catch (Exception e) {
+                try {
+                    start = java.time.LocalDateTime.parse(startDate.trim());
+                } catch (Exception ignored) {}
+            }
+        }
+        java.time.LocalDateTime end = null;
+        if (org.springframework.util.StringUtils.hasText(endDate)) {
+            try {
+                end = java.time.LocalDate.parse(endDate.trim()).atTime(java.time.LocalTime.MAX);
+            } catch (Exception e) {
+                try {
+                    end = java.time.LocalDateTime.parse(endDate.trim());
+                } catch (Exception ignored) {}
+            }
+        }
         PaymentModeratorWithdrawalPageResponseDto data =
                 paymentModeratorWithdrawalQueryService.listWithdrawals(
                         page,
                         size,
                         status,
-                        search
+                        search,
+                        start,
+                        end
                 );
 
         return ResponseEntity.ok(

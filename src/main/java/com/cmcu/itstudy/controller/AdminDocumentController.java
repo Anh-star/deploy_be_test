@@ -43,10 +43,33 @@ public class AdminDocumentController {
     @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
     public ResponseEntity<ApiResponse<AdminPendingDocumentsPageResponseDto>> listPending(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
-        AdminPendingDocumentsPageResponseDto data = adminDocumentService.listPendingDocuments(status, page, size);
+        java.time.LocalDateTime start = null;
+        if (org.springframework.util.StringUtils.hasText(startDate)) {
+            try {
+                start = java.time.LocalDate.parse(startDate.trim()).atStartOfDay();
+            } catch (Exception e) {
+                try {
+                    start = java.time.LocalDateTime.parse(startDate.trim());
+                } catch (Exception ignored) {}
+            }
+        }
+        java.time.LocalDateTime end = null;
+        if (org.springframework.util.StringUtils.hasText(endDate)) {
+            try {
+                end = java.time.LocalDate.parse(endDate.trim()).atTime(java.time.LocalTime.MAX);
+            } catch (Exception e) {
+                try {
+                    end = java.time.LocalDateTime.parse(endDate.trim());
+                } catch (Exception ignored) {}
+            }
+        }
+        AdminPendingDocumentsPageResponseDto data = adminDocumentService.listPendingDocuments(status, search, start, end, page, size);
         return ResponseEntity.ok(ApiResponse.success(data, "Pending documents"));
     }
 
@@ -74,12 +97,36 @@ public class AdminDocumentController {
 
     @GetMapping("/reports")
     @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
-    public ResponseEntity<ApiResponse<Page<DocumentReportResponseDto>>> getReportedDocuments(
+    public ResponseEntity<ApiResponse<com.cmcu.itstudy.dto.document.DocumentReportPageResponseDto>> getReportedDocuments(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
-        Page<DocumentReportResponseDto> data = documentService.getReportedDocuments(status, page, size);
+        java.time.LocalDateTime start = null;
+        if (org.springframework.util.StringUtils.hasText(startDate)) {
+            try {
+                start = java.time.LocalDate.parse(startDate.trim()).atStartOfDay();
+            } catch (Exception e) {
+                try {
+                    start = java.time.LocalDateTime.parse(startDate.trim());
+                } catch (Exception ignored) {}
+            }
+        }
+        java.time.LocalDateTime end = null;
+        if (org.springframework.util.StringUtils.hasText(endDate)) {
+            try {
+                end = java.time.LocalDate.parse(endDate.trim()).atTime(java.time.LocalTime.MAX);
+            } catch (Exception e) {
+                try {
+                    end = java.time.LocalDateTime.parse(endDate.trim());
+                } catch (Exception ignored) {}
+            }
+        }
+        com.cmcu.itstudy.dto.document.DocumentReportPageResponseDto data =
+                documentService.getReportedDocuments(status, search, start, end, page, size);
         return ResponseEntity.ok(ApiResponse.success(data, "Reported documents"));
     }
 

@@ -722,12 +722,23 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Transactional(readOnly = true)
     @Override
-    public org.springframework.data.domain.Page<com.cmcu.itstudy.dto.document.DocumentReportResponseDto> getReportedDocuments(String status, int page, int size) {
-        PageRequest pageRequest = PageRequest.of(page, size);
+    public com.cmcu.itstudy.dto.document.DocumentReportPageResponseDto getReportedDocuments(
+            String status,
+            String search,
+            LocalDateTime startDate,
+            LocalDateTime endDate,
+            int page,
+            int size
+    ) {
+        int p = Math.max(0, page);
+        int s = size < 1 ? 10 : Math.min(size, 100);
+        PageRequest pageRequest = PageRequest.of(p, s);
         String st = (status != null && !status.isBlank()) ? status.toUpperCase() : null;
-        org.springframework.data.domain.Page<DocumentReport> reports = documentReportRepository.searchReports(st, pageRequest);
+        String q = (search != null && !search.isBlank()) ? search.trim() : null;
+        org.springframework.data.domain.Page<DocumentReport> reports =
+                documentReportRepository.searchReports(st, q, startDate, endDate, pageRequest);
 
-        return reports.map(r -> {
+        java.util.List<com.cmcu.itstudy.dto.document.DocumentReportResponseDto> content = reports.getContent().stream().map(r -> {
             String docTitle = "Tài liệu không tồn tại";
             String docAuthorId = null;
             String docAuthorName = "Không xác định";
@@ -784,14 +795,25 @@ public class DocumentServiceImpl implements DocumentService {
                     .reporterName(reporterNameStr)
                     .reporterAvatar(reporterAvatarStr)
                     .reasonCode(r.getReasonCode())
-                    .detail(r.getDetail())
+                    .detail(r.detail)
                     .status(r.getStatus())
                     .reportCount(count)
                     .documentStatus(docStatus)
                     .createdAt(r.getCreatedAt())
                     .resolvedAt(r.getResolvedAt())
                     .build();
-        });
+        }).collect(java.util.stream.Collectors.toList());
+
+        return com.cmcu.itstudy.dto.document.DocumentReportPageResponseDto.builder()
+                .content(content)
+                .page(reports.getNumber())
+                .size(reports.getSize())
+                .totalElements(reports.getTotalElements())
+                .totalPages(reports.getTotalPages())
+                .pendingCount(documentReportRepository.countByStatus("PENDING"))
+                .resolvedCount(documentReportRepository.countByStatus("RESOLVED"))
+                .dismissedCount(documentReportRepository.countByStatus("DISMISSED"))
+                .build();
     }
 
     @Transactional

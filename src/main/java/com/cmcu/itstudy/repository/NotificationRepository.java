@@ -25,4 +25,10 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     @Modifying
     @Query("DELETE FROM Notification n WHERE n.referenceId LIKE %:pattern%")
     void deleteByReferenceIdContaining(@Param("pattern") String pattern);
+
+    @Query("SELECT n FROM Notification n WHERE n.recipient.id = :recipientId AND n.referenceType = 'COMMUNITY_POST' AND n.referenceId LIKE :postIdPattern AND n.read = false ORDER BY n.createdAt DESC")
+    java.util.List<Notification> findUnreadCommunityPostNotifications(
+            @Param("recipientId") UUID recipientId,
+            @Param("postIdPattern") String postIdPattern
+    );
 }

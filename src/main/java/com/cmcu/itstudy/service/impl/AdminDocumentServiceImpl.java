@@ -83,6 +83,8 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
                 .createdAt(document.getCreatedAt())
                 .rejectReason(document.getRejectReason())
                 .storagePath(storagePath)
+                .isPaid(Boolean.TRUE.equals(document.getIsPaid()))
+                .price(document.getPrice() != null ? document.getPrice() : 0L)
                 .build();
     }
 
@@ -117,7 +119,7 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
 
     @Override
     @Transactional(readOnly = true)
-    public AdminPendingDocumentsPageResponseDto listPendingDocuments(String status, int page, int size) {
+    public AdminPendingDocumentsPageResponseDto listPendingDocuments(String status, String search, LocalDateTime startDate, LocalDateTime endDate, int page, int size) {
         int p = Math.max(0, page);
         int s = size < 1 ? 10 : Math.min(size, 100);
 
@@ -130,17 +132,15 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
             }
         }
 
-        Page<Document> result;
-        if (docStatus != null) {
-            result = documentRepository.findPendingPageWithCategoryAndCreator(
-                    docStatus,
-                    PageRequest.of(p, s)
-            );
-        } else {
-            result = documentRepository.findAllPageWithCategoryAndCreator(
-                    PageRequest.of(p, s)
-            );
-        }
+        String q = (search != null && !search.isBlank()) ? search.trim() : null;
+
+        Page<Document> result = documentRepository.searchPendingDocumentsForAdmin(
+                docStatus,
+                q,
+                startDate,
+                endDate,
+                PageRequest.of(p, s)
+        );
 
         List<DocumentCardDto> content = result.getContent().stream()
                 .map(this::toPendingCardDto)
@@ -151,6 +151,9 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
                 .size(result.getSize())
                 .totalElements(result.getTotalElements())
                 .totalPages(result.getTotalPages())
+                .pendingCount(documentRepository.countByStatusAndDeletedFalse(DocumentStatus.PENDING))
+                .approvedCount(documentRepository.countByStatusAndDeletedFalse(DocumentStatus.APPROVED))
+                .rejectedCount(documentRepository.countByStatusAndDeletedFalse(DocumentStatus.REJECTED))
                 .build();
     }
 

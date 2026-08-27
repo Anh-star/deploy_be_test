@@ -20,4 +20,6 @@ public class AdminUserPageResponseDto {
     private int size;
     private long totalElements;
     private int totalPages;
+    private long activeCount;
+    private long lockedCount;
 }

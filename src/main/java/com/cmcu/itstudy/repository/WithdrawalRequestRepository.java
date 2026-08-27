@@ -48,6 +48,8 @@ public interface WithdrawalRequestRepository extends JpaRepository<WithdrawalReq
                                     LIKE LOWER(CONCAT('%', :search, '%'))
                             )
                       )
+                      AND (:startDate IS NULL OR wr.createdAt >= :startDate)
+                      AND (:endDate IS NULL OR wr.createdAt <= :endDate)
                     """,
             countQuery = """
                     SELECT COUNT(wr)
@@ -66,13 +68,25 @@ public interface WithdrawalRequestRepository extends JpaRepository<WithdrawalReq
                                     LIKE LOWER(CONCAT('%', :search, '%'))
                             )
                       )
+                      AND (:startDate IS NULL OR wr.createdAt >= :startDate)
+                      AND (:endDate IS NULL OR wr.createdAt <= :endDate)
                     """
     )
     Page<WithdrawalRequest> searchForPaymentModerator(
             @Param("status") WithdrawalStatus status,
             @Param("search") String search,
+            @Param("startDate") java.time.LocalDateTime startDate,
+            @Param("endDate") java.time.LocalDateTime endDate,
             Pageable pageable
     );
+
+    default Page<WithdrawalRequest> searchForPaymentModerator(
+            WithdrawalStatus status,
+            String search,
+            Pageable pageable
+    ) {
+        return searchForPaymentModerator(status, search, null, null, pageable);
+    }
 
     Page<WithdrawalRequest> findAllBySellerId(
             UUID sellerId,

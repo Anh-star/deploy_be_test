@@ -38,4 +38,10 @@ public interface CommunityPostCommentRepository extends JpaRepository<CommunityP
     List<CommunityPostComment> findByDeletedTrueAndDeletedAtBefore(LocalDateTime threshold);
 
     void deleteByPostId(UUID postId);
+
+    @Query("SELECT u.fullName FROM CommunityPostComment c JOIN c.author u WHERE c.post.id = :postId AND u.id != :excludedUserId AND (c.deleted = false OR c.deleted IS NULL) GROUP BY u.id, u.fullName ORDER BY MAX(c.createdAt) DESC")
+    List<String> findDistinctCommenterNamesByPostOrderedByRecent(
+            @Param("postId") UUID postId,
+            @Param("excludedUserId") UUID excludedUserId
+    );
 }

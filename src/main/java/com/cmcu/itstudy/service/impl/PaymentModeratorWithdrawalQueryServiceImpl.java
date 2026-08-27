@@ -44,7 +44,9 @@ public class PaymentModeratorWithdrawalQueryServiceImpl
             int page,
             int size,
             WithdrawalStatus status,
-            String search
+            String search,
+            java.time.LocalDateTime startDate,
+            java.time.LocalDateTime endDate
     ) {
         int normalizedPage = Math.max(0, page);
         int normalizedSize = size > 0
@@ -71,6 +73,8 @@ public class PaymentModeratorWithdrawalQueryServiceImpl
                 withdrawalRequestRepository.searchForPaymentModerator(
                         status,
                         normalizedSearch,
+                        startDate,
+                        endDate,
                         pageable
                 );
 

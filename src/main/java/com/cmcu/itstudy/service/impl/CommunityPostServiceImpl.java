@@ -627,6 +627,99 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         } catch (Exception ignored) {}
     }
 
+    private void sendAggregatedCommentNotificationIfUnmuted(
+            UUID recipientId,
+            User actor,
+            CommunityPost post,
+            String targetRefId,
+            NotificationType type,
+            String singleMessage,
+            boolean isParentAuthor
+    ) {
+        if (recipientId == null || actor == null || recipientId.equals(actor.getId())) return;
+        UUID postId = post.getId();
+        try {
+            if (notificationMuteRepository.existsByPost_IdAndUser_Id(postId, recipientId)) {
+                return;
+            }
+
+            // Check if recipient has an existing unread comment notification on this post
+            List<com.cmcu.itstudy.entity.Notification> unreadList =
+                    notificationRepository.findUnreadCommunityPostNotifications(recipientId, postId.toString() + "%");
+
+            if (unreadList.isEmpty()) {
+                // No unread notification: create new single notification
+                notificationService.createAndPush(
+                        recipientId,
+                        actor.getId(),
+                        type,
+                        targetRefId != null ? targetRefId : postId.toString(),
+                        "COMMUNITY_POST",
+                        singleMessage
+                );
+                return;
+            }
+
+            // Aggregate with existing unread notification
+            com.cmcu.itstudy.entity.Notification existing = unreadList.get(0);
+
+            // Fetch distinct recent commenters for this post (excluding the recipient)
+            List<String> commenterNames = commentRepository.findDistinctCommenterNamesByPostOrderedByRecent(postId, recipientId);
+            String actorName = (actor.getFullName() != null && !actor.getFullName().isBlank()) ? actor.getFullName() : "Ai đó";
+
+            String aggregatedMessage;
+            if (commenterNames == null || commenterNames.size() <= 1) {
+                aggregatedMessage = singleMessage;
+            } else if (commenterNames.size() == 2) {
+                String first = commenterNames.get(0);
+                String second = commenterNames.get(1);
+                if (isParentAuthor) {
+                    aggregatedMessage = first + " và " + second + " đã trả lời bình luận của bạn";
+                } else {
+                    aggregatedMessage = first + " và " + second + " đã bình luận về bài viết của bạn";
+                }
+            } else {
+                String first = commenterNames.get(0);
+                int othersCount = commenterNames.size() - 1;
+                if (isParentAuthor) {
+                    aggregatedMessage = first + " và " + othersCount + " người khác đã trả lời bình luận của bạn";
+                } else {
+                    aggregatedMessage = first + " và " + othersCount + " người khác đã bình luận về bài viết của bạn";
+                }
+            }
+
+            existing.setMessage(aggregatedMessage);
+            existing.setActor(actor);
+            existing.setType(type);
+            existing.setReferenceId(targetRefId != null ? targetRefId : postId.toString());
+            existing.setCreatedAt(LocalDateTime.now());
+            existing.setRead(false);
+            com.cmcu.itstudy.entity.Notification saved = notificationRepository.save(existing);
+
+            // Push updated notification via SSE to recipient
+            try {
+                com.cmcu.itstudy.dto.notification.NotificationResponseDto dto = com.cmcu.itstudy.dto.notification.NotificationResponseDto.builder()
+                        .id(saved.getId().toString())
+                        .actorId(actor.getId().toString())
+                        .actorName(actorName)
+                        .actorAvatar(actor.getAvatarUrl())
+                        .type(saved.getType())
+                        .referenceId(saved.getReferenceId())
+                        .referenceType(saved.getReferenceType())
+                        .message(saved.getMessage())
+                        .isRead(false)
+                        .createdAt(saved.getCreatedAt())
+                        .build();
+                sseService.pushEvent(recipientId, "notification", dto);
+            } catch (Exception sseEx) {
+                log.warn("Failed to push aggregated SSE notification to user {}: {}", recipientId, sseEx.getMessage());
+            }
+
+        } catch (Exception ex) {
+            log.warn("Failed to send aggregated comment notification: {}", ex.getMessage());
+        }
+    }
+
     @Override
     @Transactional
     public PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId) {
@@ -673,6 +766,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         int replyCount = 0;
         PostCommentResponseDto commentDto = CommunityPostMapper.toCommentResponse(saved, replyCount, false, null);
+        commentDto.setPostCommentCount((int) totalComments);
 
         // 1. Real-time SSE broadcast of the new comment with exact commentCount
         Map<String, Object> eventData = new HashMap<>();
@@ -681,20 +775,34 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         eventData.put("commentCount", (int) totalComments);
         sseService.broadcast("new-comment", eventData);
 
-        // 2. Create and push notification to post author or parent comment author with target commentId
-        String commenterName = (author.getFullName() != null) ? author.getFullName() : "Ai đó";
+        // 2. Create and push notification with Facebook-style text & aggregation
+        String commenterName = (author.getFullName() != null && !author.getFullName().isBlank()) ? author.getFullName() : "Ai đó";
         String snippet = body != null && body.length() > 50 ? body.substring(0, 50) + "..." : (body != null ? body : "");
+        String snippetSuffix = (snippet != null && !snippet.isBlank()) ? ": \"" + snippet + "\"" : "";
         String targetRefId = post.getId() + "?commentId=" + saved.getId();
 
         UUID postAuthorId = post.getAuthor() != null ? post.getAuthor().getId() : null;
         if (parent != null && parent.getAuthor() != null) {
             UUID parentAuthorId = parent.getAuthor().getId();
-            sendNotificationIfUnmuted(parentAuthorId, userId, post.getId(), targetRefId, NotificationType.COMMENT_REPLIED, commenterName + " đã phản hồi bình luận của bạn: \"" + snippet + "\"");
-            if (postAuthorId != null && !postAuthorId.equals(parentAuthorId)) {
-                sendNotificationIfUnmuted(postAuthorId, userId, post.getId(), targetRefId, NotificationType.POST_COMMENTED, commenterName + " đã bình luận về bài viết của bạn: \"" + snippet + "\"");
+            String parentAuthorName = (parent.getAuthor().getFullName() != null && !parent.getAuthor().getFullName().isBlank())
+                    ? parent.getAuthor().getFullName()
+                    : "người dùng";
+
+            // 2a. Gửi cho tác giả của bình luận trước (nếu không phải chính người phản hồi)
+            if (!parentAuthorId.equals(userId)) {
+                String parentMsg = commenterName + " đã trả lời bình luận của bạn" + snippetSuffix;
+                sendAggregatedCommentNotificationIfUnmuted(parentAuthorId, author, post, targetRefId, NotificationType.COMMENT_REPLIED, parentMsg, true);
             }
-        } else if (postAuthorId != null) {
-            sendNotificationIfUnmuted(postAuthorId, userId, post.getId(), targetRefId, NotificationType.POST_COMMENTED, commenterName + " đã bình luận về bài viết của bạn: \"" + snippet + "\"");
+
+            // 2b. Gửi cho tác giả bài viết (nếu khác tác giả bình luận trước và khác người phản hồi)
+            if (postAuthorId != null && !postAuthorId.equals(parentAuthorId) && !postAuthorId.equals(userId)) {
+                String postAuthorMsg = commenterName + " đã trả lời bình luận của " + parentAuthorName + " về bài viết của bạn" + snippetSuffix;
+                sendAggregatedCommentNotificationIfUnmuted(postAuthorId, author, post, targetRefId, NotificationType.POST_COMMENTED, postAuthorMsg, false);
+            }
+        } else if (postAuthorId != null && !postAuthorId.equals(userId)) {
+            // Bình luận trực tiếp vào bài viết
+            String postMsg = commenterName + " đã bình luận về bài viết của bạn" + snippetSuffix;
+            sendAggregatedCommentNotificationIfUnmuted(postAuthorId, author, post, targetRefId, NotificationType.POST_COMMENTED, postMsg, false);
         }
 
         return commentDto;

@@ -57,7 +57,11 @@ public interface DocumentService {
 
     void reportDocument(UUID documentId, User reporter, com.cmcu.itstudy.dto.document.DocumentReportRequestDto requestDto);
 
-    org.springframework.data.domain.Page<com.cmcu.itstudy.dto.document.DocumentReportResponseDto> getReportedDocuments(String status, int page, int size);
+    com.cmcu.itstudy.dto.document.DocumentReportPageResponseDto getReportedDocuments(String status, String search, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate, int page, int size);
+
+    default com.cmcu.itstudy.dto.document.DocumentReportPageResponseDto getReportedDocuments(String status, int page, int size) {
+        return getReportedDocuments(status, null, null, null, page, size);
+    }
 
     void resolveReport(UUID reportId, User resolver);
 

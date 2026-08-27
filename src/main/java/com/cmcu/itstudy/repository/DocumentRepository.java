@@ -51,6 +51,23 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @Query("select d from Document d where d.deleted = false order by d.createdAt desc")
     Page<Document> findAllPageWithCategoryAndCreator(Pageable pageable);
 
+    @EntityGraph(attributePaths = {"category", "createdBy"})
+    @Query("SELECT d FROM Document d WHERE d.deleted = false " +
+           "AND (:status IS NULL OR d.status = :status) " +
+           "AND (:search IS NULL OR :search = '' OR LOWER(d.title) LIKE LOWER(CONCAT('%', :search, '%')) " +
+           "     OR (d.fileName IS NOT NULL AND LOWER(d.fileName) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+           "     OR (d.createdBy.fullName IS NOT NULL AND LOWER(d.createdBy.fullName) LIKE LOWER(CONCAT('%', :search, '%')))) " +
+           "AND (:startDate IS NULL OR d.createdAt >= :startDate) " +
+           "AND (:endDate IS NULL OR d.createdAt <= :endDate) " +
+           "ORDER BY d.createdAt DESC")
+    Page<Document> searchPendingDocumentsForAdmin(
+            @Param("status") DocumentStatus status,
+            @Param("search") String search,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            Pageable pageable
+    );
+
     Page<Document> findByStatusAndDeletedFalseOrderByCreatedAtDesc(DocumentStatus status, Pageable pageable);
 
     Page<Document> findByStatusOrderByCreatedAtDesc(DocumentStatus status, Pageable pageable);

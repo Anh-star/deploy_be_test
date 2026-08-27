@@ -12,8 +12,19 @@ public interface PaymentModeratorWithdrawalQueryService {
             int page,
             int size,
             WithdrawalStatus status,
-            String search
+            String search,
+            java.time.LocalDateTime startDate,
+            java.time.LocalDateTime endDate
     );
+
+    default PaymentModeratorWithdrawalPageResponseDto listWithdrawals(
+            int page,
+            int size,
+            WithdrawalStatus status,
+            String search
+    ) {
+        return listWithdrawals(page, size, status, search, null, null);
+    }
 
     PaymentModeratorWithdrawalDetailResponseDto getWithdrawal(UUID withdrawalId);
 }

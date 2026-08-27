@@ -28,16 +28,42 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query(
             value = "SELECT DISTINCT u FROM User u LEFT JOIN FETCH u.userRoles ur LEFT JOIN FETCH ur.role WHERE "
                     + "(:search IS NULL OR :search = '' OR LOWER(u.email) LIKE LOWER(CONCAT('%', :search, '%')) OR "
-                    + "(u.fullName IS NOT NULL AND LOWER(u.fullName) LIKE LOWER(CONCAT('%', :search, '%'))))",
+                    + "(u.fullName IS NOT NULL AND LOWER(u.fullName) LIKE LOWER(CONCAT('%', :search, '%')))) "
+                    + "AND (:status IS NULL OR :status = '' OR "
+                    + "  (:status = 'LOCKED' AND UPPER(u.status) IN ('LOCKED', 'DISABLED', 'BANNED')) OR "
+                    + "  (:status != 'LOCKED' AND UPPER(u.status) = UPPER(:status))) "
+                    + "AND (:startDate IS NULL OR u.createdAt >= :startDate) "
+                    + "AND (:endDate IS NULL OR u.createdAt <= :endDate)",
             countQuery = "SELECT COUNT(u) FROM User u WHERE "
                     + "(:search IS NULL OR :search = '' OR LOWER(u.email) LIKE LOWER(CONCAT('%', :search, '%')) OR "
-                    + "(u.fullName IS NOT NULL AND LOWER(u.fullName) LIKE LOWER(CONCAT('%', :search, '%'))))"
+                    + "(u.fullName IS NOT NULL AND LOWER(u.fullName) LIKE LOWER(CONCAT('%', :search, '%')))) "
+                    + "AND (:status IS NULL OR :status = '' OR "
+                    + "  (:status = 'LOCKED' AND UPPER(u.status) IN ('LOCKED', 'DISABLED', 'BANNED')) OR "
+                    + "  (:status != 'LOCKED' AND UPPER(u.status) = UPPER(:status))) "
+                    + "AND (:startDate IS NULL OR u.createdAt >= :startDate) "
+                    + "AND (:endDate IS NULL OR u.createdAt <= :endDate)"
     )
-    Page<User> searchForAdmin(@Param("search") String search, Pageable pageable);
+    Page<User> searchForAdmin(
+            @Param("search") String search,
+            @Param("status") String status,
+            @Param("startDate") LocalDateTime startDate,
+            @Param("endDate") LocalDateTime endDate,
+            Pageable pageable
+    );
+
+    default Page<User> searchForAdmin(String search, Pageable pageable) {
+        return searchForAdmin(search, null, null, null, pageable);
+    }
 
     boolean existsByEmail(String email);
 
     long countByStatus(String status);
+
+    @Query("SELECT COUNT(u) FROM User u WHERE UPPER(u.status) IN ('LOCKED', 'DISABLED', 'BANNED')")
+    long countLockedUsers();
+
+    @Query("SELECT COUNT(u) FROM User u WHERE UPPER(u.status) = 'ACTIVE'")
+    long countActiveUsers();
 
     @Query("select count(u) from User u where u.createdAt >= :from and u.createdAt < :to")
     long countCreatedBetween(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);

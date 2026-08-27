@@ -1,6 +1,5 @@
-package com.cmcu.itstudy.dto.admin.document;
+package com.cmcu.itstudy.dto.document;
 
-import com.cmcu.itstudy.dto.document.DocumentCardDto;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -14,14 +13,14 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AdminPendingDocumentsPageResponseDto {
+public class DocumentReportPageResponseDto {
 
-    private List<DocumentCardDto> content;
+    private List<DocumentReportResponseDto> content;
     private int page;
     private int size;
     private long totalElements;
     private int totalPages;
     private long pendingCount;
-    private long approvedCount;
-    private long rejectedCount;
+    private long resolvedCount;
+    private long dismissedCount;
 }

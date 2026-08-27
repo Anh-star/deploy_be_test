@@ -29,4 +29,5 @@ public class PostCommentResponseDto {
     private Boolean isLiked;
     private String userVote;
     private LocalDateTime createdAt;
+    private Integer postCommentCount;
 }

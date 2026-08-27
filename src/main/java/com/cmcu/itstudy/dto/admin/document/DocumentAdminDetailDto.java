@@ -32,4 +32,6 @@ public class DocumentAdminDetailDto {
     private String rejectReason;
     /** Object key hoặc path lưu trữ (DocumentFile), có thể null. */
     private String storagePath;
+    private Boolean isPaid;
+    private Long price;
 }
