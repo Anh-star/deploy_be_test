@@ -24,5 +24,7 @@ public class PostEditHistoryDto {
     private String content;
     private List<String> imageUrls;
     private List<String> fileUrls;
+    private String pollQuestion;
+    private List<String> pollOptions;
     private LocalDateTime editedAt;
 }

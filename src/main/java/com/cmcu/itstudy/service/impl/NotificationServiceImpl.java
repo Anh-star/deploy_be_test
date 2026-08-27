@@ -122,6 +122,15 @@ public class NotificationServiceImpl implements NotificationService {
         notificationRepository.markAllAsReadByRecipientId(userId);
     }
 
+    @Override
+    @Transactional
+    public void deleteNotification(UUID notificationId, UUID userId) {
+        Notification notif = notificationRepository.findById(notificationId).orElse(null);
+        if (notif != null && notif.getRecipient() != null && notif.getRecipient().getId().equals(userId)) {
+            notificationRepository.delete(notif);
+        }
+    }
+
     private NotificationResponseDto mapToDto(Notification notif) {
         User actor = notif.getActor();
         return NotificationResponseDto.builder()

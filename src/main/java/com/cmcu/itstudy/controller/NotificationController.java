@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -76,5 +77,15 @@ public class NotificationController {
     ) {
         notificationService.markAllAsRead(currentUser.getUser().getId());
         return ResponseEntity.ok(ApiResponse.success(null, "Đã đánh dấu tất cả thông báo là đã đọc"));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Void>> deleteNotification(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        notificationService.deleteNotification(id, currentUser.getUser().getId());
+        return ResponseEntity.ok(ApiResponse.success(null, "Đã xóa thông báo thành công"));
     }
 }

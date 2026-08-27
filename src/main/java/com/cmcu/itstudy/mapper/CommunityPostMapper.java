@@ -194,6 +194,11 @@ public final class CommunityPostMapper {
             fileUrls = Arrays.asList(history.getFileUrls().split(";;;"));
         }
 
+        List<String> pollOptions = null;
+        if (history.getPollOptions() != null && !history.getPollOptions().isBlank()) {
+            pollOptions = Arrays.asList(history.getPollOptions().split(";;;"));
+        }
+
         return PostEditHistoryDto.builder()
                 .id(uuidToString(history.getId()))
                 .postId(postId)
@@ -204,6 +209,8 @@ public final class CommunityPostMapper {
                 .content(history.getContent())
                 .imageUrls(imageUrls)
                 .fileUrls(fileUrls)
+                .pollQuestion(history.getPollQuestion())
+                .pollOptions(pollOptions)
                 .editedAt(history.getEditedAt())
                 .build();
     }

@@ -1298,6 +1298,41 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         List<String> currentImageUrls = imageRepository.findByPostIdOrderByDisplayOrderAsc(postId)
                 .stream().map(CommunityPostImage::getImageUrl).collect(Collectors.toList());
 
+        CommunityPoll existingPoll = pollRepository.findByPost_Id(postId).orElse(null);
+        List<CommunityPollOption> currentOptions = existingPoll != null
+                ? pollOptionRepository.findByPoll_IdOrderByDisplayOrderAsc(existingPoll.getId())
+                : Collections.emptyList();
+        List<String> currentOptionTexts = currentOptions.stream()
+                .map(CommunityPollOption::getOptionText)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        boolean pollChanged = false;
+        if (existingPoll != null && request.getPoll() != null) {
+            CreatePollRequestDto pollReq = request.getPoll();
+            boolean pollQuestionChanged = pollReq.getQuestion() != null
+                    && !pollReq.getQuestion().trim().equals(existingPoll.getQuestion() != null ? existingPoll.getQuestion().trim() : "");
+
+            List<UpdatePollOptionDto> targetOptions = pollReq.getPollOptions();
+            if (targetOptions == null && pollReq.getOptions() != null) {
+                targetOptions = pollReq.getOptions().stream()
+                        .map(txt -> UpdatePollOptionDto.builder().optionText(txt).build())
+                        .collect(Collectors.toList());
+            }
+
+            List<String> newOptionTexts = targetOptions != null
+                    ? targetOptions.stream()
+                        .map(UpdatePollOptionDto::getOptionText)
+                        .filter(Objects::nonNull)
+                        .map(String::trim)
+                        .filter(s -> !s.isBlank())
+                        .collect(Collectors.toList())
+                    : Collections.emptyList();
+
+            boolean pollOptionsChanged = !currentOptionTexts.equals(newOptionTexts);
+            pollChanged = pollQuestionChanged || pollOptionsChanged;
+        }
+
         boolean contentChanged = request.getContent() != null && !request.getContent().trim().equals(post.getContent() != null ? post.getContent().trim() : "");
         boolean titleChanged = request.getTitle() != null && !request.getTitle().trim().equals(post.getTitle() != null ? post.getTitle().trim() : "");
 
@@ -1309,7 +1344,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         List<String> newImageUrls = request.getImageUrls() != null ? request.getImageUrls() : Collections.emptyList();
         boolean imagesChanged = request.getImageUrls() != null && !newImageUrls.equals(currentImageUrls);
 
-        if (contentChanged || titleChanged || filesChanged || imagesChanged) {
+        if (contentChanged || titleChanged || filesChanged || imagesChanged || pollChanged) {
             postEditHistoryRepository.save(com.cmcu.itstudy.entity.CommunityPostEditHistory.builder()
                     .post(post)
                     .editor(post.getAuthor())
@@ -1317,6 +1352,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .content(post.getContent())
                     .imageUrls(!currentImageUrls.isEmpty() ? String.join(";;;", currentImageUrls) : null)
                     .fileUrls(post.getFileUrls())
+                    .pollQuestion(existingPoll != null ? existingPoll.getQuestion() : null)
+                    .pollOptions(!currentOptionTexts.isEmpty() ? String.join(";;;", currentOptionTexts) : null)
                     .editedAt(LocalDateTime.now())
                     .build());
             post.setUpdatedAt(LocalDateTime.now());
@@ -1341,8 +1378,6 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             post.setTags(new ArrayList<>(request.getTags()));
         }
         postRepository.save(post);
-
-        CommunityPoll existingPoll = pollRepository.findByPost_Id(postId).orElse(null);
 
         // For non-poll posts: update images
         if (existingPoll == null && request.getImageUrls() != null) {

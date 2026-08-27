@@ -69,6 +69,12 @@ public class CommunityPostEditHistory {
     @Column(name = "file_urls", columnDefinition = "nvarchar(max)")
     private String fileUrls;
 
+    @Column(name = "poll_question", columnDefinition = "nvarchar(500)")
+    private String pollQuestion;
+
+    @Column(name = "poll_options", columnDefinition = "nvarchar(max)")
+    private String pollOptions;
+
     @Column(name = "edited_at", nullable = false)
     private LocalDateTime editedAt;
 }
