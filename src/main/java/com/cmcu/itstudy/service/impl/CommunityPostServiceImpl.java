@@ -663,18 +663,19 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             saved.setReplyToUser(parent.getAuthor());
         }
 
-        // Update denormalized comment count
-        int currentCount = post.getCommentCount() != null ? post.getCommentCount() : 0;
-        post.setCommentCount(currentCount + 1);
-        postRepository.save(post);
+        // Update denormalized comment count directly from database
+        long totalComments = commentRepository.countByPost_IdAndDeletedFalse(postId);
+        post.setCommentCount((int) totalComments);
+        postRepository.saveAndFlush(post);
 
         int replyCount = 0;
         PostCommentResponseDto commentDto = CommunityPostMapper.toCommentResponse(saved, replyCount, false, null);
 
-        // 1. Real-time SSE broadcast of the new comment to users viewing this post
+        // 1. Real-time SSE broadcast of the new comment with exact commentCount
         Map<String, Object> eventData = new HashMap<>();
         eventData.put("postId", postId.toString());
         eventData.put("comment", commentDto);
+        eventData.put("commentCount", (int) totalComments);
         sseService.broadcast("new-comment", eventData);
 
         // 2. Create and push notification to post author or parent comment author with target commentId
@@ -720,11 +721,11 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             commentRepository.saveAll(replies);
         }
 
-        // Update comment count
+        // Update comment count directly from DB
         CommunityPost post = comment.getPost();
-        int commentsRemoved = 1 + replies.size();
-        post.setCommentCount(Math.max(0, post.getCommentCount() - commentsRemoved));
-        postRepository.save(post);
+        long totalComments = commentRepository.countByPost_IdAndDeletedFalse(post.getId());
+        post.setCommentCount((int) totalComments);
+        postRepository.saveAndFlush(post);
     }
 
     @Override

@@ -97,7 +97,10 @@ public class DatabaseSchemaMigrationRunner implements ApplicationRunner {
                              "    upvote_count = ISNULL((SELECT COUNT(1) FROM tbl_community_post_comment_likes l WHERE l.comment_id = c.id AND l.vote_type = 'UPVOTE'), 0), " +
                              "    downvote_count = ISNULL((SELECT COUNT(1) FROM tbl_community_post_comment_likes l WHERE l.comment_id = c.id AND l.vote_type = 'DOWNVOTE'), 0) " +
                              "FROM tbl_community_post_comments c;");
-                log.info("Schema migration: Recalibrated post and comment vote counts to exact database state.");
+                stmt.execute("UPDATE p SET " +
+                             "    comment_count = ISNULL((SELECT COUNT(1) FROM tbl_community_post_comments c WHERE c.post_id = p.id AND (c.deleted = 0 OR c.deleted IS NULL)), 0) " +
+                             "FROM tbl_community_posts p;");
+                log.info("Schema migration: Recalibrated post and comment vote counts and comment counts to exact database state.");
             } catch (Exception ex) {
                 log.warn("Schema migration for recalibrating vote counts: {}", ex.getMessage());
             }
