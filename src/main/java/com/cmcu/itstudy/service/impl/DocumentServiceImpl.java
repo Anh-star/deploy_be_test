@@ -795,7 +795,7 @@ public class DocumentServiceImpl implements DocumentService {
                     .reporterName(reporterNameStr)
                     .reporterAvatar(reporterAvatarStr)
                     .reasonCode(r.getReasonCode())
-                    .detail(r.detail)
+                    .detail(r.getDetail())
                     .status(r.getStatus())
                     .reportCount(count)
                     .documentStatus(docStatus)
