@@ -24,7 +24,7 @@ public interface CommunityPostRepository extends JpaRepository<CommunityPost, UU
     @Query("SELECT COUNT(p) FROM CommunityPost p WHERE (p.deleted = false OR p.deleted IS NULL) AND (p.hidden = false OR p.hidden IS NULL)")
     long countByDeletedFalse();
 
-    @Query("SELECT p FROM CommunityPost p LEFT JOIN FETCH p.author WHERE p.id = :id AND (p.deleted = false OR p.deleted IS NULL)")
+    @Query("SELECT p FROM CommunityPost p LEFT JOIN FETCH p.author WHERE p.id = :id")
     Optional<CommunityPost> findByIdWithAuthor(@Param("id") UUID id);
 
     @Query("SELECT p.id FROM CommunityPostLike pl JOIN pl.post p WHERE p.id IN :postIds AND pl.user.id = :userId")
