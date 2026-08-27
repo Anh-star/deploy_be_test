@@ -196,6 +196,10 @@ public class DatabaseSeeder implements CommandLineRunner {
                     "ALTER TABLE tbl_documents ALTER COLUMN description NVARCHAR(MAX) NULL;");
             jdbcTemplate.execute("IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_documents') AND name = N'reject_reason') " +
                     "ALTER TABLE tbl_documents ALTER COLUMN reject_reason NVARCHAR(MAX) NULL;");
+            jdbcTemplate.execute("IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_users') AND name = N'full_name') " +
+                    "ALTER TABLE tbl_users ALTER COLUMN full_name NVARCHAR(255) NULL;");
+            jdbcTemplate.execute("IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_users') AND name = N'bio') " +
+                    "ALTER TABLE tbl_users ALTER COLUMN bio NVARCHAR(2000) NULL;");
 
             // Make tbl_documents.category_id nullable if needed so foreign keys can be safely cleared
             jdbcTemplate.execute("IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'tbl_documents') AND name = N'category_id' AND is_nullable = 0) " +

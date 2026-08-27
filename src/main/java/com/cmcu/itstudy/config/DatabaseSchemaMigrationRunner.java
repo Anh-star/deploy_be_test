@@ -72,6 +72,21 @@ public class DatabaseSchemaMigrationRunner implements ApplicationRunner {
                 log.warn("Schema migration for performance indexes: {}", ex.getMessage());
             }
 
+            // 4. Ensure tbl_users.full_name and bio are NVARCHAR to properly support Vietnamese diacritics
+            try {
+                stmt.execute("IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('tbl_users') AND name = 'full_name') " +
+                             "    ALTER TABLE tbl_users ALTER COLUMN full_name NVARCHAR(255) NULL;");
+                stmt.execute("IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('tbl_users') AND name = 'bio') " +
+                             "    ALTER TABLE tbl_users ALTER COLUMN bio NVARCHAR(2000) NULL;");
+                stmt.execute("IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('tbl_authors') AND name = 'name') " +
+                             "    ALTER TABLE tbl_authors ALTER COLUMN name NVARCHAR(255) NOT NULL;");
+                stmt.execute("IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('tbl_authors') AND name = 'bio') " +
+                             "    ALTER TABLE tbl_authors ALTER COLUMN bio NVARCHAR(MAX) NULL;");
+                log.info("Schema migration: tbl_users full_name & bio NVARCHAR verified successfully.");
+            } catch (Exception ex) {
+                log.warn("Schema migration for Unicode columns: {}", ex.getMessage());
+            }
+
         } catch (Exception e) {
             log.warn("Schema migration runner error: {}", e.getMessage());
         }
