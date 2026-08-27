@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @Setter
@@ -21,5 +22,7 @@ public class PostEditHistoryDto {
     private String editorAvatar;
     private String title;
     private String content;
+    private List<String> imageUrls;
+    private List<String> fileUrls;
     private LocalDateTime editedAt;
 }

@@ -184,6 +184,16 @@ public final class CommunityPostMapper {
         String editorId = history.getEditor() != null ? uuidToString(history.getEditor().getId()) : null;
         String postId = history.getPost() != null ? uuidToString(history.getPost().getId()) : null;
 
+        List<String> imageUrls = null;
+        if (history.getImageUrls() != null && !history.getImageUrls().isBlank()) {
+            imageUrls = Arrays.asList(history.getImageUrls().split(";;;"));
+        }
+
+        List<String> fileUrls = null;
+        if (history.getFileUrls() != null && !history.getFileUrls().isBlank()) {
+            fileUrls = Arrays.asList(history.getFileUrls().split(";;;"));
+        }
+
         return PostEditHistoryDto.builder()
                 .id(uuidToString(history.getId()))
                 .postId(postId)
@@ -192,6 +202,8 @@ public final class CommunityPostMapper {
                 .editorAvatar(editorAvatar)
                 .title(history.getTitle())
                 .content(history.getContent())
+                .imageUrls(imageUrls)
+                .fileUrls(fileUrls)
                 .editedAt(history.getEditedAt())
                 .build();
     }

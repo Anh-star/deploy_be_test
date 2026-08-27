@@ -63,6 +63,12 @@ public class CommunityPostEditHistory {
     @Column(name = "content", nullable = false, columnDefinition = "nvarchar(max)")
     private String content;
 
+    @Column(name = "image_urls", columnDefinition = "nvarchar(max)")
+    private String imageUrls;
+
+    @Column(name = "file_urls", columnDefinition = "nvarchar(max)")
+    private String fileUrls;
+
     @Column(name = "edited_at", nullable = false)
     private LocalDateTime editedAt;
 }

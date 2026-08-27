@@ -57,6 +57,8 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Collections;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -1293,15 +1295,28 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             throw new IllegalArgumentException("You can only edit your own post");
         }
 
+        List<String> currentImageUrls = imageRepository.findByPostIdOrderByDisplayOrderAsc(postId)
+                .stream().map(CommunityPostImage::getImageUrl).collect(Collectors.toList());
+
         boolean contentChanged = request.getContent() != null && !request.getContent().trim().equals(post.getContent() != null ? post.getContent().trim() : "");
         boolean titleChanged = request.getTitle() != null && !request.getTitle().trim().equals(post.getTitle() != null ? post.getTitle().trim() : "");
 
-        if (contentChanged || titleChanged) {
+        String newFileUrls = (request.getFileUrls() != null && !request.getFileUrls().isEmpty())
+                ? String.join(";;;", request.getFileUrls())
+                : null;
+        boolean filesChanged = request.getFileUrls() != null && !Objects.equals(newFileUrls, post.getFileUrls());
+
+        List<String> newImageUrls = request.getImageUrls() != null ? request.getImageUrls() : Collections.emptyList();
+        boolean imagesChanged = request.getImageUrls() != null && !newImageUrls.equals(currentImageUrls);
+
+        if (contentChanged || titleChanged || filesChanged || imagesChanged) {
             postEditHistoryRepository.save(com.cmcu.itstudy.entity.CommunityPostEditHistory.builder()
                     .post(post)
                     .editor(post.getAuthor())
                     .title(post.getTitle())
                     .content(post.getContent())
+                    .imageUrls(!currentImageUrls.isEmpty() ? String.join(";;;", currentImageUrls) : null)
+                    .fileUrls(post.getFileUrls())
                     .editedAt(LocalDateTime.now())
                     .build());
             post.setUpdatedAt(LocalDateTime.now());
