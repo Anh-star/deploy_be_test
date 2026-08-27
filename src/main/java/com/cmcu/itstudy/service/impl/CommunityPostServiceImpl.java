@@ -1316,6 +1316,15 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         if (request.getAllowComments() != null) {
             post.setAllowComments(request.getAllowComments());
         }
+        if (request.getFileUrls() != null) {
+            String joinedFileUrls = !request.getFileUrls().isEmpty()
+                    ? String.join(";;;", request.getFileUrls())
+                    : null;
+            post.setFileUrls(joinedFileUrls);
+        }
+        if (request.getTags() != null) {
+            post.setTags(new ArrayList<>(request.getTags()));
+        }
         postRepository.save(post);
 
         CommunityPoll existingPoll = pollRepository.findByPost_Id(postId).orElse(null);
