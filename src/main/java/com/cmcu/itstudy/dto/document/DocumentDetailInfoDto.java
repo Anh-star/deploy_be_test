@@ -21,6 +21,7 @@ public class DocumentDetailInfoDto {
     private FileTypeDto documentType;
     private LocalDateTime createdAt;
     /** @deprecated Prefer {@link #uploader} / {@link #userId}. */
+    @Deprecated
     private String authorName;
     private String userId;
     private DocumentUploaderDto uploader;

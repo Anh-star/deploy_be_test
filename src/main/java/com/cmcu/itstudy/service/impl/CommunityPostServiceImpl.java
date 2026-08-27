@@ -1400,7 +1400,6 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 pollRepository.save(existingPoll);
             }
 
-            List<CommunityPollOption> currentOptions = pollOptionRepository.findByPoll_IdOrderByDisplayOrderAsc(existingPoll.getId());
             Map<UUID, CommunityPollOption> currentOptionMap = currentOptions.stream()
                     .collect(Collectors.toMap(CommunityPollOption::getId, opt -> opt));
 
