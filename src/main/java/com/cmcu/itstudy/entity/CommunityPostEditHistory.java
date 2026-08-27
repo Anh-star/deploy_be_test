@@ -60,7 +60,7 @@ public class CommunityPostEditHistory {
     @Column(name = "title", columnDefinition = "nvarchar(255)")
     private String title;
 
-    @Column(name = "content", nullable = false, columnDefinition = "nvarchar(max)")
+    @Column(name = "content", columnDefinition = "nvarchar(max)")
     private String content;
 
     @Column(name = "image_urls", columnDefinition = "nvarchar(max)")

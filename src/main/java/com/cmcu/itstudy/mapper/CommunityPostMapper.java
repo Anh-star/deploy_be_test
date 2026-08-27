@@ -173,7 +173,7 @@ public final class CommunityPostMapper {
                 .reportCount(reportCount != null ? reportCount : 0L)
                 .createdAt(post.getCreatedAt())
                 .updatedAt(post.getUpdatedAt())
-                .isEdited(post.getUpdatedAt() != null)
+                .isEdited(post.getUpdatedAt() != null && post.getCreatedAt() != null && post.getUpdatedAt().isAfter(post.getCreatedAt().plusSeconds(1)))
                 .build();
     }
 

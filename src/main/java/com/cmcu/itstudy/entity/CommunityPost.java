@@ -131,7 +131,7 @@ public class CommunityPost {
     void prePersist() {
         LocalDateTime now = LocalDateTime.now();
         this.createdAt = now;
-        this.updatedAt = now;
+        this.updatedAt = null;
         if (this.likeCount == null) this.likeCount = 0;
         if (this.upvoteCount == null) this.upvoteCount = 0;
         if (this.downvoteCount == null) this.downvoteCount = 0;
@@ -140,10 +140,5 @@ public class CommunityPost {
         if (this.allowComments == null) this.allowComments = Boolean.TRUE;
         if (this.hidden == null) this.hidden = Boolean.FALSE;
         if (this.isPinned == null) this.isPinned = Boolean.FALSE;
-    }
-
-    @PreUpdate
-    void preUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }

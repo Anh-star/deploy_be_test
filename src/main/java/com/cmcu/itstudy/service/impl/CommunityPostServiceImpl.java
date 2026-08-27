@@ -608,6 +608,31 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         User creator = userRepository.findById(userId).orElse(null);
 
+        // Save edit history snapshot before adding option
+        CommunityPost post = poll.getPost();
+        if (post != null) {
+            List<String> curOptionTexts = currentOptions.stream()
+                    .map(CommunityPollOption::getOptionText)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            List<String> curImageUrls = imageRepository.findByPostIdOrderByDisplayOrderAsc(post.getId())
+                    .stream().map(CommunityPostImage::getImageUrl).collect(Collectors.toList());
+
+            postEditHistoryRepository.save(com.cmcu.itstudy.entity.CommunityPostEditHistory.builder()
+                    .post(post)
+                    .editor(creator != null ? creator : post.getAuthor())
+                    .title(post.getTitle())
+                    .content(post.getContent() != null ? post.getContent() : poll.getQuestion())
+                    .imageUrls(!curImageUrls.isEmpty() ? String.join(";;;", curImageUrls) : null)
+                    .fileUrls(post.getFileUrls())
+                    .pollQuestion(poll.getQuestion())
+                    .pollOptions(!curOptionTexts.isEmpty() ? String.join(";;;", curOptionTexts) : null)
+                    .editedAt(LocalDateTime.now())
+                    .build());
+            post.setUpdatedAt(LocalDateTime.now());
+            postRepository.save(post);
+        }
+
         pollOptionRepository.save(CommunityPollOption.builder()
                 .poll(poll)
                 .createdBy(creator)
@@ -646,6 +671,33 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         if (!isOptionCreator && !isPostAuthor) {
             throw new IllegalArgumentException("Bạn chỉ có thể xóa phương án do chính mình thêm hoặc khảo sát trong bài viết của bạn.");
+        }
+
+        // Save edit history snapshot before deleting option
+        CommunityPost post = poll.getPost();
+        if (post != null) {
+            List<String> curOptionTexts = currentOptions.stream()
+                    .map(CommunityPollOption::getOptionText)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            List<String> curImageUrls = imageRepository.findByPostIdOrderByDisplayOrderAsc(post.getId())
+                    .stream().map(CommunityPostImage::getImageUrl).collect(Collectors.toList());
+
+            User user = userRepository.findById(userId).orElse(post.getAuthor());
+
+            postEditHistoryRepository.save(com.cmcu.itstudy.entity.CommunityPostEditHistory.builder()
+                    .post(post)
+                    .editor(user != null ? user : post.getAuthor())
+                    .title(post.getTitle())
+                    .content(post.getContent() != null ? post.getContent() : poll.getQuestion())
+                    .imageUrls(!curImageUrls.isEmpty() ? String.join(";;;", curImageUrls) : null)
+                    .fileUrls(post.getFileUrls())
+                    .pollQuestion(poll.getQuestion())
+                    .pollOptions(!curOptionTexts.isEmpty() ? String.join(";;;", curOptionTexts) : null)
+                    .editedAt(LocalDateTime.now())
+                    .build());
+            post.setUpdatedAt(LocalDateTime.now());
+            postRepository.save(post);
         }
 
         // Delete all votes on this option
@@ -1349,7 +1401,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .post(post)
                     .editor(post.getAuthor())
                     .title(post.getTitle())
-                    .content(post.getContent())
+                    .content(post.getContent() != null ? post.getContent() : (existingPoll != null ? existingPoll.getQuestion() : ""))
                     .imageUrls(!currentImageUrls.isEmpty() ? String.join(";;;", currentImageUrls) : null)
                     .fileUrls(post.getFileUrls())
                     .pollQuestion(existingPoll != null ? existingPoll.getQuestion() : null)
@@ -1753,10 +1805,15 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         post.setDeletedAt(LocalDateTime.now());
         postRepository.save(post);
 
+        User moderator = userRepository.findById(moderatorId).orElse(null);
+        LocalDateTime now = LocalDateTime.now();
         List<CommunityPostReport> reports = reportRepository.findByPostId(postId);
         if (reports != null && !reports.isEmpty()) {
             for (CommunityPostReport r : reports) {
                 r.setStatus("RESOLVED");
+                r.setResolvedBy(moderator);
+                r.setResolvedAt(now);
+                r.setResolutionNotes(StringUtils.hasText(reason) ? reason.trim() : "Quản trị viên cộng đồng đã xóa bài viết vi phạm.");
             }
             reportRepository.saveAll(reports);
         }
