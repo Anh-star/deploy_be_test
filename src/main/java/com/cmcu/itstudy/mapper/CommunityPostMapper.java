@@ -52,7 +52,21 @@ public final class CommunityPostMapper {
             List<CommunityPollVote> userPollVotes,
             Boolean isMuted
     ) {
-        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, false, false, 0L, isMuted);
+        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, false, false, 0L, isMuted, null);
+    }
+
+    public static CommunityPostResponseDto toPostResponse(
+            CommunityPost post,
+            List<CommunityPostImage> images,
+            Boolean isLiked,
+            String currentUserVote,
+            Boolean isSaved,
+            CommunityPoll poll,
+            List<CommunityPollVote> userPollVotes,
+            Boolean isMuted,
+            UUID currentUserId
+    ) {
+        return toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, false, false, 0L, isMuted, currentUserId);
     }
 
     public static CommunityPostResponseDto toPostResponse(

@@ -237,7 +237,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         boolean isReportDismissed = !isReported && reportRepository.existsByPostIdAndStatus(postId, "DISMISSED");
         long reportCount = reportRepository.countByPostId(postId);
 
-        return CommunityPostMapper.toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, isReported, isReportDismissed, reportCount, isMuted);
+        return CommunityPostMapper.toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, isReported, isReportDismissed, reportCount, isMuted, currentUserId);
     }
 
     @Override
@@ -308,7 +308,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 ? pollVoteRepository.findAllByPoll_IdAndUser_Id(poll.getId(), currentUserId)
                 : List.of();
 
-        return CommunityPostMapper.toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, isMuted);
+        return CommunityPostMapper.toPostResponse(post, images, isLiked, currentUserVote, isSaved, poll, userPollVotes, isMuted, currentUserId);
     }
 
     @Override
