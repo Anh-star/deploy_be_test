@@ -341,8 +341,12 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         List<CommunityPostReport> reports = reportRepository.findByPostId(postId);
         if (reports != null && !reports.isEmpty()) {
+            LocalDateTime now = LocalDateTime.now();
             for (CommunityPostReport r : reports) {
                 r.setStatus("RESOLVED");
+                r.setResolvedBy(null);
+                r.setResolvedAt(now);
+                r.setResolutionNotes("Tác giả đã tự xóa bài viết.");
             }
             reportRepository.saveAll(reports);
         }
