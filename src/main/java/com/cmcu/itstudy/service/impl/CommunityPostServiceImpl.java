@@ -397,6 +397,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             } else {
                 // Switch vote type
                 currentLike.setVoteType(targetVote);
+                currentLike.setLikedAt(LocalDateTime.now());
                 likeRepository.save(currentLike);
                 resultVote = targetVote;
             }
@@ -406,6 +407,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .post(post)
                     .user(userRef)
                     .voteType(targetVote)
+                    .likedAt(LocalDateTime.now())
                     .build());
             resultVote = targetVote;
         }
@@ -428,25 +430,11 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         voteEventData.put("downvoteCount", downvotes);
         sseService.broadcast("post-voted", voteEventData);
 
-        // Send notification to post author when upvoted
-        if ("UPVOTE".equals(targetVote) && "UPVOTE".equals(resultVote)) {
-            if (!post.getAuthor().getId().equals(userId)) {
-                try {
-                    boolean isMuted = notificationMuteRepository.existsByPost_IdAndUser_Id(post.getId(), post.getAuthor().getId());
-                    if (!isMuted) {
-                        User voter = userRepository.findById(userId).orElse(null);
-                        String voterName = (voter != null && voter.getFullName() != null) ? voter.getFullName() : "Ai đó";
-                        notificationService.createAndPush(
-                                post.getAuthor().getId(),
-                                userId,
-                                NotificationType.POST_UPVOTED,
-                                post.getId().toString(),
-                                "COMMUNITY_POST",
-                                voterName + " đã thích bài viết của bạn."
-                        );
-                    }
-                } catch (Exception ignored) {}
-            }
+        // Notification logic for upvote / cancel upvote
+        if ("UPVOTE".equals(resultVote)) {
+            sendAggregatedUpvoteNotificationIfUnmuted(post.getAuthor().getId(), userRef, post);
+        } else {
+            handleCancelUpvoteNotification(post.getAuthor().getId(), post);
         }
 
         return getPostResponseForUser(post, userId);
@@ -720,6 +708,152 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         }
     }
 
+    private void sendAggregatedUpvoteNotificationIfUnmuted(
+            UUID recipientId,
+            User actor,
+            CommunityPost post
+    ) {
+        if (recipientId == null || actor == null || recipientId.equals(actor.getId())) return;
+        UUID postId = post.getId();
+        try {
+            if (notificationMuteRepository.existsByPost_IdAndUser_Id(postId, recipientId)) {
+                return;
+            }
+
+            // Fetch distinct recent upvoters for this post (excluding the recipient)
+            List<String> upvoterNames = likeRepository.findUpvoterNamesByPostOrderedByRecent(postId, recipientId);
+            if (upvoterNames == null || upvoterNames.isEmpty()) {
+                return;
+            }
+
+            String actorName = (actor.getFullName() != null && !actor.getFullName().isBlank()) ? actor.getFullName() : "Ai đó";
+            String aggregatedMessage;
+            if (upvoterNames.size() == 1) {
+                aggregatedMessage = upvoterNames.get(0) + " đã thích bài viết của bạn.";
+            } else if (upvoterNames.size() == 2) {
+                aggregatedMessage = upvoterNames.get(0) + " và " + upvoterNames.get(1) + " đã thích bài viết của bạn.";
+            } else {
+                int othersCount = upvoterNames.size() - 1;
+                aggregatedMessage = upvoterNames.get(0) + " và " + othersCount + " người khác đã thích bài viết của bạn.";
+            }
+
+            // Check if recipient has an existing unread upvote notification on this post
+            List<com.cmcu.itstudy.entity.Notification> unreadList =
+                    notificationRepository.findUnreadPostUpvoteNotifications(recipientId, postId.toString());
+
+            if (unreadList.isEmpty()) {
+                // No unread notification: create new single notification
+                notificationService.createAndPush(
+                        recipientId,
+                        actor.getId(),
+                        NotificationType.POST_UPVOTED,
+                        postId.toString(),
+                        "COMMUNITY_POST",
+                        aggregatedMessage
+                );
+                return;
+            }
+
+            // Aggregate with existing unread notification
+            com.cmcu.itstudy.entity.Notification existing = unreadList.get(0);
+            existing.setMessage(aggregatedMessage);
+            existing.setActor(actor);
+            existing.setType(NotificationType.POST_UPVOTED);
+            existing.setReferenceId(postId.toString());
+            existing.setCreatedAt(LocalDateTime.now());
+            existing.setRead(false);
+            com.cmcu.itstudy.entity.Notification saved = notificationRepository.save(existing);
+
+            // Push updated notification via SSE to recipient
+            try {
+                com.cmcu.itstudy.dto.notification.NotificationResponseDto dto = com.cmcu.itstudy.dto.notification.NotificationResponseDto.builder()
+                        .id(saved.getId().toString())
+                        .actorId(actor.getId().toString())
+                        .actorName(actorName)
+                        .actorAvatar(actor.getAvatarUrl())
+                        .type(saved.getType())
+                        .referenceId(saved.getReferenceId())
+                        .referenceType(saved.getReferenceType())
+                        .message(saved.getMessage())
+                        .isRead(false)
+                        .createdAt(saved.getCreatedAt())
+                        .build();
+                sseService.pushEvent(recipientId, "notification", dto);
+            } catch (Exception sseEx) {
+                log.warn("Failed to push aggregated upvote SSE notification to user {}: {}", recipientId, sseEx.getMessage());
+            }
+
+        } catch (Exception ex) {
+            log.warn("Failed to send aggregated upvote notification: {}", ex.getMessage());
+        }
+    }
+
+    private void handleCancelUpvoteNotification(UUID recipientId, CommunityPost post) {
+        if (recipientId == null || post == null) return;
+        UUID postId = post.getId();
+        try {
+            List<com.cmcu.itstudy.entity.Notification> unreadList =
+                    notificationRepository.findUnreadPostUpvoteNotifications(recipientId, postId.toString());
+            if (unreadList.isEmpty()) return;
+
+            com.cmcu.itstudy.entity.Notification existing = unreadList.get(0);
+            List<String> remainingUpvoters = likeRepository.findUpvoterNamesByPostOrderedByRecent(postId, recipientId);
+
+            if (remainingUpvoters == null || remainingUpvoters.isEmpty()) {
+                // No upvoters left: delete notification from DB
+                notificationRepository.delete(existing);
+
+                // Push removal event via SSE
+                try {
+                    Map<String, Object> removeData = new HashMap<>();
+                    removeData.put("id", existing.getId().toString());
+                    removeData.put("action", "DELETE");
+                    sseService.pushEvent(recipientId, "notification-removed", removeData);
+                    sseService.pushEvent(recipientId, "notification", removeData);
+                } catch (Exception sseEx) {
+                    log.warn("Failed to push remove upvote notification event to user {}: {}", recipientId, sseEx.getMessage());
+                }
+            } else {
+                // Some upvoters still remain: recalculate message
+                String updatedMessage;
+                if (remainingUpvoters.size() == 1) {
+                    updatedMessage = remainingUpvoters.get(0) + " đã thích bài viết của bạn.";
+                } else if (remainingUpvoters.size() == 2) {
+                    updatedMessage = remainingUpvoters.get(0) + " và " + remainingUpvoters.get(1) + " đã thích bài viết của bạn.";
+                } else {
+                    int othersCount = remainingUpvoters.size() - 1;
+                    updatedMessage = remainingUpvoters.get(0) + " và " + othersCount + " người khác đã thích bài viết của bạn.";
+                }
+
+                existing.setMessage(updatedMessage);
+                com.cmcu.itstudy.entity.Notification saved = notificationRepository.save(existing);
+
+                try {
+                    User actor = saved.getActor();
+                    String actorName = (actor != null && actor.getFullName() != null) ? actor.getFullName() : "Ai đó";
+                    String actorAvatar = actor != null ? actor.getAvatarUrl() : null;
+                    com.cmcu.itstudy.dto.notification.NotificationResponseDto dto = com.cmcu.itstudy.dto.notification.NotificationResponseDto.builder()
+                            .id(saved.getId().toString())
+                            .actorId(actor != null ? actor.getId().toString() : null)
+                            .actorName(actorName)
+                            .actorAvatar(actorAvatar)
+                            .type(saved.getType())
+                            .referenceId(saved.getReferenceId())
+                            .referenceType(saved.getReferenceType())
+                            .message(saved.getMessage())
+                            .isRead(false)
+                            .createdAt(saved.getCreatedAt())
+                            .build();
+                    sseService.pushEvent(recipientId, "notification", dto);
+                } catch (Exception sseEx) {
+                    log.warn("Failed to push updated upvote SSE notification to user {}: {}", recipientId, sseEx.getMessage());
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to handle cancel upvote notification: {}", ex.getMessage());
+        }
+    }
+
     @Override
     @Transactional
     public PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId) {
@@ -986,7 +1120,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         comment.setLikeCount(upvotes - downvotes);
         commentRepository.saveAndFlush(comment);
 
-        // Push notification when comment is upvoted
+        // Push notification when comment is upvoted / cancelled
         if ("UPVOTE".equals(targetVote) && "UPVOTE".equals(resultVote)) {
             if (!comment.getAuthor().getId().equals(userId)) {
                 try {
@@ -1002,6 +1136,10 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     );
                 } catch (Exception ignored) {}
             }
+        } else {
+            try {
+                notificationRepository.deleteByReferenceIdContaining("commentId=" + commentId);
+            } catch (Exception ignored) {}
         }
 
         // Real-time SSE broadcast of comment vote count
@@ -1062,8 +1200,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         Optional<CommunityPostReport> existingOpt = reportRepository.findByPostIdAndReporterId(postId, reporterId);
         if (existingOpt.isPresent()) {
             CommunityPostReport existingReport = existingOpt.get();
-            if (!"DISMISSED".equalsIgnoreCase(existingReport.getStatus())) {
-                throw new IllegalArgumentException("Bạn đã báo cáo bài viết này rồi.");
+            if ("PENDING".equalsIgnoreCase(existingReport.getStatus())) {
+                throw new IllegalArgumentException("Bạn đã báo cáo bài viết này rồi và đang chờ xử lý.");
             }
 
             existingReport.setReasonCode(reasonCode);

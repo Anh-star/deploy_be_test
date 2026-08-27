@@ -705,8 +705,24 @@ public class DocumentServiceImpl implements DocumentService {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new NoSuchElementException("Tài liệu không tồn tại"));
 
-        if (documentReportRepository.existsByDocumentIdAndReporterId(documentId, reporter.getId())) {
-            throw new IllegalArgumentException("Bạn đã báo cáo tài liệu này rồi");
+        Optional<DocumentReport> existingOpt = documentReportRepository.findByDocumentIdAndReporterId(documentId, reporter.getId());
+        if (existingOpt.isPresent()) {
+            DocumentReport existingReport = existingOpt.get();
+            String st = existingReport.getStatus() != null ? existingReport.getStatus().toUpperCase() : "";
+            if ("PENDING".equals(st)) {
+                throw new IllegalArgumentException("Bạn đã gửi báo cáo cho tài liệu này và đang chờ xử lý.");
+            }
+
+            // Nếu báo cáo trước đó đã được xử lý (RESOLVED) hoặc bỏ qua (DISMISSED), cập nhật lại để gửi báo cáo mới
+            existingReport.setReasonCode(requestDto.getReasonCode());
+            existingReport.setDetail(requestDto.getDetail() != null ? requestDto.getDetail().trim() : "");
+            existingReport.setStatus("PENDING");
+            existingReport.setCreatedAt(LocalDateTime.now());
+            existingReport.setResolvedAt(null);
+            existingReport.setResolvedBy(null);
+
+            documentReportRepository.save(existingReport);
+            return;
         }
 
         DocumentReport report = DocumentReport.builder()

@@ -31,4 +31,10 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             @Param("recipientId") UUID recipientId,
             @Param("postIdPattern") String postIdPattern
     );
+
+    @Query("SELECT n FROM Notification n WHERE n.recipient.id = :recipientId AND n.referenceType = 'COMMUNITY_POST' AND n.type = 'POST_UPVOTED' AND n.referenceId = :referenceId AND n.read = false ORDER BY n.createdAt DESC")
+    java.util.List<Notification> findUnreadPostUpvoteNotifications(
+            @Param("recipientId") UUID recipientId,
+            @Param("referenceId") String referenceId
+    );
 }
