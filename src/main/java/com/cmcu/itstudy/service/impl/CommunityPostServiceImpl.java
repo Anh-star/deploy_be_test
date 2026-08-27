@@ -78,6 +78,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     private final com.cmcu.itstudy.repository.DocumentRepository documentRepository;
     private final com.cmcu.itstudy.repository.RefreshTokenRepository refreshTokenRepository;
     private final com.cmcu.itstudy.repository.NotificationRepository notificationRepository;
+    private final CommunityPostEditHistoryRepository postEditHistoryRepository;
 
     public CommunityPostServiceImpl(
             CommunityPostRepository postRepository,
@@ -96,7 +97,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             SseService sseService,
             com.cmcu.itstudy.repository.DocumentRepository documentRepository,
             com.cmcu.itstudy.repository.RefreshTokenRepository refreshTokenRepository,
-            com.cmcu.itstudy.repository.NotificationRepository notificationRepository
+            com.cmcu.itstudy.repository.NotificationRepository notificationRepository,
+            CommunityPostEditHistoryRepository postEditHistoryRepository
     ) {
         this.postRepository = postRepository;
         this.imageRepository = imageRepository;
@@ -115,6 +117,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         this.documentRepository = documentRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.notificationRepository = notificationRepository;
+        this.postEditHistoryRepository = postEditHistoryRepository;
     }
 
     @Override
@@ -1287,6 +1290,20 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             throw new IllegalArgumentException("You can only edit your own post");
         }
 
+        boolean contentChanged = request.getContent() != null && !request.getContent().trim().equals(post.getContent() != null ? post.getContent().trim() : "");
+        boolean titleChanged = request.getTitle() != null && !request.getTitle().trim().equals(post.getTitle() != null ? post.getTitle().trim() : "");
+
+        if (contentChanged || titleChanged) {
+            postEditHistoryRepository.save(com.cmcu.itstudy.entity.CommunityPostEditHistory.builder()
+                    .post(post)
+                    .editor(post.getAuthor())
+                    .title(post.getTitle())
+                    .content(post.getContent())
+                    .editedAt(LocalDateTime.now())
+                    .build());
+            post.setUpdatedAt(LocalDateTime.now());
+        }
+
         if (request.getContent() != null) {
             post.setContent(request.getContent());
         }
@@ -1421,7 +1438,12 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         PageRequest pageRequest = PageRequest.of(page, size);
         String st = (status != null && !status.isBlank()) ? status.toUpperCase() : null;
         String kw = (keyword != null && !keyword.isBlank()) ? keyword.trim() : null;
-        Page<CommunityPostReport> reports = reportRepository.searchReports(st, kw, startDate, endDate, pageRequest);
+        Page<CommunityPostReport> reports;
+        if ("ESCALATED".equals(st)) {
+            reports = reportRepository.searchEscalatedReportsForModerator(kw, startDate, endDate, pageRequest);
+        } else {
+            reports = reportRepository.searchReports(st, kw, startDate, endDate, pageRequest);
+        }
 
         return reports.map(r -> {
             CommunityPost p = r.getPost();
@@ -1432,6 +1454,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             long count = reportRepository.countByPostId(p.getId());
 
             User escalatedBy = r.getEscalatedBy();
+            User resolvedBy = r.getResolvedBy();
+            long editCount = postEditHistoryRepository.countByPostId(p.getId());
 
             return PostReportResponseDto.builder()
                     .id(r.getId().toString())
@@ -1441,6 +1465,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .postAuthorId(author != null ? author.getId().toString() : null)
                     .postAuthorName(author != null ? author.getFullName() : "Không xác định")
                     .postAuthorAvatar(author != null ? author.getAvatarUrl() : null)
+                    .authorStatus(author != null ? author.getStatus() : null)
                     .reporterId(reporter != null ? reporter.getId().toString() : null)
                     .reporterName(reporter != null ? reporter.getFullName() : "Không xác định")
                     .reporterAvatar(reporter != null ? reporter.getAvatarUrl() : null)
@@ -1450,9 +1475,16 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .reportCount(count)
                     .isPostHidden(Boolean.TRUE.equals(p.getHidden()))
                     .isPostDeleted(Boolean.TRUE.equals(p.getDeleted()))
+                    .isPostEdited(p.getUpdatedAt() != null || editCount > 0)
+                    .editCount(editCount)
+                    .postCreatedAt(p.getCreatedAt())
+                    .postUpdatedAt(p.getUpdatedAt())
                     .escalationReason(r.getEscalationReason())
                     .escalatedByName(escalatedBy != null ? escalatedBy.getFullName() : null)
                     .escalatedAt(r.getEscalatedAt())
+                    .resolutionNotes(r.getResolutionNotes())
+                    .resolvedByName(resolvedBy != null ? resolvedBy.getFullName() : null)
+                    .resolvedAt(r.getResolvedAt())
                     .createdAt(r.getCreatedAt())
                     .build();
         });
@@ -1781,6 +1813,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             long count = reportRepository.countByPostId(p.getId());
             User escalatedBy = r.getEscalatedBy();
             User resolvedBy = r.getResolvedBy();
+            long editCount = postEditHistoryRepository.countByPostId(p.getId());
 
             return PostReportResponseDto.builder()
                     .id(r.getId().toString())
@@ -1800,6 +1833,10 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .reportCount(count)
                     .isPostHidden(Boolean.TRUE.equals(p.getHidden()))
                     .isPostDeleted(Boolean.TRUE.equals(p.getDeleted()))
+                    .isPostEdited(p.getUpdatedAt() != null || editCount > 0)
+                    .editCount(editCount)
+                    .postCreatedAt(p.getCreatedAt())
+                    .postUpdatedAt(p.getUpdatedAt())
                     .escalationReason(r.getEscalationReason())
                     .escalatedByName(escalatedBy != null ? escalatedBy.getFullName() : null)
                     .escalatedAt(r.getEscalatedAt())
@@ -1838,34 +1875,53 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         // 2. Revoke all tokens
         refreshTokenRepository.revokeAllByUserId(author.getId());
 
-        // 3. Hide ALL community posts by this author
-        postRepository.hideAllByAuthorId(author.getId());
+        // 3. SOFT-DELETE the reported post
+        LocalDateTime now = LocalDateTime.now();
+        post.setDeleted(true);
+        post.setDeletedAt(now);
+        post.setHidden(true);
+        postRepository.save(post);
 
-        // 4. Hide ALL documents by this author
+        // Hide ALL documents by this author
         documentRepository.hideAllByCreatedById(author.getId());
 
-        // 5. Mark all reports of this post as RESOLVED_BAN and record reason
-        List<CommunityPostReport> postReports = reportRepository.findByPostId(post.getId());
-        LocalDateTime now = LocalDateTime.now();
+        // 4. Mark all pending and escalated reports of this author as RESOLVED_BAN and delete their violating posts
         String banReason = (reason != null && !reason.isBlank()) ? reason.trim() : "Vi phạm quy chuẩn cộng đồng";
+        List<CommunityPostReport> authorPendingReports = reportRepository.findByAuthorIdAndStatusIn(
+                author.getId(), List.of("ESCALATED", "PENDING")
+        );
 
-        if (postReports != null && !postReports.isEmpty()) {
-            for (CommunityPostReport r : postReports) {
+        if (authorPendingReports != null && !authorPendingReports.isEmpty()) {
+            for (CommunityPostReport r : authorPendingReports) {
                 r.setStatus("RESOLVED_BAN");
                 r.setResolvedAt(now);
                 r.setResolvedBy(admin);
                 r.setResolutionNotes(banReason);
+                if (r.getPost() != null && !Boolean.TRUE.equals(r.getPost().getDeleted())) {
+                    r.getPost().setDeleted(true);
+                    r.getPost().setDeletedAt(now);
+                    r.getPost().setHidden(true);
+                    postRepository.save(r.getPost());
+                }
             }
-            reportRepository.saveAll(postReports);
-        } else {
-            report.setStatus("RESOLVED_BAN");
-            report.setResolvedAt(now);
-            report.setResolvedBy(admin);
-            report.setResolutionNotes(banReason);
-            reportRepository.save(report);
+            reportRepository.saveAll(authorPendingReports);
         }
 
-        // 6. Send notification to author WITHOUT reason (generic notice)
+        // Also ensure all other reports for this specific post are marked RESOLVED_BAN
+        List<CommunityPostReport> postReports = reportRepository.findByPostId(post.getId());
+        if (postReports != null && !postReports.isEmpty()) {
+            for (CommunityPostReport r : postReports) {
+                if (!"RESOLVED_BAN".equals(r.getStatus())) {
+                    r.setStatus("RESOLVED_BAN");
+                    r.setResolvedAt(now);
+                    r.setResolvedBy(admin);
+                    r.setResolutionNotes(banReason);
+                }
+            }
+            reportRepository.saveAll(postReports);
+        }
+
+        // 5. Send notification to author WITHOUT reason (generic notice)
         try {
             String msg = "Tài khoản của bạn đã bị khóa bởi Ban Quản Trị do vi phạm quy chuẩn cộng đồng. Vui lòng liên hệ support@itstudy.edu.vn nếu bạn có khiếu nại.";
             notificationService.createAndPush(
@@ -1905,13 +1961,10 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         author.setUpdatedAt(LocalDateTime.now());
         userRepository.save(author);
 
-        // 2. Unhide ALL community posts by this author
-        postRepository.unhideAllByAuthorId(author.getId());
-
-        // 3. Unhide ALL documents by this author
+        // 2. Unhide ALL documents by this author
         documentRepository.unhideAllByCreatedById(author.getId());
 
-        // 4. Update reports status to RESOLVED_UNBAN
+        // 3. Update reports status to RESOLVED_UNBAN
         List<CommunityPostReport> postReports = reportRepository.findByPostId(post.getId());
         LocalDateTime now = LocalDateTime.now();
         String unbanNote = (reason != null && !reason.isBlank()) ? reason.trim() : null;
@@ -1936,9 +1989,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             reportRepository.save(report);
         }
 
-        // 5. Send unban notification to author (with note if provided)
+        // 4. Send unban notification to author (with note if provided)
         try {
-            String msg = "Tài khoản của bạn đã được mở khóa bởi Ban Quản Trị. Các bài viết và tài liệu của bạn đã được khôi phục hiển thị.";
+            String msg = "Tài khoản của bạn đã được mở khóa bởi Ban Quản Trị. Các tài liệu của bạn đã được khôi phục hiển thị.";
             if (StringUtils.hasText(unbanNote)) {
                 msg += " Ghi chú: " + unbanNote;
             }
@@ -2013,5 +2066,14 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         } catch (Exception e) {
             log.warn("Failed to push acquit/delete notification to author: {}", e.getMessage());
         }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<com.cmcu.itstudy.dto.community.PostEditHistoryDto> getPostEditHistory(UUID postId) {
+        List<com.cmcu.itstudy.entity.CommunityPostEditHistory> histories = postEditHistoryRepository.findByPostIdOrderByEditedAtDesc(postId);
+        return histories.stream()
+                .map(CommunityPostMapper::toPostEditHistoryDto)
+                .collect(Collectors.toList());
     }
 }

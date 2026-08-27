@@ -135,6 +135,26 @@ public class DatabaseSchemaMigrationRunner implements ApplicationRunner {
                 log.warn("Schema migration for tbl_community_poll_options.created_by_user_id: {}", ex.getMessage());
             }
 
+            // 8. Ensure tbl_community_post_edit_history table exists
+            try {
+                stmt.execute("IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'tbl_community_post_edit_history') " +
+                             "BEGIN " +
+                             "    CREATE TABLE tbl_community_post_edit_history ( " +
+                             "        id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY DEFAULT NEWID(), " +
+                             "        post_id UNIQUEIDENTIFIER NOT NULL, " +
+                             "        editor_id UNIQUEIDENTIFIER NOT NULL, " +
+                             "        title NVARCHAR(255) NULL, " +
+                             "        content NVARCHAR(MAX) NOT NULL, " +
+                             "        edited_at DATETIME2 NOT NULL DEFAULT GETDATE(), " +
+                             "        CONSTRAINT fk_post_edit_post FOREIGN KEY (post_id) REFERENCES tbl_community_posts(id) ON DELETE CASCADE, " +
+                             "        CONSTRAINT fk_post_edit_editor FOREIGN KEY (editor_id) REFERENCES tbl_users(id) " +
+                             "    ); " +
+                             "END");
+                log.info("Schema migration: tbl_community_post_edit_history table verified successfully.");
+            } catch (Exception ex) {
+                log.warn("Schema migration for tbl_community_post_edit_history: {}", ex.getMessage());
+            }
+
         } catch (Exception e) {
             log.warn("Schema migration runner error: {}", e.getMessage());
         }

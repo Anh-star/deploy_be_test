@@ -43,4 +43,7 @@ public class CommunityPostResponseDto {
     private Boolean isMuted;
     private Long reportCount;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private Boolean isEdited;
+    private Long editCount;
 }

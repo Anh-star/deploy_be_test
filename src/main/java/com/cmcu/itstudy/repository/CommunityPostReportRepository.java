@@ -74,4 +74,27 @@ public interface CommunityPostReportRepository extends JpaRepository<CommunityPo
             @Param("endDate") java.time.LocalDateTime endDate,
             Pageable pageable
     );
+
+    @Query("SELECT r FROM CommunityPostReport r WHERE r.post.author.id = :authorId AND r.status IN :statuses")
+    List<CommunityPostReport> findByAuthorIdAndStatusIn(@Param("authorId") UUID authorId, @Param("statuses") List<String> statuses);
+
+    @Query("SELECT r FROM CommunityPostReport r " +
+           "LEFT JOIN r.post p " +
+           "LEFT JOIN p.author a " +
+           "LEFT JOIN r.reporter rep " +
+           "WHERE (r.status = 'ESCALATED' OR r.escalatedBy IS NOT NULL) " +
+           "AND (:keyword IS NULL OR :keyword = '' OR " +
+           "     LOWER(p.title) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "     LOWER(p.content) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "     LOWER(a.fullName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "     LOWER(rep.fullName) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
+           "AND (:startDate IS NULL OR r.createdAt >= :startDate) " +
+           "AND (:endDate IS NULL OR r.createdAt <= :endDate) " +
+           "ORDER BY r.createdAt DESC")
+    Page<CommunityPostReport> searchEscalatedReportsForModerator(
+            @Param("keyword") String keyword,
+            @Param("startDate") java.time.LocalDateTime startDate,
+            @Param("endDate") java.time.LocalDateTime endDate,
+            Pageable pageable
+    );
 }

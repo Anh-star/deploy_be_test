@@ -146,6 +146,14 @@ public class CommunityPostController {
         return ResponseEntity.ok(ApiResponse.success(null, "Post deleted"));
     }
 
+    @GetMapping("/{postId}/edit-history")
+    public ResponseEntity<ApiResponse<List<com.cmcu.itstudy.dto.community.PostEditHistoryDto>>> getPostEditHistory(
+            @PathVariable UUID postId
+    ) {
+        List<com.cmcu.itstudy.dto.community.PostEditHistoryDto> history = communityPostService.getPostEditHistory(postId);
+        return ResponseEntity.ok(ApiResponse.success(history, "Lịch sử chỉnh sửa bài viết"));
+    }
+
     @PostMapping("/{postId}/report")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<Void>> reportPost(

@@ -170,6 +170,27 @@ public final class CommunityPostMapper {
                 .isMuted(isMuted != null ? isMuted : false)
                 .reportCount(reportCount != null ? reportCount : 0L)
                 .createdAt(post.getCreatedAt())
+                .updatedAt(post.getUpdatedAt())
+                .isEdited(post.getUpdatedAt() != null)
+                .build();
+    }
+
+    public static PostEditHistoryDto toPostEditHistoryDto(CommunityPostEditHistory history) {
+        if (history == null) return null;
+        String editorName = history.getEditor() != null ? history.getEditor().getFullName() : "Người dùng";
+        String editorAvatar = history.getEditor() != null ? history.getEditor().getAvatarUrl() : null;
+        String editorId = history.getEditor() != null ? uuidToString(history.getEditor().getId()) : null;
+        String postId = history.getPost() != null ? uuidToString(history.getPost().getId()) : null;
+
+        return PostEditHistoryDto.builder()
+                .id(uuidToString(history.getId()))
+                .postId(postId)
+                .editorId(editorId)
+                .editorName(editorName)
+                .editorAvatar(editorAvatar)
+                .title(history.getTitle())
+                .content(history.getContent())
+                .editedAt(history.getEditedAt())
                 .build();
     }
 

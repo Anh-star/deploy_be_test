@@ -37,6 +37,10 @@ public class PostReportResponseDto {
     private String resolutionNotes;
     private String resolvedByName;
     private String authorStatus;
+    private Boolean isPostEdited;
+    private Long editCount;
+    private LocalDateTime postCreatedAt;
+    private LocalDateTime postUpdatedAt;
     private LocalDateTime createdAt;
     private LocalDateTime resolvedAt;
 }

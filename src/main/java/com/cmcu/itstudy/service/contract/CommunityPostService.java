@@ -94,4 +94,6 @@ public interface CommunityPostService {
     void adminUnbanUserFromReport(UUID reportId, UUID adminId, String reason);
 
     void adminAcquitReport(UUID reportId, UUID adminId, String reason);
+    
+    List<com.cmcu.itstudy.dto.community.PostEditHistoryDto> getPostEditHistory(UUID postId);
 }
