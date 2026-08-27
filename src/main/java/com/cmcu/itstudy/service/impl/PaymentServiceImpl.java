@@ -8,6 +8,7 @@ import com.cmcu.itstudy.dto.payment.PaymentHistoryDto;
 import com.cmcu.itstudy.dto.payment.PayOsWebhookDto;
 import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.entity.Payment;
+import com.cmcu.itstudy.entity.User;
 import com.cmcu.itstudy.enums.DocumentStatus;
 import com.cmcu.itstudy.enums.NotificationType;
 import com.cmcu.itstudy.enums.PaymentStatus;
