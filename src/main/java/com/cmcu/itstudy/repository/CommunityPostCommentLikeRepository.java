@@ -13,6 +13,8 @@ public interface CommunityPostCommentLikeRepository extends JpaRepository<Commun
 
     Optional<CommunityPostCommentLike> findByComment_IdAndUser_Id(UUID commentId, UUID userId);
 
+    long countByComment_IdAndVoteType(UUID commentId, String voteType);
+
     @Query("SELECT l.comment.id FROM CommunityPostCommentLike l WHERE l.comment.id IN :commentIds AND l.user.id = :userId")
     List<UUID> findLikedCommentIds(@Param("commentIds") List<UUID> commentIds, @Param("userId") UUID userId);
 

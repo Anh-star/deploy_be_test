@@ -372,7 +372,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
     @Override
     @Transactional
-    public CommunityPostResponseDto votePost(UUID postId, UUID userId, String voteType) {
+    public synchronized CommunityPostResponseDto votePost(UUID postId, UUID userId, String voteType) {
         String targetVote = ("DOWNVOTE".equalsIgnoreCase(voteType)) ? "DOWNVOTE" : "UPVOTE";
 
         CommunityPost post = postRepository.findByIdWithAuthor(postId)
@@ -380,9 +380,6 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         User userRef = userRepository.getReferenceById(userId);
         Optional<CommunityPostLike> existing = likeRepository.findByPost_IdAndUser_Id(postId, userId);
-
-        int upvotes = post.getUpvoteCount() != null ? post.getUpvoteCount() : 0;
-        int downvotes = post.getDownvoteCount() != null ? post.getDownvoteCount() : 0;
 
         String resultVote = null;
 
@@ -393,24 +390,11 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             if (currentVoteType.equalsIgnoreCase(targetVote)) {
                 // Toggle off (remove vote)
                 likeRepository.delete(currentLike);
-                likeRepository.flush();
-                if ("UPVOTE".equals(targetVote)) {
-                    upvotes = Math.max(0, upvotes - 1);
-                } else {
-                    downvotes = Math.max(0, downvotes - 1);
-                }
                 resultVote = null;
             } else {
                 // Switch vote type
                 currentLike.setVoteType(targetVote);
                 likeRepository.save(currentLike);
-                if ("UPVOTE".equals(targetVote)) {
-                    upvotes = upvotes + 1;
-                    downvotes = Math.max(0, downvotes - 1);
-                } else {
-                    downvotes = downvotes + 1;
-                    upvotes = Math.max(0, upvotes - 1);
-                }
                 resultVote = targetVote;
             }
         } else {
@@ -420,18 +404,19 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .user(userRef)
                     .voteType(targetVote)
                     .build());
-
-            if ("UPVOTE".equals(targetVote)) {
-                upvotes = upvotes + 1;
-            } else {
-                downvotes = downvotes + 1;
-            }
             resultVote = targetVote;
         }
 
+        likeRepository.flush();
+
+        // Exact count from database - immune to drifting counters during spam
+        int upvotes = (int) likeRepository.countByPost_IdAndVoteType(postId, "UPVOTE");
+        int downvotes = (int) likeRepository.countByPost_IdAndVoteType(postId, "DOWNVOTE");
+
         post.setUpvoteCount(upvotes);
         post.setDownvoteCount(downvotes);
-        postRepository.save(post);
+        post.setLikeCount(upvotes);
+        postRepository.saveAndFlush(post);
 
         // Real-time SSE broadcast of post vote count
         Map<String, Object> voteEventData = new HashMap<>();
@@ -832,9 +817,6 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         User userRef = userRepository.getReferenceById(userId);
         Optional<CommunityPostCommentLike> existing = commentLikeRepository.findByComment_IdAndUser_Id(commentId, userId);
 
-        int upvotes = comment.getUpvoteCount() != null ? comment.getUpvoteCount() : (comment.getLikeCount() != null ? Math.max(0, comment.getLikeCount()) : 0);
-        int downvotes = comment.getDownvoteCount() != null ? comment.getDownvoteCount() : 0;
-
         String resultVote = null;
 
         if (existing.isPresent()) {
@@ -844,24 +826,11 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             if (currentVoteType.equalsIgnoreCase(targetVote)) {
                 // Toggle off
                 commentLikeRepository.delete(currentLike);
-                commentLikeRepository.flush();
-                if ("UPVOTE".equals(targetVote)) {
-                    upvotes = Math.max(0, upvotes - 1);
-                } else {
-                    downvotes = Math.max(0, downvotes - 1);
-                }
                 resultVote = null;
             } else {
                 // Switch vote type
                 currentLike.setVoteType(targetVote);
                 commentLikeRepository.save(currentLike);
-                if ("UPVOTE".equals(targetVote)) {
-                    upvotes = upvotes + 1;
-                    downvotes = Math.max(0, downvotes - 1);
-                } else {
-                    downvotes = downvotes + 1;
-                    upvotes = Math.max(0, upvotes - 1);
-                }
                 resultVote = targetVote;
             }
         } else {
@@ -871,19 +840,19 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     .user(userRef)
                     .voteType(targetVote)
                     .build());
-
-            if ("UPVOTE".equals(targetVote)) {
-                upvotes = upvotes + 1;
-            } else {
-                downvotes = downvotes + 1;
-            }
             resultVote = targetVote;
         }
+
+        commentLikeRepository.flush();
+
+        // Exact count from database
+        int upvotes = (int) commentLikeRepository.countByComment_IdAndVoteType(commentId, "UPVOTE");
+        int downvotes = (int) commentLikeRepository.countByComment_IdAndVoteType(commentId, "DOWNVOTE");
 
         comment.setUpvoteCount(upvotes);
         comment.setDownvoteCount(downvotes);
         comment.setLikeCount(upvotes - downvotes);
-        commentRepository.save(comment);
+        commentRepository.saveAndFlush(comment);
 
         // Push notification when comment is upvoted
         if ("UPVOTE".equals(targetVote) && "UPVOTE".equals(resultVote)) {
@@ -1211,28 +1180,17 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new NoSuchElementException("Người dùng không tồn tại"));
 
-        boolean exists = false;
-        try {
-            exists = notificationMuteRepository.existsByPost_IdAndUser_Id(postId, userId);
-        } catch (Exception ignored) {
-        }
-
-        if (exists) {
-            try {
-                notificationMuteRepository.deleteByPost_IdAndUser_Id(postId, userId);
-                notificationMuteRepository.flush();
-            } catch (Exception ignored) {
-            }
+        Optional<CommunityPostNotificationMute> existing = notificationMuteRepository.findByPost_IdAndUser_Id(postId, userId);
+        if (existing.isPresent()) {
+            notificationMuteRepository.delete(existing.get());
+            notificationMuteRepository.flush();
             return false;
         } else {
-            try {
-                notificationMuteRepository.save(CommunityPostNotificationMute.builder()
-                        .post(post)
-                        .user(user)
-                        .build());
-                notificationMuteRepository.flush();
-            } catch (Exception ignored) {
-            }
+            notificationMuteRepository.save(CommunityPostNotificationMute.builder()
+                    .post(post)
+                    .user(user)
+                    .build());
+            notificationMuteRepository.flush();
             return true;
         }
     }

@@ -14,6 +14,8 @@ public interface DocumentCommentLikeRepository extends JpaRepository<DocumentCom
 
     Optional<DocumentCommentLike> findByComment_IdAndUser_Id(UUID commentId, UUID userId);
 
+    long countByComment_IdAndVoteType(UUID commentId, String voteType);
+
     @Query("select l.comment.id from DocumentCommentLike l where l.comment.id in :commentIds and l.user.id = :userId")
     List<UUID> findLikedCommentIds(@Param("commentIds") Collection<UUID> commentIds, @Param("userId") UUID userId);
 

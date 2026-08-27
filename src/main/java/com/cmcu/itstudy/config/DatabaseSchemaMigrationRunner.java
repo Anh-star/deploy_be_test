@@ -87,6 +87,40 @@ public class DatabaseSchemaMigrationRunner implements ApplicationRunner {
                 log.warn("Schema migration for Unicode columns: {}", ex.getMessage());
             }
 
+            // 5. One-time self-healing sync: recalibrate any drifted post & comment vote counts to match exact likes table
+            try {
+                stmt.execute("UPDATE p SET " +
+                             "    upvote_count = ISNULL((SELECT COUNT(1) FROM tbl_community_post_likes l WHERE l.post_id = p.id AND l.vote_type = 'UPVOTE'), 0), " +
+                             "    downvote_count = ISNULL((SELECT COUNT(1) FROM tbl_community_post_likes l WHERE l.post_id = p.id AND l.vote_type = 'DOWNVOTE'), 0) " +
+                             "FROM tbl_community_posts p;");
+                stmt.execute("UPDATE c SET " +
+                             "    upvote_count = ISNULL((SELECT COUNT(1) FROM tbl_community_post_comment_likes l WHERE l.comment_id = c.id AND l.vote_type = 'UPVOTE'), 0), " +
+                             "    downvote_count = ISNULL((SELECT COUNT(1) FROM tbl_community_post_comment_likes l WHERE l.comment_id = c.id AND l.vote_type = 'DOWNVOTE'), 0) " +
+                             "FROM tbl_community_post_comments c;");
+                log.info("Schema migration: Recalibrated post and comment vote counts to exact database state.");
+            } catch (Exception ex) {
+                log.warn("Schema migration for recalibrating vote counts: {}", ex.getMessage());
+            }
+
+            // 6. Ensure tbl_community_post_notification_mutes table exists
+            try {
+                stmt.execute("IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'tbl_community_post_notification_mutes') " +
+                             "BEGIN " +
+                             "    CREATE TABLE tbl_community_post_notification_mutes ( " +
+                             "        id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY DEFAULT NEWID(), " +
+                             "        post_id UNIQUEIDENTIFIER NOT NULL, " +
+                             "        user_id UNIQUEIDENTIFIER NOT NULL, " +
+                             "        created_at DATETIME2 NOT NULL DEFAULT GETDATE(), " +
+                             "        CONSTRAINT fk_post_mute_post FOREIGN KEY (post_id) REFERENCES tbl_community_posts(id) ON DELETE CASCADE, " +
+                             "        CONSTRAINT fk_post_mute_user FOREIGN KEY (user_id) REFERENCES tbl_users(id) ON DELETE CASCADE, " +
+                             "        CONSTRAINT uk_community_post_notification_mute_post_user UNIQUE (post_id, user_id) " +
+                             "    ); " +
+                             "END");
+                log.info("Schema migration: tbl_community_post_notification_mutes table verified successfully.");
+            } catch (Exception ex) {
+                log.warn("Schema migration for tbl_community_post_notification_mutes: {}", ex.getMessage());
+            }
+
         } catch (Exception e) {
             log.warn("Schema migration runner error: {}", e.getMessage());
         }

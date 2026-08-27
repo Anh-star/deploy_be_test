@@ -197,7 +197,7 @@ public class CommunityPostController {
         return ResponseEntity.ok(ApiResponse.success(result, isSaved ? "Post saved" : "Post unsaved"));
     }
 
-    @PostMapping("/{postId}/toggle-notifications")
+    @PostMapping(value = {"/{postId}/toggle-notifications", "/{postId}/notifications/mute"})
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<Map<String, Object>>> toggleNotifications(
             @PathVariable UUID postId,

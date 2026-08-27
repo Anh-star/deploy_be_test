@@ -249,9 +249,6 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
         User userRef = userRepository.getReferenceById(userId);
         Optional<DocumentCommentLike> existing = documentCommentLikeRepository.findByComment_IdAndUser_Id(commentId, userId);
 
-        int upvotes = comment.getUpvoteCount() != null ? comment.getUpvoteCount() : (comment.getLikeCount() != null ? Math.max(0, comment.getLikeCount()) : 0);
-        int downvotes = comment.getDownvoteCount() != null ? comment.getDownvoteCount() : 0;
-
         String resultVote = null;
 
         if (existing.isPresent()) {
@@ -261,24 +258,11 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
             if (currentVoteType.equalsIgnoreCase(targetVote)) {
                 // Toggle off
                 documentCommentLikeRepository.delete(currentLike);
-                documentCommentLikeRepository.flush();
-                if ("UPVOTE".equals(targetVote)) {
-                    upvotes = Math.max(0, upvotes - 1);
-                } else {
-                    downvotes = Math.max(0, downvotes - 1);
-                }
                 resultVote = null;
             } else {
                 // Switch vote type
                 currentLike.setVoteType(targetVote);
                 documentCommentLikeRepository.save(currentLike);
-                if ("UPVOTE".equals(targetVote)) {
-                    upvotes = upvotes + 1;
-                    downvotes = Math.max(0, downvotes - 1);
-                } else {
-                    downvotes = downvotes + 1;
-                    upvotes = Math.max(0, upvotes - 1);
-                }
                 resultVote = targetVote;
             }
         } else {
@@ -288,19 +272,19 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
                     .user(userRef)
                     .voteType(targetVote)
                     .build());
-
-            if ("UPVOTE".equals(targetVote)) {
-                upvotes = upvotes + 1;
-            } else {
-                downvotes = downvotes + 1;
-            }
             resultVote = targetVote;
         }
+
+        documentCommentLikeRepository.flush();
+
+        // Exact count from database
+        int upvotes = (int) documentCommentLikeRepository.countByComment_IdAndVoteType(commentId, "UPVOTE");
+        int downvotes = (int) documentCommentLikeRepository.countByComment_IdAndVoteType(commentId, "DOWNVOTE");
 
         comment.setUpvoteCount(upvotes);
         comment.setDownvoteCount(downvotes);
         comment.setLikeCount(upvotes - downvotes);
-        documentCommentRepository.save(comment);
+        documentCommentRepository.saveAndFlush(comment);
 
         return CommentLikeToggleResponseDto.builder()
                 .likeCount(upvotes - downvotes)

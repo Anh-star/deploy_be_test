@@ -10,5 +10,7 @@ public interface CommunityPostLikeRepository extends JpaRepository<CommunityPost
 
     Optional<CommunityPostLike> findByPost_IdAndUser_Id(UUID postId, UUID userId);
 
+    long countByPost_IdAndVoteType(UUID postId, String voteType);
+
     void deleteByPostId(UUID postId);
 }
