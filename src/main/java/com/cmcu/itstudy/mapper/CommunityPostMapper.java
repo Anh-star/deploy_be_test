@@ -140,7 +140,7 @@ public final class CommunityPostMapper {
                     .collect(Collectors.toList());
         }
 
-        PollDto pollDto = toPollDto(poll, userPollVotes, currentUserId);
+        PollDto pollDto = toPollDto(poll, userPollVotes, currentUserId, Boolean.TRUE.equals(isReported));
 
         return CommunityPostResponseDto.builder()
                 .id(uuidToString(post.getId()))
@@ -174,18 +174,26 @@ public final class CommunityPostMapper {
     }
 
     public static PollDto toPollDto(CommunityPoll poll, List<CommunityPollVote> userPollVotes) {
-        return toPollDto(poll, poll != null ? poll.getOptions() : null, userPollVotes, null);
+        return toPollDto(poll, poll != null ? poll.getOptions() : null, userPollVotes, null, false);
     }
 
     public static PollDto toPollDto(CommunityPoll poll, List<CommunityPollVote> userPollVotes, UUID currentUserId) {
-        return toPollDto(poll, poll != null ? poll.getOptions() : null, userPollVotes, currentUserId);
+        return toPollDto(poll, poll != null ? poll.getOptions() : null, userPollVotes, currentUserId, false);
+    }
+
+    public static PollDto toPollDto(CommunityPoll poll, List<CommunityPollVote> userPollVotes, UUID currentUserId, boolean bypassHideResults) {
+        return toPollDto(poll, poll != null ? poll.getOptions() : null, userPollVotes, currentUserId, bypassHideResults);
     }
 
     public static PollDto toPollDto(CommunityPoll poll, List<CommunityPollOption> options, List<CommunityPollVote> userPollVotes) {
-        return toPollDto(poll, options, userPollVotes, null);
+        return toPollDto(poll, options, userPollVotes, null, false);
     }
 
     public static PollDto toPollDto(CommunityPoll poll, List<CommunityPollOption> options, List<CommunityPollVote> userPollVotes, UUID currentUserId) {
+        return toPollDto(poll, options, userPollVotes, currentUserId, false);
+    }
+
+    public static PollDto toPollDto(CommunityPoll poll, List<CommunityPollOption> options, List<CommunityPollVote> userPollVotes, UUID currentUserId, boolean bypassHideResults) {
         if (poll == null) return null;
 
         Set<UUID> votedOptionIds = (userPollVotes != null && !userPollVotes.isEmpty())
@@ -196,9 +204,9 @@ public final class CommunityPostMapper {
                 : Set.of();
 
         boolean hasCurrentUserVoted = !votedOptionIds.isEmpty();
-        boolean hideResults = Boolean.TRUE.equals(poll.getHideResultsBeforeVote()) && !hasCurrentUserVoted;
         boolean isPostAuthor = (poll.getPost() != null && poll.getPost().getAuthor() != null && currentUserId != null
                 && currentUserId.equals(poll.getPost().getAuthor().getId()));
+        boolean hideResults = Boolean.TRUE.equals(poll.getHideResultsBeforeVote()) && !hasCurrentUserVoted && !isPostAuthor && !bypassHideResults;
 
         List<PollOptionDto> optionDtos = (options != null)
                 ? options.stream()
