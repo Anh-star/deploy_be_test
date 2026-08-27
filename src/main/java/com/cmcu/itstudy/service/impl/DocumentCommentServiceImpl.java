@@ -3,6 +3,7 @@ package com.cmcu.itstudy.service.impl;
 import com.cmcu.itstudy.dto.document.CommentLikeToggleResponseDto;
 import com.cmcu.itstudy.dto.document.CommentResponse;
 import com.cmcu.itstudy.dto.document.CommentThreadPageResponseDto;
+import com.cmcu.itstudy.dto.notification.NotificationResponseDto;
 import com.cmcu.itstudy.entity.Document;
 import com.cmcu.itstudy.entity.DocumentComment;
 import com.cmcu.itstudy.entity.DocumentCommentLike;
@@ -330,41 +331,15 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
         documentCommentRepository.saveAndFlush(comment);
 
         // Push notification when comment is upvoted / cancelled
+        UUID authorId = (comment.getAuthor() != null) ? comment.getAuthor().getId() : null;
         if ("UPVOTE".equals(targetVote) && "UPVOTE".equals(resultVote)) {
-            UUID authorId = (comment.getAuthor() != null) ? comment.getAuthor().getId() : null;
             if (authorId != null && !authorId.equals(userId)) {
-                try {
-                    User liker = userRepository.findById(userId).orElse(null);
-                    String likerName = (liker != null && liker.getFullName() != null && !liker.getFullName().isBlank())
-                            ? liker.getFullName() : "Ai đó";
-                    Document doc = comment.getDocument();
-                    if (doc == null && comment.getParent() != null) {
-                        doc = comment.getParent().getDocument();
-                    }
-                    String docTitle = (doc != null && doc.getTitle() != null && !doc.getTitle().isBlank())
-                            ? doc.getTitle() : "tài liệu";
-                    String docIdStr = (doc != null && doc.getId() != null) ? doc.getId().toString() : "";
-                    notificationService.createAndPush(
-                            authorId,
-                            userId,
-                            NotificationType.COMMENT_LIKED,
-                            docIdStr + "?commentId=" + comment.getId(),
-                            "DOCUMENT",
-                            likerName + " đã thích bình luận của bạn trong tài liệu \"" + docTitle + "\""
-                    );
-                    log.info("Pushed COMMENT_LIKED notification to authorId={}, likerId={}, commentId={}", authorId, userId, comment.getId());
-                } catch (Exception ex) {
-                    log.warn("Failed to push comment like notification: {}", ex.getMessage());
-                }
-            } else {
-                log.info("Skipped COMMENT_LIKED notification: authorId={}, userId={}", authorId, userId);
+                sendAggregatedDocumentCommentLikeNotification(authorId, userId, comment);
             }
         } else {
             // Cancelled comment upvote
-            try {
-                notificationRepository.deleteByReferenceIdContaining("commentId=" + commentId);
-            } catch (Exception ex) {
-                log.warn("Failed to delete cancelled comment like notification: {}", ex.getMessage());
+            if (authorId != null) {
+                handleCancelDocumentCommentLikeNotification(authorId, comment);
             }
         }
 
@@ -485,6 +460,197 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
 
         } catch (Exception ex) {
             log.warn("Failed to send aggregated document comment notification: {}", ex.getMessage());
+        }
+    }
+
+    private void sendAggregatedDocumentCommentLikeNotification(UUID recipientId, UUID actorId, DocumentComment comment) {
+        if (recipientId == null || actorId == null || recipientId.equals(actorId) || comment == null) return;
+        UUID commentId = comment.getId();
+        Document doc = comment.getDocument();
+        if (doc == null && comment.getParent() != null) {
+            doc = comment.getParent().getDocument();
+        }
+        String docTitle = (doc != null && doc.getTitle() != null && !doc.getTitle().isBlank())
+                ? doc.getTitle() : "tài liệu";
+        String docIdStr = (doc != null && doc.getId() != null) ? doc.getId().toString() : "";
+        String refId = docIdStr + "?commentId=" + commentId;
+
+        User actor = userRepository.findById(actorId).orElse(null);
+        String actorName = (actor != null && actor.getFullName() != null && !actor.getFullName().isBlank())
+                ? actor.getFullName() : "Ai đó";
+        String singleMsg = actorName + " đã thích bình luận của bạn trong tài liệu \"" + docTitle + "\"";
+
+        try {
+            List<com.cmcu.itstudy.entity.Notification> existingList =
+                    notificationRepository.findAllDocumentCommentLikeNotifications(recipientId, "commentId=" + commentId);
+
+            if (existingList.isEmpty()) {
+                notificationService.createAndPush(
+                        recipientId,
+                        actorId,
+                        NotificationType.COMMENT_LIKED,
+                        refId,
+                        "DOCUMENT",
+                        singleMsg
+                );
+                return;
+            }
+
+            // Aggregate with existing notification
+            com.cmcu.itstudy.entity.Notification existing = existingList.get(0);
+            List<String> upvoterNames = documentCommentLikeRepository.findUpvoterNamesByCommentOrderedByRecent(commentId, recipientId);
+
+            String aggregatedMessage;
+            if (upvoterNames == null || upvoterNames.size() <= 1) {
+                aggregatedMessage = singleMsg;
+            } else if (upvoterNames.size() == 2) {
+                String first = upvoterNames.get(0);
+                String second = upvoterNames.get(1);
+                aggregatedMessage = first + " và " + second + " đã thích bình luận của bạn trong tài liệu \"" + docTitle + "\"";
+            } else {
+                String first = upvoterNames.get(0);
+                int othersCount = upvoterNames.size() - 1;
+                aggregatedMessage = first + " và " + othersCount + " người khác đã thích bình luận của bạn trong tài liệu \"" + docTitle + "\"";
+            }
+
+            existing.setMessage(aggregatedMessage);
+            if (actor != null) {
+                existing.setActor(actor);
+            }
+            existing.setReferenceId(refId);
+            existing.setCreatedAt(java.time.LocalDateTime.now());
+            existing.setRead(false);
+            com.cmcu.itstudy.entity.Notification saved = notificationRepository.save(existing);
+
+            // Clean up any extra duplicates
+            if (existingList.size() > 1) {
+                for (int i = 1; i < existingList.size(); i++) {
+                    com.cmcu.itstudy.entity.Notification dup = existingList.get(i);
+                    notificationRepository.delete(dup);
+                    try {
+                        Map<String, Object> removeData = new HashMap<>();
+                        removeData.put("id", dup.getId().toString());
+                        removeData.put("action", "DELETE");
+                        sseService.pushEvent(recipientId, "notification-removed", removeData);
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            // Push updated SSE notification
+            try {
+                com.cmcu.itstudy.dto.notification.NotificationResponseDto dto = com.cmcu.itstudy.dto.notification.NotificationResponseDto.builder()
+                        .id(saved.getId().toString())
+                        .actorId(actor != null ? actor.getId().toString() : null)
+                        .actorName(actorName)
+                        .actorAvatar(actor != null ? actor.getAvatarUrl() : null)
+                        .type(saved.getType())
+                        .referenceId(saved.getReferenceId())
+                        .referenceType(saved.getReferenceType())
+                        .message(saved.getMessage())
+                        .isRead(false)
+                        .createdAt(saved.getCreatedAt())
+                        .build();
+                sseService.pushEvent(recipientId, "notification", dto);
+            } catch (Exception sseEx) {
+                log.warn("Failed to push aggregated comment like SSE notification to user {}: {}", recipientId, sseEx.getMessage());
+            }
+
+        } catch (Exception ex) {
+            log.warn("Failed to send aggregated comment like notification: {}", ex.getMessage());
+        }
+    }
+
+    private void handleCancelDocumentCommentLikeNotification(UUID recipientId, DocumentComment comment) {
+        if (recipientId == null || comment == null) return;
+        UUID commentId = comment.getId();
+        Document doc = comment.getDocument();
+        if (doc == null && comment.getParent() != null) {
+            doc = comment.getParent().getDocument();
+        }
+        String docTitle = (doc != null && doc.getTitle() != null && !doc.getTitle().isBlank())
+                ? doc.getTitle() : "tài liệu";
+
+        try {
+            List<com.cmcu.itstudy.entity.Notification> existingList =
+                    notificationRepository.findAllDocumentCommentLikeNotifications(recipientId, "commentId=" + commentId);
+            if (existingList.isEmpty()) return;
+
+            List<String> remainingUpvoters = documentCommentLikeRepository.findUpvoterNamesByCommentOrderedByRecent(commentId, recipientId);
+
+            if (remainingUpvoters == null || remainingUpvoters.isEmpty()) {
+                // No upvoters left: delete ALL existing like notifications for this comment from DB
+                for (com.cmcu.itstudy.entity.Notification n : existingList) {
+                    notificationRepository.delete(n);
+                    try {
+                        Map<String, Object> removeData = new HashMap<>();
+                        removeData.put("id", n.getId().toString());
+                        removeData.put("action", "DELETE");
+                        sseService.pushEvent(recipientId, "notification-removed", removeData);
+                        sseService.pushEvent(recipientId, "notification", removeData);
+                    } catch (Exception sseEx) {
+                        log.warn("Failed to push remove comment like notification event to user {}: {}", recipientId, sseEx.getMessage());
+                    }
+                }
+            } else {
+                // Some upvoters still remain: recalculate message
+                String updatedMessage;
+                if (remainingUpvoters.size() == 1) {
+                    updatedMessage = remainingUpvoters.get(0) + " đã thích bình luận của bạn trong tài liệu \"" + docTitle + "\"";
+                } else if (remainingUpvoters.size() == 2) {
+                    String first = remainingUpvoters.get(0);
+                    String second = remainingUpvoters.get(1);
+                    updatedMessage = first + " và " + second + " đã thích bình luận của bạn trong tài liệu \"" + docTitle + "\"";
+                } else {
+                    String first = remainingUpvoters.get(0);
+                    int othersCount = remainingUpvoters.size() - 1;
+                    updatedMessage = first + " và " + othersCount + " người khác đã thích bình luận của bạn trong tài liệu \"" + docTitle + "\"";
+                }
+
+                // Update first notification and mark as read because remaining likers were previously seen
+                com.cmcu.itstudy.entity.Notification existing = existingList.get(0);
+                existing.setMessage(updatedMessage);
+                existing.setRead(true);
+                com.cmcu.itstudy.entity.Notification saved = notificationRepository.save(existing);
+
+                // Clean up any extra duplicates
+                if (existingList.size() > 1) {
+                    for (int i = 1; i < existingList.size(); i++) {
+                        com.cmcu.itstudy.entity.Notification dup = existingList.get(i);
+                        notificationRepository.delete(dup);
+                        try {
+                            Map<String, Object> removeData = new HashMap<>();
+                            removeData.put("id", dup.getId().toString());
+                            removeData.put("action", "DELETE");
+                            sseService.pushEvent(recipientId, "notification-removed", removeData);
+                        } catch (Exception ignored) {}
+                    }
+                }
+
+                try {
+                    User actor = saved.getActor();
+                    String actorName = (actor != null && actor.getFullName() != null) ? actor.getFullName() : "Ai đó";
+                    String actorAvatar = actor != null ? actor.getAvatarUrl() : null;
+                    com.cmcu.itstudy.dto.notification.NotificationResponseDto dto = com.cmcu.itstudy.dto.notification.NotificationResponseDto.builder()
+                            .id(saved.getId().toString())
+                            .actorId(actor != null ? actor.getId().toString() : null)
+                            .actorName(actorName)
+                            .actorAvatar(actorAvatar)
+                            .type(saved.getType())
+                            .referenceId(saved.getReferenceId())
+                            .referenceType(saved.getReferenceType())
+                            .message(saved.getMessage())
+                            .isRead(true)
+                            .createdAt(saved.getCreatedAt())
+                            .action("UPDATE")
+                            .build();
+                    sseService.pushEvent(recipientId, "notification-updated", dto);
+                    sseService.pushEvent(recipientId, "notification", dto);
+                } catch (Exception sseEx) {
+                    log.warn("Failed to push updated comment like SSE notification to user {}: {}", recipientId, sseEx.getMessage());
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to handle cancel comment like notification: {}", ex.getMessage());
         }
     }
 

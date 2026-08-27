@@ -22,5 +22,20 @@ public interface DocumentCommentLikeRepository extends JpaRepository<DocumentCom
     @Query("select l from DocumentCommentLike l where l.comment.id in :commentIds and l.user.id = :userId")
     List<DocumentCommentLike> findAllByCommentIdInAndUserId(@Param("commentIds") Collection<UUID> commentIds, @Param("userId") UUID userId);
 
+    @Query("""
+        SELECT u.fullName
+        FROM DocumentCommentLike l
+        JOIN l.user u
+        WHERE l.comment.id = :commentId
+          AND l.voteType = 'UPVOTE'
+          AND u.id <> :excludeUserId
+        GROUP BY u.id, u.fullName
+        ORDER BY MAX(l.likedAt) DESC
+    """)
+    List<String> findUpvoterNamesByCommentOrderedByRecent(
+            @Param("commentId") UUID commentId,
+            @Param("excludeUserId") UUID excludeUserId
+    );
+
     void deleteByComment_IdAndUser_Id(UUID commentId, UUID userId);
 }

@@ -61,4 +61,10 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             @Param("recipientId") UUID recipientId,
             @Param("referenceId") String referenceId
     );
+
+    @Query("SELECT n FROM Notification n WHERE n.recipient.id = :recipientId AND n.referenceType = 'DOCUMENT' AND n.type = 'COMMENT_LIKED' AND n.referenceId LIKE %:commentPattern% ORDER BY n.createdAt DESC")
+    java.util.List<Notification> findAllDocumentCommentLikeNotifications(
+            @Param("recipientId") UUID recipientId,
+            @Param("commentPattern") String commentPattern
+    );
 }
