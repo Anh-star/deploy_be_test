@@ -153,8 +153,11 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
         User author = userRepository.findById(userId)
                 .orElseThrow(() -> new NoSuchElementException("User not found"));
 
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new NoSuchElementException("Document not found"));
+
         DocumentComment saved = documentCommentRepository.save(DocumentComment.builder()
-                .document(Document.builder().id(documentId).build())
+                .document(document)
                 .author(author)
                 .body(body)
                 .likeCount(0)
@@ -166,18 +169,19 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
 
         saved = documentCommentRepository.findByIdWithDocumentAndAuthor(saved.getId()).orElse(saved);
 
-        if (saved.getDocument() != null && saved.getDocument().getCreatedBy() != null) {
-            UUID ownerId = saved.getDocument().getCreatedBy().getId();
-            User commenter = userRepository.findById(userId).orElse(null);
-            String commenterName = (commenter != null && commenter.getFullName() != null) ? commenter.getFullName() : "Ai đó";
+        if (document.getCreatedBy() != null) {
+            UUID ownerId = document.getCreatedBy().getId();
+            String commenterName = (author.getFullName() != null) ? author.getFullName() : "Ai đó";
             if (!ownerId.equals(userId)) {
+                String docTitle = (document.getTitle() != null) ? document.getTitle() : "tài liệu";
+                String snippet = body != null && body.length() > 50 ? body.substring(0, 50) + "..." : (body != null ? body : "");
                 notificationService.createAndPush(
                         ownerId,
                         userId,
                         NotificationType.DOCUMENT_COMMENTED,
                         documentId.toString() + "?commentId=" + saved.getId(),
                         "DOCUMENT",
-                        commenterName + " đã bình luận về tài liệu của bạn."
+                        commenterName + " đã bình luận về tài liệu \"" + docTitle + "\": \"" + snippet + "\""
                 );
             }
         }
@@ -213,17 +217,40 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
         DocumentComment saved = documentCommentRepository.save(reply);
         DocumentComment forDto = documentCommentRepository.findByIdWithDocumentAndAuthor(saved.getId()).orElse(saved);
 
+        Document document = parent.getDocument();
+        if (document != null && (document.getCreatedBy() == null || document.getTitle() == null)) {
+            document = documentRepository.findById(document.getId()).orElse(document);
+        }
+
+        String docTitle = (document != null && document.getTitle() != null) ? document.getTitle() : "tài liệu";
+        String replierName = (author.getFullName() != null) ? author.getFullName() : "Ai đó";
+        String snippet = body != null && body.length() > 50 ? body.substring(0, 50) + "..." : (body != null ? body : "");
+
+        // 1. Gửi thông báo cho tác giả bình luận gốc khi có phản hồi
         if (parent.getAuthor() != null && !parent.getAuthor().getId().equals(userId)) {
-            User replier = userRepository.findById(userId).orElse(null);
-            String replierName = (replier != null && replier.getFullName() != null) ? replier.getFullName() : "Ai đó";
             notificationService.createAndPush(
                     parent.getAuthor().getId(),
                     userId,
                     NotificationType.COMMENT_REPLIED,
-                    parent.getDocument().getId().toString() + "?commentId=" + saved.getId(),
+                    (document != null ? document.getId() : parent.getDocument().getId()).toString() + "?commentId=" + saved.getId(),
                     "DOCUMENT",
-                    replierName + " đã phản hồi bình luận của bạn."
+                    replierName + " đã phản hồi bình luận của bạn trong tài liệu \"" + docTitle + "\": \"" + snippet + "\""
             );
+        }
+
+        // 2. Gửi thông báo cho chủ sở hữu tài liệu (nếu không phải người trả lời và không phải tác giả bình luận gốc)
+        if (document != null && document.getCreatedBy() != null) {
+            UUID ownerId = document.getCreatedBy().getId();
+            if (!ownerId.equals(userId) && (parent.getAuthor() == null || !ownerId.equals(parent.getAuthor().getId()))) {
+                notificationService.createAndPush(
+                        ownerId,
+                        userId,
+                        NotificationType.DOCUMENT_COMMENTED,
+                        document.getId().toString() + "?commentId=" + saved.getId(),
+                        "DOCUMENT",
+                        replierName + " đã bình luận về tài liệu \"" + docTitle + "\": \"" + snippet + "\""
+                );
+            }
         }
 
         return CommentMapper.toCommentResponse(forDto, false, 0, null);

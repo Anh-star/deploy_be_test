@@ -75,6 +75,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     private final SseService sseService;
     private final com.cmcu.itstudy.repository.DocumentRepository documentRepository;
     private final com.cmcu.itstudy.repository.RefreshTokenRepository refreshTokenRepository;
+    private final com.cmcu.itstudy.repository.NotificationRepository notificationRepository;
 
     public CommunityPostServiceImpl(
             CommunityPostRepository postRepository,
@@ -92,7 +93,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             CommunityPostReportRepository reportRepository,
             SseService sseService,
             com.cmcu.itstudy.repository.DocumentRepository documentRepository,
-            com.cmcu.itstudy.repository.RefreshTokenRepository refreshTokenRepository
+            com.cmcu.itstudy.repository.RefreshTokenRepository refreshTokenRepository,
+            com.cmcu.itstudy.repository.NotificationRepository notificationRepository
     ) {
         this.postRepository = postRepository;
         this.imageRepository = imageRepository;
@@ -110,6 +112,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         this.sseService = sseService;
         this.documentRepository = documentRepository;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.notificationRepository = notificationRepository;
     }
 
     @Override
@@ -726,6 +729,16 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         long totalComments = commentRepository.countByPost_IdAndDeletedFalse(post.getId());
         post.setCommentCount((int) totalComments);
         postRepository.saveAndFlush(post);
+
+        // Delete related notifications so when recipient refreshes page, notification is gone (like Facebook)
+        try {
+            notificationRepository.deleteByReferenceIdContaining("commentId=" + commentId);
+            for (CommunityPostComment r : replies) {
+                notificationRepository.deleteByReferenceIdContaining("commentId=" + r.getId());
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to delete notifications for comment {}: {}", commentId, ex.getMessage());
+        }
     }
 
     @Override
@@ -744,6 +757,16 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         commentLikeRepository.deleteByCommentId(commentId);
         commentRepository.delete(comment);
+
+        // Delete notifications when comment is hard-deleted
+        try {
+            notificationRepository.deleteByReferenceIdContaining("commentId=" + commentId);
+            for (CommunityPostComment r : replies) {
+                notificationRepository.deleteByReferenceIdContaining("commentId=" + r.getId());
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to delete notifications for hard-deleted comment {}: {}", commentId, ex.getMessage());
+        }
     }
 
     @Override
