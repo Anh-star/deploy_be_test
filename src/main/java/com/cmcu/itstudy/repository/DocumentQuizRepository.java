@@ -74,12 +74,10 @@ public interface DocumentQuizRepository extends JpaRepository<DocumentQuiz, UUID
             value = """
             select dq
             from DocumentQuiz dq
-            join fetch dq.quiz q
-            join fetch dq.document d
-            left join fetch d.createdBy
+            join dq.quiz q
+            join dq.document d
             where d.createdBy.id = :userId
               and d.deleted = false
-            order by dq.sortOrder asc, dq.id asc
             """,
             countQuery = """
             select count(dq)

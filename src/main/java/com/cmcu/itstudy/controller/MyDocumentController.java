@@ -148,6 +148,9 @@ public class MyDocumentController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @AuthenticationPrincipal UserDetailsImpl currentUser) {
+        if (currentUser == null || currentUser.getUser() == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Vui lòng đăng nhập để xem danh sách bài kiểm tra");
+        }
         User user = currentUser.getUser();
         MyDocumentQuizListDto data = documentService.getMyDocumentQuizzes(page, size, user);
         return ResponseEntity.ok(ApiResponse.success(data, "My document quizzes"));

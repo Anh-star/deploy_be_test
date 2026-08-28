@@ -1082,6 +1082,15 @@ public class DocumentServiceImpl implements DocumentService {
     public MyDocumentQuizListDto getMyDocumentQuizzes(int page, int size, User currentUser) {
         int safePage = Math.max(page, 0);
         int safeSize = size > 0 ? size : 10;
+        if (currentUser == null || currentUser.getId() == null) {
+            return MyDocumentQuizListDto.builder()
+                    .items(Collections.emptyList())
+                    .page(safePage)
+                    .totalPages(0)
+                    .totalItems(0)
+                    .build();
+        }
+
         org.springframework.data.domain.Pageable pageable =
                 org.springframework.data.domain.PageRequest.of(safePage, safeSize,
                         org.springframework.data.domain.Sort.by(
@@ -1111,9 +1120,19 @@ public class DocumentServiceImpl implements DocumentService {
             List<Object[]> countRows = quizQuestionRepository.countQuestionsGroupedByQuizId(quizIds);
             for (Object[] row : countRows) {
                 if (row != null && row.length >= 2) {
-                    UUID qId = row[0] instanceof UUID ? (UUID) row[0] : null;
-                    Long cnt = row[1] instanceof Long ? (Long) row[1] : null;
-                    if (qId != null && cnt != null) {
+                    UUID qId = null;
+                    if (row[0] instanceof UUID) {
+                        qId = (UUID) row[0];
+                    } else if (row[0] != null) {
+                        try {
+                            qId = UUID.fromString(row[0].toString());
+                        } catch (Exception ignored) {}
+                    }
+                    Long cnt = 0L;
+                    if (row[1] instanceof Number) {
+                        cnt = ((Number) row[1]).longValue();
+                    }
+                    if (qId != null) {
                         questionCounts.put(qId, cnt);
                     }
                 }
