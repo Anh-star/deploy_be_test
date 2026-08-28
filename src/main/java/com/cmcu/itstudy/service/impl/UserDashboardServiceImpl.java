@@ -36,7 +36,7 @@ public class UserDashboardServiceImpl implements UserDashboardService {
     @Transactional(readOnly = true)
     public UserDashboardDto getDashboardForUser(UUID userId) {
         long totalDocumentsLearned = documentViewRepository.countDistinctDocumentsViewedByUserId(userId);
-        long totalQuizzesDone = quizAttemptRepository.countByUserIdAndStatusIn(userId, FINISHED_STATUSES);
+        long totalQuizzesDone = quizAttemptRepository.countFinishedExcludingOwnDocuments(userId);
 
         Double avgAll = quizAttemptRepository.averageSubmittedScore(userId);
         double averageScore = roundOneDecimal(avgAll != null ? avgAll : 0.0);

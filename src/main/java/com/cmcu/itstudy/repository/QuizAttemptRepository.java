@@ -51,6 +51,11 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> 
             where qa.userId = :userId
               and upper(qa.status) in ('PASSED', 'FAILED')
               and qa.score is not null
+              and not exists (
+                  select 1 from DocumentQuiz dq
+                  where dq.quiz.id = qa.quiz.id
+                    and dq.document.createdBy.id = :userId
+              )
             """)
     Double averageSubmittedScore(@Param("userId") UUID userId);
 
@@ -63,6 +68,11 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> 
               and qa.endTime is not null
               and qa.endTime >= :fromInclusive
               and qa.endTime < :toExclusive
+              and not exists (
+                  select 1 from DocumentQuiz dq
+                  where dq.quiz.id = qa.quiz.id
+                    and dq.document.createdBy.id = :userId
+              )
             """)
     Double averageSubmittedScoreBetween(
             @Param("userId") UUID userId,
@@ -78,6 +88,12 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> 
               and qa.end_time is not null
               and qa.score is not null
               and qa.end_time >= :since
+              and not exists (
+                  select 1 from tbl_document_quizzes dq
+                  join tbl_documents d on dq.document_id = d.id
+                  where dq.quiz_id = qa.quiz_id
+                    and d.created_by = :userId
+              )
             group by cast(qa.end_time as date)
             order by dt asc
             """, nativeQuery = true)
@@ -90,8 +106,40 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, UUID> 
               and qa.end_time is not null
               and qa.start_time is not null
               and qa.end_time >= qa.start_time
+              and not exists (
+                  select 1 from tbl_document_quizzes dq
+                  join tbl_documents d on dq.document_id = d.id
+                  where dq.quiz_id = qa.quiz_id
+                    and d.created_by = :userId
+              )
             """, nativeQuery = true)
     Number sumDurationSecondsByUser(@Param("userId") UUID userId);
+
+    @Query("""
+            select count(qa)
+            from QuizAttempt qa
+            where qa.userId = :userId
+              and upper(qa.status) in ('PASSED', 'FAILED')
+              and not exists (
+                  select 1 from DocumentQuiz dq
+                  where dq.quiz.id = qa.quiz.id
+                    and dq.document.createdBy.id = :userId
+              )
+            """)
+    long countFinishedExcludingOwnDocuments(@Param("userId") UUID userId);
+
+    @Query("""
+            select count(qa)
+            from QuizAttempt qa
+            where qa.userId = :userId
+              and upper(qa.status) = 'PASSED'
+              and not exists (
+                  select 1 from DocumentQuiz dq
+                  where dq.quiz.id = qa.quiz.id
+                    and dq.document.createdBy.id = :userId
+              )
+            """)
+    long countPassedExcludingOwnDocuments(@Param("userId") UUID userId);
 
     @Query("""
             select distinct qa

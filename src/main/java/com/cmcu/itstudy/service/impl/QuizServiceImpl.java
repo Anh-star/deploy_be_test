@@ -345,10 +345,10 @@ public class QuizServiceImpl implements QuizService {
     }
 
     private QuizHistorySummaryDto buildQuizHistorySummary(UUID userId) {
-        long finished = quizAttemptRepository.countByUserIdAndStatusIn(userId, List.of("PASSED", "FAILED"));
+        long finished = quizAttemptRepository.countFinishedExcludingOwnDocuments(userId);
         Double passRatePercent = null;
         if (finished > 0) {
-            long passed = quizAttemptRepository.countByUserIdAndStatus(userId, "PASSED");
+            long passed = quizAttemptRepository.countPassedExcludingOwnDocuments(userId);
             passRatePercent = (100.0d * passed) / finished;
         }
         Double averageScore = quizAttemptRepository.averageSubmittedScore(userId);
