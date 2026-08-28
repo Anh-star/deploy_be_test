@@ -1843,6 +1843,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         long pendingPosts = reportRepository.countDistinctPostByStatus("PENDING");
         long pendingReports = reportRepository.countByStatusAndPostDeletedFalse("PENDING");
 
+        long escalatedPosts = reportRepository.countDistinctPostByStatus("ESCALATED");
+        long escalatedReports = reportRepository.countByStatusAndPostDeletedFalse("ESCALATED");
+
         long resolvedPosts = reportRepository.countDistinctPostByStatus("RESOLVED");
         long resolvedReports = reportRepository.countByStatusAndPostDeletedFalse("RESOLVED");
 
@@ -1854,6 +1857,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         return CommunityModerationStatsDto.builder()
                 .pendingPostsCount(pendingPosts)
                 .pendingReportsCount(pendingReports)
+                .escalatedPostsCount(escalatedPosts)
+                .escalatedReportsCount(escalatedReports)
                 .resolvedPostsCount(resolvedPosts)
                 .resolvedReportsCount(resolvedReports)
                 .dismissedPostsCount(dismissedPosts)

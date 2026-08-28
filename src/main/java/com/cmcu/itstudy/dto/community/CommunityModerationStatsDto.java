@@ -14,6 +14,8 @@ import lombok.Setter;
 public class CommunityModerationStatsDto {
     private long pendingPostsCount;
     private long pendingReportsCount;
+    private long escalatedPostsCount;
+    private long escalatedReportsCount;
     private long resolvedPostsCount;
     private long resolvedReportsCount;
     private long dismissedPostsCount;
