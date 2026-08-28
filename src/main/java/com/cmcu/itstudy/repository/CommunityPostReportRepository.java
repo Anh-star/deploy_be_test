@@ -82,7 +82,7 @@ public interface CommunityPostReportRepository extends JpaRepository<CommunityPo
            "LEFT JOIN r.post p " +
            "LEFT JOIN p.author a " +
            "LEFT JOIN r.reporter rep " +
-           "WHERE (r.status = 'ESCALATED' OR r.escalatedBy IS NOT NULL) " +
+           "WHERE r.status = 'ESCALATED' " +
            "AND (:keyword IS NULL OR :keyword = '' OR " +
            "     LOWER(p.title) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
            "     LOWER(p.content) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
