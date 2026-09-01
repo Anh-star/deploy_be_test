@@ -1166,7 +1166,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         // Fetch old images
         List<com.cmcu.itstudy.entity.CommunityPostCommentImage> oldImages =
-                commentImageRepository.findByComment_IdOrderByDisplayOrderAsc(commentId);
+                commentImageRepository.findByCommentIdOrderByDisplayOrderAsc(commentId);
         List<String> oldImageUrls = oldImages.stream()
                 .map(com.cmcu.itstudy.entity.CommunityPostCommentImage::getImageUrl)
                 .toList();
@@ -1324,8 +1324,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             }
         }
 
-        List<com.cmcu.itstudy.entity.CommunityPostCommentImage> allImages =
-                commentImageRepository.findByComment_IdInOrderByDisplayOrderAsc(commentIds);
+        List<com.cmcu.itstudy.entity.CommunityPostCommentImage> allImages = commentIds.isEmpty()
+                ? List.of()
+                : commentImageRepository.findByCommentIdInOrderByDisplayOrderAsc(commentIds);
         Map<UUID, List<String>> commentImageMap = allImages.stream()
                 .collect(Collectors.groupingBy(
                         img -> img.getComment().getId(),
@@ -1358,8 +1359,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             }
         }
 
-        List<com.cmcu.itstudy.entity.CommunityPostCommentImage> allImages =
-                commentImageRepository.findByComment_IdInOrderByDisplayOrderAsc(replyIds);
+        List<com.cmcu.itstudy.entity.CommunityPostCommentImage> allImages = replyIds.isEmpty()
+                ? List.of()
+                : commentImageRepository.findByCommentIdInOrderByDisplayOrderAsc(replyIds);
         Map<UUID, List<String>> commentImageMap = allImages.stream()
                 .collect(Collectors.groupingBy(
                         img -> img.getComment().getId(),

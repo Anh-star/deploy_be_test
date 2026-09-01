@@ -110,7 +110,7 @@ public class DocumentComment {
     @Builder.Default
     private Boolean deleted = Boolean.FALSE;
 
-    @Column(name = "is_edited", nullable = false)
+    @Column(name = "is_edited")
     @Builder.Default
     private Boolean isEdited = Boolean.FALSE;
 

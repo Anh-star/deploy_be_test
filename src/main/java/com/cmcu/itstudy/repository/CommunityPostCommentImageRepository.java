@@ -12,11 +12,14 @@ import java.util.UUID;
 
 public interface CommunityPostCommentImageRepository extends JpaRepository<CommunityPostCommentImage, UUID> {
 
-    List<CommunityPostCommentImage> findByComment_IdOrderByDisplayOrderAsc(UUID commentId);
+    @Query("SELECT img FROM CommunityPostCommentImage img WHERE img.comment.id = :commentId ORDER BY img.displayOrder ASC")
+    List<CommunityPostCommentImage> findByCommentIdOrderByDisplayOrderAsc(@Param("commentId") UUID commentId);
 
-    List<CommunityPostCommentImage> findByComment_IdInOrderByDisplayOrderAsc(Collection<UUID> commentIds);
+    @Query("SELECT img FROM CommunityPostCommentImage img WHERE img.comment.id IN :commentIds ORDER BY img.displayOrder ASC")
+    List<CommunityPostCommentImage> findByCommentIdInOrderByDisplayOrderAsc(@Param("commentIds") Collection<UUID> commentIds);
 
     @Modifying
-    @Query("delete from CommunityPostCommentImage img where img.comment.id = :commentId")
+    @Query("DELETE FROM CommunityPostCommentImage img WHERE img.comment.id = :commentId")
     void deleteByCommentId(@Param("commentId") UUID commentId);
 }
+
