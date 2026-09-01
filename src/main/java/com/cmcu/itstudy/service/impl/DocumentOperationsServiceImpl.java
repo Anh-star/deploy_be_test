@@ -72,8 +72,14 @@ public class DocumentOperationsServiceImpl implements DocumentOperationsService 
         int size = request.getSize() != null && request.getSize() > 0 ? request.getSize() : 10;
 
         Sort sort;
-        if ("popular".equalsIgnoreCase(request.getSort())) {
-            sort = Sort.by(Sort.Direction.DESC, "downloadCount");
+        if ("downloads".equalsIgnoreCase(request.getSort()) || "most_downloaded".equalsIgnoreCase(request.getSort())) {
+            sort = Sort.by(Sort.Direction.DESC, "downloadCount").and(Sort.by(Sort.Direction.DESC, "createdAt"));
+        } else if ("views".equalsIgnoreCase(request.getSort()) || "most_viewed".equalsIgnoreCase(request.getSort())) {
+            sort = Sort.by(Sort.Direction.DESC, "viewCount").and(Sort.by(Sort.Direction.DESC, "createdAt"));
+        } else if ("popular".equalsIgnoreCase(request.getSort()) || "most_popular".equalsIgnoreCase(request.getSort())) {
+            sort = Sort.by(Sort.Direction.DESC, "downloadCount")
+                    .and(Sort.by(Sort.Direction.DESC, "viewCount"))
+                    .and(Sort.by(Sort.Direction.DESC, "createdAt"));
         } else {
             sort = Sort.by(Sort.Direction.DESC, "createdAt");
         }
