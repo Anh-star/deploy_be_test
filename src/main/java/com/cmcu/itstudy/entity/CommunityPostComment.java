@@ -99,6 +99,10 @@ public class CommunityPostComment {
     @Builder.Default
     private Boolean deleted = Boolean.FALSE;
 
+    @Column(name = "is_edited", nullable = false)
+    @Builder.Default
+    private Boolean isEdited = Boolean.FALSE;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -114,6 +118,12 @@ public class CommunityPostComment {
     @Builder.Default
     private List<CommunityPostCommentLike> likes = new ArrayList<>();
 
+    @OneToMany(mappedBy = "comment", fetch = FetchType.LAZY)
+    @ToString.Exclude
+    @JsonIgnore
+    @Builder.Default
+    private List<CommunityPostCommentImage> images = new ArrayList<>();
+
     @PrePersist
     void prePersist() {
         LocalDateTime now = LocalDateTime.now();
@@ -123,6 +133,7 @@ public class CommunityPostComment {
         if (this.upvoteCount == null) this.upvoteCount = 0;
         if (this.downvoteCount == null) this.downvoteCount = 0;
         if (this.deleted == null) this.deleted = Boolean.FALSE;
+        if (this.isEdited == null) this.isEdited = Boolean.FALSE;
     }
 
     @PreUpdate

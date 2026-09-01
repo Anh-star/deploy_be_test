@@ -28,6 +28,9 @@ public class PostCommentResponseDto {
     private String replyToUserName;
     private Boolean isLiked;
     private String userVote;
+    private Boolean isEdited;
+    private java.util.List<String> imageUrls;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
     private Integer postCommentCount;
 }

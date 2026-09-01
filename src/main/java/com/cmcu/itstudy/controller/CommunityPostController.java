@@ -286,9 +286,29 @@ public class CommunityPostController {
     ) {
         UUID userId = currentUser.getUser().getId();
         UUID parentId = parseUuid(request.getParentCommentId());
-        PostCommentResponseDto data = communityPostService.addComment(postId, userId, request.getBody(), parentId);
+        PostCommentResponseDto data = communityPostService.addComment(postId, userId, request.getBody(), parentId, request.getImageUrls());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(data, "Comment added"));
+    }
+
+    @PutMapping("/comments/{commentId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<PostCommentResponseDto>> editComment(
+            @PathVariable UUID commentId,
+            @Valid @RequestBody CreatePostCommentRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        PostCommentResponseDto data = communityPostService.editComment(commentId, userId, request.getBody(), request.getImageUrls());
+        return ResponseEntity.ok(ApiResponse.success(data, "Comment updated"));
+    }
+
+    @GetMapping("/comments/{commentId}/history")
+    public ResponseEntity<ApiResponse<List<com.cmcu.itstudy.dto.document.CommentEditHistoryDto>>> getCommentEditHistory(
+            @PathVariable UUID commentId
+    ) {
+        List<com.cmcu.itstudy.dto.document.CommentEditHistoryDto> data = communityPostService.getCommentEditHistory(commentId);
+        return ResponseEntity.ok(ApiResponse.success(data, "Comment edit history"));
     }
 
     @DeleteMapping("/comments/{commentId}")

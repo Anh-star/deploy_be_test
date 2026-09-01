@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 public class CommentResponse {
 
     private String id;
+    private String authorId;
     private String body;
     private String authorName;
     private String authorAvatar;
@@ -26,5 +27,7 @@ public class CommentResponse {
     private String userVote;
     private Integer replyCount;
     private String replyToUserName;
+    private Boolean isEdited;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

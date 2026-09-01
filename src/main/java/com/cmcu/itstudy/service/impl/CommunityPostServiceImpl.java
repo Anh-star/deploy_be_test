@@ -84,6 +84,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     private final com.cmcu.itstudy.repository.RefreshTokenRepository refreshTokenRepository;
     private final com.cmcu.itstudy.repository.NotificationRepository notificationRepository;
     private final CommunityPostEditHistoryRepository postEditHistoryRepository;
+    private final com.cmcu.itstudy.repository.CommunityPostCommentImageRepository commentImageRepository;
+    private final com.cmcu.itstudy.repository.CommentEditHistoryRepository commentEditHistoryRepository;
 
     public CommunityPostServiceImpl(
             CommunityPostRepository postRepository,
@@ -103,7 +105,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             com.cmcu.itstudy.repository.DocumentRepository documentRepository,
             com.cmcu.itstudy.repository.RefreshTokenRepository refreshTokenRepository,
             com.cmcu.itstudy.repository.NotificationRepository notificationRepository,
-            CommunityPostEditHistoryRepository postEditHistoryRepository
+            CommunityPostEditHistoryRepository postEditHistoryRepository,
+            com.cmcu.itstudy.repository.CommunityPostCommentImageRepository commentImageRepository,
+            com.cmcu.itstudy.repository.CommentEditHistoryRepository commentEditHistoryRepository
     ) {
         this.postRepository = postRepository;
         this.imageRepository = imageRepository;
@@ -123,6 +127,8 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         this.refreshTokenRepository = refreshTokenRepository;
         this.notificationRepository = notificationRepository;
         this.postEditHistoryRepository = postEditHistoryRepository;
+        this.commentImageRepository = commentImageRepository;
+        this.commentEditHistoryRepository = commentEditHistoryRepository;
     }
 
     @Override
@@ -215,6 +221,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     public CommunityPostResponseDto getPostById(UUID postId, UUID currentUserId) {
         CommunityPost post = postRepository.findByIdWithAuthor(postId)
                 .orElseThrow(() -> new NoSuchElementException("Post not found"));
+        if (Boolean.TRUE.equals(post.getDeleted())) {
+            throw new NoSuchElementException("Bài viết không tồn tại hoặc đã bị xóa.");
+        }
 
         List<CommunityPostImage> images = imageRepository.findByPostIdOrderByDisplayOrderAsc(postId);
         
@@ -1028,6 +1037,12 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     @Override
     @Transactional
     public PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId) {
+        return addComment(postId, userId, body, parentCommentId, null);
+    }
+
+    @Override
+    @Transactional
+    public PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId, List<String> imageUrls) {
         CommunityPost post = postRepository.findByIdWithAuthor(postId)
                 .orElseThrow(() -> new NoSuchElementException("Post not found"));
         if (Boolean.TRUE.equals(post.getDeleted())) {
@@ -1047,6 +1062,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 .likeCount(0)
                 .upvoteCount(0)
                 .downvoteCount(0)
+                .isEdited(false)
                 .deleted(false);
 
         CommunityPostComment parent = null;
@@ -1064,13 +1080,29 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             saved.setReplyToUser(parent.getAuthor());
         }
 
+        // Save comment images (up to 4)
+        List<String> savedImageUrls = new ArrayList<>();
+        if (imageUrls != null && !imageUrls.isEmpty()) {
+            for (int i = 0; i < Math.min(imageUrls.size(), 4); i++) {
+                String imgUrl = imageUrls.get(i);
+                if (imgUrl != null && !imgUrl.isBlank()) {
+                    commentImageRepository.save(com.cmcu.itstudy.entity.CommunityPostCommentImage.builder()
+                            .comment(saved)
+                            .imageUrl(imgUrl.trim())
+                            .displayOrder(i)
+                            .build());
+                    savedImageUrls.add(imgUrl.trim());
+                }
+            }
+        }
+
         // Update denormalized comment count directly from database
         long totalComments = commentRepository.countByPost_IdAndDeletedFalse(postId);
         post.setCommentCount((int) totalComments);
         postRepository.saveAndFlush(post);
 
         int replyCount = 0;
-        PostCommentResponseDto commentDto = CommunityPostMapper.toCommentResponse(saved, replyCount, false, null);
+        PostCommentResponseDto commentDto = CommunityPostMapper.toCommentResponse(saved, replyCount, false, null, savedImageUrls);
         commentDto.setPostCommentCount((int) totalComments);
 
         // 1. Real-time SSE broadcast of the new comment with exact commentCount
@@ -1111,6 +1143,95 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         }
 
         return commentDto;
+    }
+
+    @Override
+    @Transactional
+    public PostCommentResponseDto editComment(UUID commentId, UUID userId, String body, List<String> imageUrls) {
+        if (body == null || body.trim().isEmpty()) {
+            throw new IllegalArgumentException("Nội dung bình luận không được để trống");
+        }
+
+        CommunityPostComment comment = commentRepository.findById(commentId)
+                .orElseThrow(() -> new NoSuchElementException("Comment not found"));
+
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            throw new NoSuchElementException("Comment not found");
+        }
+
+        if (comment.getAuthor() == null || !comment.getAuthor().getId().equals(userId)) {
+            throw new org.springframework.security.access.AccessDeniedException("Bạn không có quyền chỉnh sửa bình luận này");
+        }
+
+        // Fetch old images
+        List<com.cmcu.itstudy.entity.CommunityPostCommentImage> oldImages =
+                commentImageRepository.findByComment_IdOrderByDisplayOrderAsc(commentId);
+        List<String> oldImageUrls = oldImages.stream()
+                .map(com.cmcu.itstudy.entity.CommunityPostCommentImage::getImageUrl)
+                .toList();
+        String joinedOldImages = oldImageUrls.isEmpty() ? null : String.join(";;;", oldImageUrls);
+
+        // Save previous version to history (Approach A)
+        commentEditHistoryRepository.save(com.cmcu.itstudy.entity.CommentEditHistory.builder()
+                .commentType("COMMUNITY")
+                .commentId(comment.getId())
+                .previousBody(comment.getBody())
+                .previousImageUrls(joinedOldImages)
+                .editedAt(LocalDateTime.now())
+                .build());
+
+        // Update comment body & edit status
+        comment.setBody(body.trim());
+        comment.setIsEdited(true);
+        comment.setUpdatedAt(LocalDateTime.now());
+        commentRepository.save(comment);
+
+        // Update images: delete existing and save new
+        commentImageRepository.deleteByCommentId(commentId);
+        commentImageRepository.flush();
+
+        List<String> savedImageUrls = new ArrayList<>();
+        if (imageUrls != null && !imageUrls.isEmpty()) {
+            for (int i = 0; i < Math.min(imageUrls.size(), 4); i++) {
+                String imgUrl = imageUrls.get(i);
+                if (imgUrl != null && !imgUrl.isBlank()) {
+                    commentImageRepository.save(com.cmcu.itstudy.entity.CommunityPostCommentImage.builder()
+                            .comment(comment)
+                            .imageUrl(imgUrl.trim())
+                            .displayOrder(i)
+                            .build());
+                    savedImageUrls.add(imgUrl.trim());
+                }
+            }
+        }
+
+        int replyCount = (int) commentRepository.countRepliesByParentId(comment.getId());
+        return CommunityPostMapper.toCommentResponse(comment, replyCount, false, null, savedImageUrls);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<com.cmcu.itstudy.dto.document.CommentEditHistoryDto> getCommentEditHistory(UUID commentId) {
+        List<com.cmcu.itstudy.entity.CommentEditHistory> histories =
+                commentEditHistoryRepository.findByCommentIdAndCommentTypeOrderByEditedAtDesc(commentId, "COMMUNITY");
+
+        return histories.stream()
+                .map(h -> {
+                    List<String> images = null;
+                    if (h.getPreviousImageUrls() != null && !h.getPreviousImageUrls().isBlank()) {
+                        images = Arrays.stream(h.getPreviousImageUrls().split(";;;"))
+                                .map(String::trim)
+                                .filter(s -> !s.isEmpty())
+                                .collect(Collectors.toList());
+                    }
+                    return com.cmcu.itstudy.dto.document.CommentEditHistoryDto.builder()
+                            .id(h.getId() != null ? h.getId().toString() : null)
+                            .previousBody(h.getPreviousBody())
+                            .previousImageUrls(images)
+                            .editedAt(h.getEditedAt())
+                            .build();
+                })
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -1164,11 +1285,13 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         if (!replies.isEmpty()) {
             for (CommunityPostComment r : replies) {
                 commentLikeRepository.deleteByCommentId(r.getId());
+                commentImageRepository.deleteByCommentId(r.getId());
             }
             commentRepository.deleteAll(replies);
         }
 
         commentLikeRepository.deleteByCommentId(commentId);
+        commentImageRepository.deleteByCommentId(commentId);
         commentRepository.delete(comment);
 
         // Delete notifications when comment is hard-deleted
@@ -1200,11 +1323,20 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             }
         }
 
+        List<com.cmcu.itstudy.entity.CommunityPostCommentImage> allImages =
+                commentImageRepository.findByComment_IdInOrderByDisplayOrderAsc(commentIds);
+        Map<UUID, List<String>> commentImageMap = allImages.stream()
+                .collect(Collectors.groupingBy(
+                        img -> img.getComment().getId(),
+                        Collectors.mapping(com.cmcu.itstudy.entity.CommunityPostCommentImage::getImageUrl, Collectors.toList())
+                ));
+
         return content.stream().map(c -> {
             int replyCount = (int) commentRepository.countRepliesByParentId(c.getId());
             String userVote = userVoteMap.get(c.getId());
             boolean isLiked = "UPVOTE".equalsIgnoreCase(userVote);
-            return CommunityPostMapper.toCommentResponse(c, replyCount, isLiked, userVote);
+            List<String> images = commentImageMap.getOrDefault(c.getId(), List.of());
+            return CommunityPostMapper.toCommentResponse(c, replyCount, isLiked, userVote, images);
         }).collect(Collectors.toList());
     }
 
@@ -1225,11 +1357,20 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             }
         }
 
+        List<com.cmcu.itstudy.entity.CommunityPostCommentImage> allImages =
+                commentImageRepository.findByComment_IdInOrderByDisplayOrderAsc(replyIds);
+        Map<UUID, List<String>> commentImageMap = allImages.stream()
+                .collect(Collectors.groupingBy(
+                        img -> img.getComment().getId(),
+                        Collectors.mapping(com.cmcu.itstudy.entity.CommunityPostCommentImage::getImageUrl, Collectors.toList())
+                ));
+
         return replies.stream()
                 .map(c -> {
                     String userVote = userVoteMap.get(c.getId());
                     boolean isLiked = "UPVOTE".equalsIgnoreCase(userVote);
-                    return CommunityPostMapper.toCommentResponse(c, 0, isLiked, userVote);
+                    List<String> images = commentImageMap.getOrDefault(c.getId(), List.of());
+                    return CommunityPostMapper.toCommentResponse(c, 0, isLiked, userVote, images);
                 })
                 .collect(Collectors.toList());
     }

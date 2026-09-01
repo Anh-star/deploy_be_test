@@ -102,4 +102,35 @@ public class DocumentCommentController {
         CommentLikeToggleResponseDto data = documentCommentService.voteComment(commentId, userId, voteType);
         return ResponseEntity.ok(ApiResponse.success(data, "Comment vote updated"));
     }
+
+    @org.springframework.web.bind.annotation.PutMapping("/comments/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<CommentResponse>> editComment(
+            @PathVariable("id") UUID commentId,
+            @Valid @RequestBody CreateCommentRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        CommentResponse data = documentCommentService.editComment(commentId, request.getBody(), userId);
+        return ResponseEntity.ok(ApiResponse.success(data, "Comment updated"));
+    }
+
+    @org.springframework.web.bind.annotation.DeleteMapping("/comments/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<Void>> deleteComment(
+            @PathVariable("id") UUID commentId,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        UUID userId = currentUser.getUser().getId();
+        documentCommentService.deleteComment(commentId, userId);
+        return ResponseEntity.ok(ApiResponse.success(null, "Comment deleted"));
+    }
+
+    @GetMapping("/comments/{id}/history")
+    public ResponseEntity<ApiResponse<List<com.cmcu.itstudy.dto.document.CommentEditHistoryDto>>> getEditHistory(
+            @PathVariable("id") UUID commentId
+    ) {
+        List<com.cmcu.itstudy.dto.document.CommentEditHistoryDto> data = documentCommentService.getEditHistory(commentId);
+        return ResponseEntity.ok(ApiResponse.success(data, "Comment edit history"));
+    }
 }

@@ -20,4 +20,10 @@ public interface DocumentCommentService {
     CommentLikeToggleResponseDto toggleLike(UUID commentId, UUID userId);
 
     CommentLikeToggleResponseDto voteComment(UUID commentId, UUID userId, String voteType);
+
+    CommentResponse editComment(UUID commentId, String newBody, UUID userId);
+
+    void deleteComment(UUID commentId, UUID userId);
+
+    List<com.cmcu.itstudy.dto.document.CommentEditHistoryDto> getEditHistory(UUID commentId);
 }

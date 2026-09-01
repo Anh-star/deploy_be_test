@@ -110,6 +110,10 @@ public class DocumentComment {
     @Builder.Default
     private Boolean deleted = Boolean.FALSE;
 
+    @Column(name = "is_edited", nullable = false)
+    @Builder.Default
+    private Boolean isEdited = Boolean.FALSE;
+
     @OneToMany(mappedBy = "comment", fetch = FetchType.LAZY)
     @ToString.Exclude
     @JsonIgnore
@@ -135,6 +139,9 @@ public class DocumentComment {
         }
         if (this.deleted == null) {
             this.deleted = Boolean.FALSE;
+        }
+        if (this.isEdited == null) {
+            this.isEdited = Boolean.FALSE;
         }
     }
 

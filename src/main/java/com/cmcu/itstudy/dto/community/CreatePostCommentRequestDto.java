@@ -19,4 +19,6 @@ public class CreatePostCommentRequestDto {
 
     /** Null for root comment, set to parent comment ID for reply */
     private String parentCommentId;
+
+    private java.util.List<String> imageUrls;
 }

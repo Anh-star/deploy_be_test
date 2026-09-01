@@ -59,6 +59,9 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
     @Override
     public DocumentDetailResponseDto getDocumentDetail(UUID id, UUID currentUserId) {
         Document document = documentService.getById(id);
+        if (Boolean.TRUE.equals(document.getDeleted())) {
+            throw new NoSuchElementException("Tài liệu không tồn tại hoặc đã bị xóa.");
+        }
 
         DocumentPrimaryFileDto primaryFile = documentFileRepository.findByDocumentIdAndPrimaryTrue(id)
                 .map(f -> DocumentMapper.toPrimaryFileDto(f, document))

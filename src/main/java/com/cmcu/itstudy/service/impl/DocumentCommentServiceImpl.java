@@ -47,6 +47,7 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
     private final NotificationRepository notificationRepository;
     private final NotificationService notificationService;
     private final SseService sseService;
+    private final com.cmcu.itstudy.repository.CommentEditHistoryRepository commentEditHistoryRepository;
 
     public DocumentCommentServiceImpl(
             DocumentCommentRepository documentCommentRepository,
@@ -55,7 +56,8 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
             UserRepository userRepository,
             NotificationRepository notificationRepository,
             NotificationService notificationService,
-            SseService sseService
+            SseService sseService,
+            com.cmcu.itstudy.repository.CommentEditHistoryRepository commentEditHistoryRepository
     ) {
         this.documentCommentRepository = documentCommentRepository;
         this.documentCommentLikeRepository = documentCommentLikeRepository;
@@ -64,6 +66,7 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
         this.notificationRepository = notificationRepository;
         this.notificationService = notificationService;
         this.sseService = sseService;
+        this.commentEditHistoryRepository = commentEditHistoryRepository;
     }
 
     @Override
@@ -350,6 +353,78 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
                 .isLiked("UPVOTE".equals(resultVote))
                 .userVote(resultVote)
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public CommentResponse editComment(UUID commentId, String newBody, UUID userId) {
+        if (newBody == null || newBody.trim().isEmpty()) {
+            throw new IllegalArgumentException("Nội dung bình luận không được để trống");
+        }
+
+        DocumentComment comment = documentCommentRepository.findByIdWithDocumentAuthorAndReplyTo(commentId)
+                .orElseThrow(() -> new NoSuchElementException("Comment not found"));
+
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            throw new NoSuchElementException("Comment not found");
+        }
+
+        if (comment.getAuthor() == null || !comment.getAuthor().getId().equals(userId)) {
+            throw new org.springframework.security.access.AccessDeniedException("Bạn không có quyền chỉnh sửa bình luận này");
+        }
+
+        String trimmed = newBody.trim();
+        if (!trimmed.equals(comment.getBody())) {
+            // Save previous version to history (Approach A)
+            commentEditHistoryRepository.save(com.cmcu.itstudy.entity.CommentEditHistory.builder()
+                    .commentType("DOCUMENT")
+                    .commentId(comment.getId())
+                    .previousBody(comment.getBody())
+                    .editedAt(LocalDateTime.now())
+                    .build());
+
+            comment.setBody(trimmed);
+            comment.setIsEdited(true);
+            comment.setUpdatedAt(LocalDateTime.now());
+            documentCommentRepository.save(comment);
+        }
+
+        return CommentMapper.toCommentResponse(comment, false, 0, null);
+    }
+
+    @Override
+    @Transactional
+    public void deleteComment(UUID commentId, UUID userId) {
+        DocumentComment comment = documentCommentRepository.findByIdWithDocumentAuthorAndReplyTo(commentId)
+                .orElseThrow(() -> new NoSuchElementException("Comment not found"));
+
+        if (Boolean.TRUE.equals(comment.getDeleted())) {
+            return;
+        }
+
+        if (comment.getAuthor() == null || !comment.getAuthor().getId().equals(userId)) {
+            throw new org.springframework.security.access.AccessDeniedException("Bạn không có quyền xóa bình luận này");
+        }
+
+        comment.setDeleted(true);
+        comment.setUpdatedAt(LocalDateTime.now());
+        documentCommentRepository.save(comment);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<com.cmcu.itstudy.dto.document.CommentEditHistoryDto> getEditHistory(UUID commentId) {
+        List<com.cmcu.itstudy.entity.CommentEditHistory> histories =
+                commentEditHistoryRepository.findByCommentIdAndCommentTypeOrderByEditedAtDesc(commentId, "DOCUMENT");
+
+        return histories.stream()
+                .map(h -> com.cmcu.itstudy.dto.document.CommentEditHistoryDto.builder()
+                        .id(h.getId() != null ? h.getId().toString() : null)
+                        .previousBody(h.getPreviousBody())
+                        .previousImageUrls(null)
+                        .editedAt(h.getEditedAt())
+                        .build())
+                .collect(Collectors.toList());
     }
 
     private void sendAggregatedDocumentCommentNotification(

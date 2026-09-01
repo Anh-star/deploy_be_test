@@ -18,6 +18,7 @@ public final class CommentMapper {
         if (comment == null) {
             return null;
         }
+        String authorId = comment.getAuthor() != null && comment.getAuthor().getId() != null ? comment.getAuthor().getId().toString() : null;
         String authorName = comment.getAuthor() != null ? comment.getAuthor().getFullName() : null;
         String authorAvatar = comment.getAuthor() != null ? comment.getAuthor().getAvatarUrl() : null;
         String replyToUserName = comment.getReplyToUser() != null ? comment.getReplyToUser().getFullName() : null;
@@ -28,6 +29,7 @@ public final class CommentMapper {
 
         return CommentResponse.builder()
                 .id(uuidToString(comment.getId()))
+                .authorId(authorId)
                 .body(comment.getBody())
                 .authorName(authorName)
                 .authorAvatar(authorAvatar)
@@ -38,7 +40,9 @@ public final class CommentMapper {
                 .userVote(userVote)
                 .replyCount(replyCount)
                 .replyToUserName(replyToUserName)
+                .isEdited(Boolean.TRUE.equals(comment.getIsEdited()))
                 .createdAt(comment.getCreatedAt())
+                .updatedAt(comment.getUpdatedAt())
                 .build();
     }
 

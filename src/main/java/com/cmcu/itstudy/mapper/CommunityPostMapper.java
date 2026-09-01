@@ -299,6 +299,16 @@ public final class CommunityPostMapper {
             Boolean isLiked,
             String userVote
     ) {
+        return toCommentResponse(comment, replyCount, isLiked, userVote, null);
+    }
+
+    public static PostCommentResponseDto toCommentResponse(
+            CommunityPostComment comment,
+            Integer replyCount,
+            Boolean isLiked,
+            String userVote,
+            List<String> imageUrls
+    ) {
         if (comment == null) return null;
 
         String authorName = comment.getAuthor() != null ? comment.getAuthor().getFullName() : null;
@@ -325,7 +335,10 @@ public final class CommunityPostMapper {
                 .replyToUserName(replyToUserName)
                 .isLiked("UPVOTE".equalsIgnoreCase(userVote))
                 .userVote(userVote)
+                .isEdited(Boolean.TRUE.equals(comment.getIsEdited()))
+                .imageUrls(imageUrls != null ? imageUrls : List.of())
                 .createdAt(comment.getCreatedAt())
+                .updatedAt(comment.getUpdatedAt())
                 .build();
     }
 
