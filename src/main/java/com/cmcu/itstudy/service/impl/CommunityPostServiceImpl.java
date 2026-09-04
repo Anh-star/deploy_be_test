@@ -1838,16 +1838,11 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         reportRepository.updateStatusByPostId(postId, "RESOLVED");
 
-        String adminEmail = userRepository.findById(moderatorId)
-                .map(User::getEmail)
-                .filter(StringUtils::hasText)
-                .orElse("admin@example.com");
-
         String msg = "Bài viết của bạn đã bị ẩn bởi quản trị viên cộng đồng.";
         if (StringUtils.hasText(reason)) {
             msg += " Lý do: " + reason.trim();
         }
-        msg += ". Vui lòng liên hệ tới email quản trị viên (" + adminEmail + ") nếu bạn có thắc mắc hoặc khiếu nại.";
+        msg += ". Vui lòng liên hệ tới email quản trị viên (studyit.support@gmail.com) nếu bạn có thắc mắc hoặc khiếu nại.";
 
         notificationService.createAndPush(
                 post.getAuthor().getId(),
@@ -2200,7 +2195,7 @@ public class CommunityPostServiceImpl implements CommunityPostService {
 
         // 5. Send notification to author WITHOUT reason (generic notice)
         try {
-            String msg = "Tài khoản của bạn đã bị khóa bởi Ban Quản Trị do vi phạm quy chuẩn cộng đồng. Vui lòng liên hệ support@itstudy.edu.vn nếu bạn có khiếu nại.";
+            String msg = "Tài khoản của bạn đã bị khóa bởi Ban Quản Trị do vi phạm quy chuẩn cộng đồng. Vui lòng liên hệ studyit.support@gmail.com nếu bạn có khiếu nại.";
             notificationService.createAndPush(
                     author.getId(),
                     adminId,
