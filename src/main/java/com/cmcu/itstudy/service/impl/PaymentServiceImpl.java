@@ -87,6 +87,10 @@ public class PaymentServiceImpl implements PaymentService {
         Document document = documentRepository.findById(request.getDocumentId())
                 .orElseThrow(() -> new NoSuchElementException("Document not found with id: " + request.getDocumentId()));
 
+        if (Boolean.TRUE.equals(document.getDeleted())) {
+            throw new IllegalStateException("Tài liệu đã bị xóa, không thể thực hiện thanh toán");
+        }
+
         if (!Boolean.TRUE.equals(document.getIsPaid())) {
             throw new IllegalStateException("Document is not a paid document");
         }
@@ -257,11 +261,11 @@ public void processReturn(Map<String, String> params) {
                 .distinct()
                 .toList();
 
-        Map<UUID, String> titleByDocumentId = documentRepository.findAllById(documentIds).stream()
-                .collect(Collectors.toMap(Document::getId, Document::getTitle));
+        Map<UUID, Document> documentMap = documentRepository.findAllById(documentIds).stream()
+                .collect(Collectors.toMap(Document::getId, d -> d));
 
         return payments.stream()
-                .map(payment -> toPaymentHistoryDto(payment, titleByDocumentId))
+                .map(payment -> toPaymentHistoryDto(payment, documentMap))
                 .collect(Collectors.toList());
     }
 
@@ -374,11 +378,15 @@ public void processReturn(Map<String, String> params) {
         );
     }
 
-    private PaymentHistoryDto toPaymentHistoryDto(Payment payment, Map<UUID, String> titleByDocumentId) {
+    private PaymentHistoryDto toPaymentHistoryDto(Payment payment, Map<UUID, Document> documentMap) {
+        Document doc = documentMap.get(payment.getDocumentId());
+        String title = doc != null ? doc.getTitle() : null;
+        Boolean isDocDeleted = doc != null ? Boolean.TRUE.equals(doc.getDeleted()) : true;
         return PaymentHistoryDto.builder()
                 .paymentId(payment.getId())
                 .documentId(payment.getDocumentId())
-                .documentTitle(titleByDocumentId.get(payment.getDocumentId()))
+                .documentTitle(title)
+                .isDocumentDeleted(isDocDeleted)
                 .amount(payment.getAmount())
                 .status(payment.getStatus())
                 .orderCode(payment.getOrderCode())

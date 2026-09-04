@@ -59,8 +59,16 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
     @Override
     public DocumentDetailResponseDto getDocumentDetail(UUID id, UUID currentUserId) {
         Document document = documentService.getById(id);
-        if (Boolean.TRUE.equals(document.getDeleted())) {
-            throw new NoSuchElementException("Tài liệu không tồn tại hoặc đã bị xóa.");
+        boolean isDeleted = Boolean.TRUE.equals(document.getDeleted());
+        if (isDeleted) {
+            boolean hasAccess = currentUserId != null && documentAccessService.hasAccess(currentUserId, id);
+            boolean isOwner = currentUserId != null
+                    && document.getCreatedBy() != null
+                    && document.getCreatedBy().getId() != null
+                    && document.getCreatedBy().getId().equals(currentUserId);
+            if (!hasAccess && !isOwner) {
+                throw new NoSuchElementException("Tài liệu không tồn tại hoặc đã bị xóa.");
+            }
         }
 
         DocumentPrimaryFileDto primaryFile = documentFileRepository.findByDocumentIdAndPrimaryTrue(id)
@@ -128,6 +136,19 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
     @Override
     public DocumentFileUrlResponseDto getDocumentPrimaryFileUrl(UUID documentId) {
         Document document = documentService.getById(documentId);
+
+        boolean isDeleted = Boolean.TRUE.equals(document.getDeleted());
+        if (isDeleted) {
+            UUID userId = getCurrentUserIdOrNull();
+            boolean isOwner = userId != null
+                    && document.getCreatedBy() != null
+                    && document.getCreatedBy().getId() != null
+                    && document.getCreatedBy().getId().equals(userId);
+            boolean hasAccess = userId != null && documentAccessService.hasAccess(userId, documentId);
+            if (!isOwner && !hasAccess) {
+                throw new NoSuchElementException("Tài liệu không tồn tại hoặc đã bị xóa.");
+            }
+        }
 
         DocumentFileUrlResponseDto dto = documentFileRepository.findByDocumentIdAndPrimaryTrue(documentId)
                 .map(f -> DocumentMapper.toFileUrlResponseDto(f, document))

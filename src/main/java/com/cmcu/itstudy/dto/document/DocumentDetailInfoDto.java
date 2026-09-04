@@ -30,4 +30,5 @@ public class DocumentDetailInfoDto {
     private Boolean isPaid;
     private Long price;
     private Boolean hasAccess;
+    private Boolean isDeleted;
 }

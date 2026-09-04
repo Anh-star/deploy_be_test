@@ -23,6 +23,8 @@ public class PaymentHistoryDto {
 
     private String documentTitle;
 
+    private Boolean isDocumentDeleted;
+
     private Long amount;
 
     private PaymentStatus status;

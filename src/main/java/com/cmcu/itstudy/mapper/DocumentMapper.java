@@ -119,6 +119,7 @@ public final class DocumentMapper {
                 .isPaid(document.getIsPaid())
                 .price(document.getPrice())
                 .hasAccess(hasAccess)
+                .isDeleted(Boolean.TRUE.equals(document.getDeleted()))
                 .build();
     }
 
