@@ -382,11 +382,15 @@ public void processReturn(Map<String, String> params) {
         Document doc = documentMap.get(payment.getDocumentId());
         String title = doc != null ? doc.getTitle() : null;
         Boolean isDocDeleted = doc != null ? Boolean.TRUE.equals(doc.getDeleted()) : true;
+        LocalDateTime retentionExpiresAt = doc != null ? doc.getRetentionExpiresAt() : null;
+        Boolean fileCleaned = doc != null ? Boolean.TRUE.equals(doc.getFileCleaned()) : false;
         return PaymentHistoryDto.builder()
                 .paymentId(payment.getId())
                 .documentId(payment.getDocumentId())
                 .documentTitle(title)
                 .isDocumentDeleted(isDocDeleted)
+                .retentionExpiresAt(retentionExpiresAt)
+                .fileCleaned(fileCleaned)
                 .amount(payment.getAmount())
                 .status(payment.getStatus())
                 .orderCode(payment.getOrderCode())

@@ -100,4 +100,12 @@ public interface SupabaseStorageService {
      *         the object exceeds the 25&nbsp;MB preview cap
      */
     byte[] downloadPrivateObject(String bucket, String path);
+
+    /**
+     * Delete an object from a Supabase storage bucket.
+     *
+     * @param bucket bucket name
+     * @param path   object path
+     */
+    void deleteObject(String bucket, String path);
 }

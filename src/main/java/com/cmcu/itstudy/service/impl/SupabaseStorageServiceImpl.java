@@ -752,4 +752,28 @@ public class SupabaseStorageServiceImpl implements SupabaseStorageService {
             depth++;
         }
     }
+
+    @Override
+    public void deleteObject(String bucket, String path) {
+        if (bucket == null || bucket.isBlank() || path == null || path.isBlank()) {
+            return;
+        }
+        String baseUrl = properties.getUrl();
+        String bucketAndPath = bucket + "/" + path;
+        URI endpoint = URI.create(baseUrl + "/storage/v1/object/" + bucketAndPath);
+
+        RestClient client = testClient != null
+                ? testClient
+                : buildRestClient(baseUrl, properties.getServiceRoleKey());
+
+        try {
+            client.delete()
+                    .uri(endpoint)
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("Supabase storage deleteObject completed for bucket={}, path={}", bucket, path);
+        } catch (Exception e) {
+            log.warn("Supabase storage deleteObject failed for bucket={}, path={}: {}", bucket, path, e.getMessage());
+        }
+    }
 }

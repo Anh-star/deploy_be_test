@@ -11,11 +11,13 @@ import com.cmcu.itstudy.dto.document.MyDocumentQuizListDto;
 import com.cmcu.itstudy.entity.*;
 import com.cmcu.itstudy.enums.DocumentStatus;
 import com.cmcu.itstudy.enums.FileType;
+import com.cmcu.itstudy.enums.NotificationType;
 import com.cmcu.itstudy.enums.PaymentStatus;
 import com.cmcu.itstudy.handle.DocumentPricingLockedException;
 import com.cmcu.itstudy.repository.*;
 import com.cmcu.itstudy.service.contract.DocumentAccessService;
 import com.cmcu.itstudy.service.contract.DocumentService;
+import com.cmcu.itstudy.service.contract.NotificationService;
 import com.cmcu.itstudy.service.contract.QuizGenerationService;
 import com.cmcu.itstudy.service.contract.TransactionalDocumentCrudService;
 import com.cmcu.itstudy.util.SlugUtils;
@@ -28,6 +30,7 @@ import org.springframework.util.StringUtils;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -60,6 +63,8 @@ public class DocumentServiceImpl implements DocumentService {
     private final QuizQuestionRepository quizQuestionRepository;
     private final DocumentAccessService documentAccessService;
     private final DocumentPreviewArtifactRepository documentPreviewArtifactRepository;
+    private final DocumentAccessRepository documentAccessRepository;
+    private final NotificationService notificationService;
 
     public DocumentServiceImpl(DocumentRepository documentRepository,
                                DocumentTagRepository documentTagRepository,
@@ -74,7 +79,9 @@ public class DocumentServiceImpl implements DocumentService {
                                QuizGenerationRepository quizGenerationRepository,
                                QuizQuestionRepository quizQuestionRepository,
                                DocumentAccessService documentAccessService,
-                               DocumentPreviewArtifactRepository documentPreviewArtifactRepository) {
+                               DocumentPreviewArtifactRepository documentPreviewArtifactRepository,
+                               DocumentAccessRepository documentAccessRepository,
+                               NotificationService notificationService) {
         this.documentRepository = documentRepository;
         this.documentTagRepository = documentTagRepository;
         this.categoryRepository = categoryRepository;
@@ -89,6 +96,8 @@ public class DocumentServiceImpl implements DocumentService {
         this.quizQuestionRepository = quizQuestionRepository;
         this.documentAccessService = documentAccessService;
         this.documentPreviewArtifactRepository = documentPreviewArtifactRepository;
+        this.documentAccessRepository = documentAccessRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -400,6 +409,46 @@ public class DocumentServiceImpl implements DocumentService {
         document.setDeleted(true);
         document.setDeletedAt(now);
         document.setDeletedBy(currentUser);
+
+        // Check buyers
+        List<DocumentAccess> accesses = documentAccessRepository.findByDocumentId(documentId);
+        List<UUID> buyerUserIds = accesses.stream()
+                .map(DocumentAccess::getUserId)
+                .filter(uid -> uid != null && !uid.equals(currentUser.getId()))
+                .distinct()
+                .toList();
+
+        if (!buyerUserIds.isEmpty()) {
+            // Option 1.A: 30 days retention
+            LocalDateTime expiresAt = now.plusDays(30);
+            document.setRetentionExpiresAt(expiresAt);
+            document.setFileCleaned(false);
+
+            String formattedDate = expiresAt.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            String docTitle = (document.getTitle() != null && !document.getTitle().isBlank())
+                    ? document.getTitle() : "tài liệu";
+            String notificationMsg = "Tài liệu \"" + docTitle + "\" bạn đã mua vừa bị tác giả gỡ khỏi hệ thống. Bạn có thể tải lại tài liệu này đến hết ngày " + formattedDate + ".";
+
+            for (UUID buyerId : buyerUserIds) {
+                try {
+                    notificationService.createAndPush(
+                            buyerId,
+                            currentUser.getId(),
+                            NotificationType.DOCUMENT_DELETED,
+                            documentId.toString(),
+                            "DOCUMENT",
+                            notificationMsg
+                    );
+                } catch (Exception ex) {
+                    log.warn("Failed to push DOCUMENT_DELETED notification to buyer {}: {}", buyerId, ex.getMessage());
+                }
+            }
+        } else {
+            // Option 2.B: Chưa có ai mua -> Vẫn xóa mềm nhưng đặt retention ngắn để dọn file
+            document.setRetentionExpiresAt(now);
+            document.setFileCleaned(false);
+        }
+
         documentRepository.save(document);
 
         // Phase QUIZ-AI-2B: cancel any active quiz-generation row

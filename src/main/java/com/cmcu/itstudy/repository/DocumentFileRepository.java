@@ -16,6 +16,8 @@ public interface DocumentFileRepository extends JpaRepository<DocumentFile, UUID
         return findFirstByDocument_IdAndPrimaryTrue(documentId);
     }
 
+    java.util.List<DocumentFile> findAllByDocument_Id(UUID documentId);
+
     /**
      * Phase 2C E2E wiring fix — returns the parent {@code Document.id}
      * for a given {@code DocumentFile.id} as a plain UUID projection.

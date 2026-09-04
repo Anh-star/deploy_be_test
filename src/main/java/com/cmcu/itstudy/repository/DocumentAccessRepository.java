@@ -14,6 +14,8 @@ public interface DocumentAccessRepository extends JpaRepository<DocumentAccess, 
 
     boolean existsByUserIdAndDocumentId(UUID userId, UUID documentId);
 
+    List<DocumentAccess> findByDocumentId(UUID documentId);
+
     @Query("""
         SELECT u.fullName
         FROM DocumentAccess da

@@ -107,9 +107,12 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
                 && document.getCreatedBy() != null
                 && document.getCreatedBy().getId() != null
                 && document.getCreatedBy().getId().equals(currentUserId);
-        if (Boolean.TRUE.equals(document.getIsPaid())
+        boolean isExpired = isDeleted && (Boolean.TRUE.equals(document.getFileCleaned()) ||
+                (document.getRetentionExpiresAt() != null && java.time.LocalDateTime.now().isAfter(document.getRetentionExpiresAt())));
+
+        if (isExpired || (Boolean.TRUE.equals(document.getIsPaid())
                 && !isOwner
-                && (currentUserId == null || !Boolean.TRUE.equals(hasAccess))) {
+                && (currentUserId == null || !Boolean.TRUE.equals(hasAccess)))) {
             if (primaryFile != null) {
                 primaryFile.setFileUrl(null);
             }
@@ -147,6 +150,11 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
             boolean hasAccess = userId != null && documentAccessService.hasAccess(userId, documentId);
             if (!isOwner && !hasAccess) {
                 throw new NoSuchElementException("Tài liệu không tồn tại hoặc đã bị xóa.");
+            }
+            boolean isExpired = Boolean.TRUE.equals(document.getFileCleaned()) ||
+                    (document.getRetentionExpiresAt() != null && java.time.LocalDateTime.now().isAfter(document.getRetentionExpiresAt()));
+            if (isExpired) {
+                throw new IllegalStateException("Tài liệu đã hết hạn lưu trữ để tải lại.");
             }
         }
 

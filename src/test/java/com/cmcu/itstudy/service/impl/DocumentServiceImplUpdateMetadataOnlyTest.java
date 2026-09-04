@@ -11,6 +11,7 @@ import com.cmcu.itstudy.enums.DocumentStatus;
 import com.cmcu.itstudy.enums.FileType;
 import com.cmcu.itstudy.enums.PaymentStatus;
 import com.cmcu.itstudy.repository.CategoryRepository;
+import com.cmcu.itstudy.repository.DocumentAccessRepository;
 import com.cmcu.itstudy.repository.DocumentFileRepository;
 import com.cmcu.itstudy.repository.DocumentPreviewArtifactRepository;
 import com.cmcu.itstudy.repository.DocumentQuizRepository;
@@ -22,6 +23,7 @@ import com.cmcu.itstudy.repository.QuizGenerationRepository;
 import com.cmcu.itstudy.repository.QuizQuestionRepository;
 import com.cmcu.itstudy.repository.TagRepository;
 import com.cmcu.itstudy.service.contract.DocumentAccessService;
+import com.cmcu.itstudy.service.contract.NotificationService;
 import com.cmcu.itstudy.service.contract.QuizGenerationService;
 import com.cmcu.itstudy.service.contract.TransactionalDocumentCrudService;
 import org.junit.jupiter.api.BeforeEach;
@@ -109,6 +111,8 @@ class DocumentServiceImplUpdateMetadataOnlyTest {
         quizQuestionRepository = mock(QuizQuestionRepository.class);
         documentAccessService = mock(DocumentAccessService.class);
         documentPreviewArtifactRepository = mock(DocumentPreviewArtifactRepository.class);
+        DocumentAccessRepository documentAccessRepository = mock(DocumentAccessRepository.class);
+        NotificationService notificationService = mock(NotificationService.class);
 
         service = new DocumentServiceImpl(
                 documentRepository,
@@ -124,7 +128,9 @@ class DocumentServiceImplUpdateMetadataOnlyTest {
                 quizGenerationRepository,
                 quizQuestionRepository,
                 documentAccessService,
-                documentPreviewArtifactRepository);
+                documentPreviewArtifactRepository,
+                documentAccessRepository,
+                notificationService);
 
         ownerId = UUID.randomUUID();
         owner = User.builder()

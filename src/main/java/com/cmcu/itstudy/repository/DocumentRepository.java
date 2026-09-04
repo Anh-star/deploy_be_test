@@ -285,4 +285,6 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Document d SET d.hidden = false WHERE d.createdBy.id = :userId AND (d.deleted = false OR d.deleted IS NULL)")
     int unhideAllByCreatedById(@Param("userId") UUID userId);
+
+    List<Document> findByDeletedTrueAndRetentionExpiresAtBeforeAndFileCleanedFalse(LocalDateTime threshold);
 }

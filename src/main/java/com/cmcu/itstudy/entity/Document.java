@@ -110,6 +110,13 @@ public class Document {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    @Column(name = "retention_expires_at")
+    private LocalDateTime retentionExpiresAt;
+
+    @Column(name = "file_cleaned")
+    @Builder.Default
+    private Boolean fileCleaned = Boolean.FALSE;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "deleted_by")
     @ToString.Exclude
@@ -236,6 +243,7 @@ public class Document {
         if (this.status == null) this.status = DocumentStatus.PENDING;
         if (this.isPaid == null) this.isPaid = Boolean.FALSE;
         if (this.price == null) this.price = 0L;
+        if (this.fileCleaned == null) this.fileCleaned = Boolean.FALSE;
     }
 
     @PreUpdate
