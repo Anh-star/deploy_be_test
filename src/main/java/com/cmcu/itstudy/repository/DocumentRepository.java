@@ -205,6 +205,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
             from Document d
             where d.createdBy.id in :userIds
               and d.deleted = false
+              and (d.hidden = false or d.hidden is null)
+              and upper(d.createdBy.status) = 'ACTIVE'
               and d.status = com.cmcu.itstudy.enums.DocumentStatus.APPROVED
             group by d.createdBy.id
             """)
@@ -217,7 +219,10 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
                    count(d.id) as total_documents
             from tbl_users u
             join tbl_documents d on d.created_by = u.id
-              and d.status = 'APPROVED' and d.is_deleted = 0
+              and d.status = 'APPROVED'
+              and d.is_deleted = 0
+              and (d.is_hidden = 0 or d.is_hidden is null)
+            where upper(u.status) = 'ACTIVE'
             group by u.id, u.full_name, u.avatar
             order by total_views desc, total_downloads desc, total_documents desc, u.full_name asc
             """, nativeQuery = true)
@@ -230,7 +235,10 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
                    count(d.id) as total_documents
             from tbl_users u
             join tbl_documents d on d.created_by = u.id
-              and d.status = 'APPROVED' and d.is_deleted = 0
+              and d.status = 'APPROVED'
+              and d.is_deleted = 0
+              and (d.is_hidden = 0 or d.is_hidden is null)
+            where upper(u.status) = 'ACTIVE'
             group by u.id, u.full_name, u.avatar
             order by total_downloads desc, total_views desc, total_documents desc, u.full_name asc
             """, nativeQuery = true)
@@ -243,7 +251,10 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
                    count(case when d.is_paid = 0 then d.id end) as total_documents
             from tbl_users u
             join tbl_documents d on d.created_by = u.id
-              and d.status = 'APPROVED' and d.is_deleted = 0
+              and d.status = 'APPROVED'
+              and d.is_deleted = 0
+              and (d.is_hidden = 0 or d.is_hidden is null)
+            where upper(u.status) = 'ACTIVE'
             group by u.id, u.full_name, u.avatar
             having coalesce(sum(case when d.is_paid = 0 then d.download_count else 0 end), 0) > 0
             order by total_downloads desc, total_views desc, total_documents desc, u.full_name asc
@@ -257,7 +268,10 @@ public interface DocumentRepository extends JpaRepository<Document, UUID>, JpaSp
                    count(case when d.is_paid = 1 then d.id end) as total_documents
             from tbl_users u
             join tbl_documents d on d.created_by = u.id
-              and d.status = 'APPROVED' and d.is_deleted = 0
+              and d.status = 'APPROVED'
+              and d.is_deleted = 0
+              and (d.is_hidden = 0 or d.is_hidden is null)
+            where upper(u.status) = 'ACTIVE'
             group by u.id, u.full_name, u.avatar
             having coalesce(sum(case when d.is_paid = 1 then d.download_count else 0 end), 0) > 0
             order by total_downloads desc, total_views desc, total_documents desc, u.full_name asc
