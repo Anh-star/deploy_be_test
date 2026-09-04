@@ -184,7 +184,7 @@ public class DocumentPreviewArtifactDeliveryServiceImpl
     protected ResolvedArtifact resolveArtifact(
             UUID documentId, DocumentPreviewArtifactKind targetKind) {
         boolean documentExists =
-                documentRepository.findByIdAndDeletedFalse(documentId).isPresent();
+                documentRepository.findById(documentId).isPresent();
         if (!documentExists) {
             throw new TerminalDeliveryException(
                     "Document not found for READY delivery: " + documentId);

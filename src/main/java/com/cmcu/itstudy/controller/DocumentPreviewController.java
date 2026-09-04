@@ -164,6 +164,27 @@ public class DocumentPreviewController {
         boolean purchaser = viewer != null
                 && documentAccessService.hasAccess(viewer.getId(), id);
 
+        if (Boolean.TRUE.equals(snapshot.deleted())) {
+            boolean isOwner = viewer != null && viewer.getId() != null
+                    && viewer.getId().equals(snapshot.ownerId());
+            boolean isModeratorOrAdmin = authorities != null && authorities.stream().anyMatch(a -> {
+                String auth = a.getAuthority();
+                return "ROLE_ADMIN".equals(auth) || "ADMIN".equals(auth) || "APPROVE_DOCUMENT".equals(auth)
+                        || "ROLE_CONTENT_MODERATOR".equals(auth) || "CONTENT_MODERATOR".equals(auth);
+            });
+
+            if (!purchaser && !isOwner && !isModeratorOrAdmin) {
+                throw new NoSuchElementException("Document not found: " + id);
+            }
+            boolean isExpired = Boolean.TRUE.equals(snapshot.fileCleaned()) ||
+                    (snapshot.retentionExpiresAt() != null && java.time.LocalDateTime.now().isAfter(snapshot.retentionExpiresAt()));
+            if (isExpired) {
+                return buildLockedResponse(PreviewResult.locked(
+                        com.cmcu.itstudy.dto.document.PreviewLockedReason.PREVIEW_UNAVAILABLE,
+                        "Tài liệu đã hết thời hạn lưu trữ để xem lại."));
+            }
+        }
+
         DocumentRequest request = new DocumentRequest(
                 snapshot.documentId(),
                 snapshot.bucket(),

@@ -19,15 +19,18 @@ public class DocumentRetentionCleanupScheduler {
 
     private final DocumentRepository documentRepository;
     private final DocumentFileRepository documentFileRepository;
+    private final com.cmcu.itstudy.repository.DocumentPreviewArtifactRepository artifactRepository;
     private final SupabaseStorageService supabaseStorageService;
 
     public DocumentRetentionCleanupScheduler(
             DocumentRepository documentRepository,
             DocumentFileRepository documentFileRepository,
+            com.cmcu.itstudy.repository.DocumentPreviewArtifactRepository artifactRepository,
             SupabaseStorageService supabaseStorageService
     ) {
         this.documentRepository = documentRepository;
         this.documentFileRepository = documentFileRepository;
+        this.artifactRepository = artifactRepository;
         this.supabaseStorageService = supabaseStorageService;
     }
 
@@ -59,6 +62,12 @@ public class DocumentRetentionCleanupScheduler {
                     for (DocumentFile file : files) {
                         if (file.getStorageBucket() != null && file.getStoragePath() != null) {
                             supabaseStorageService.deleteObject(file.getStorageBucket(), file.getStoragePath());
+                        }
+                        var artifacts = artifactRepository.findByDocumentFileId(file.getId());
+                        for (var artifact : artifacts) {
+                            if (artifact.getStorageBucket() != null && artifact.getStoragePath() != null) {
+                                supabaseStorageService.deleteObject(artifact.getStorageBucket(), artifact.getStoragePath());
+                            }
                         }
                     }
 

@@ -35,7 +35,7 @@ public class DocumentPreviewSnapshotServiceImpl implements DocumentPreviewSnapsh
     @Override
     @Transactional(readOnly = true)
     public Optional<DocumentPreviewSnapshot> resolve(UUID documentId) {
-        Optional<Document> documentOpt = documentRepository.findByIdAndDeletedFalse(documentId);
+        Optional<Document> documentOpt = documentRepository.findById(documentId);
         if (documentOpt.isEmpty()) {
             return Optional.empty();
         }

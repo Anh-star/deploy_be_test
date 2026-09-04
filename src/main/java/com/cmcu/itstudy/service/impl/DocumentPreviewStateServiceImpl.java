@@ -51,7 +51,7 @@ public class DocumentPreviewStateServiceImpl implements DocumentPreviewStateServ
     @Override
     @Transactional(readOnly = true)
     public PreviewState resolve(UUID documentId) {
-        boolean documentExists = documentRepository.findByIdAndDeletedFalse(documentId).isPresent();
+        boolean documentExists = documentRepository.findById(documentId).isPresent();
         if (!documentExists) {
             return PreviewState.nonOffice();
         }

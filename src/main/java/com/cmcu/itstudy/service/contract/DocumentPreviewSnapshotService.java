@@ -43,7 +43,10 @@ public interface DocumentPreviewSnapshotService {
             String bucket,
             String path,
             String mimeType,
-            String fileExtension) {
+            String fileExtension,
+            Boolean deleted,
+            Boolean fileCleaned,
+            java.time.LocalDateTime retentionExpiresAt) {
 
         public static DocumentPreviewSnapshot fromDocument(Document document, String bucket,
                                                             String path, String mimeType,
@@ -56,7 +59,10 @@ public interface DocumentPreviewSnapshotService {
                     bucket,
                     path,
                     mimeType,
-                    fileExtension);
+                    fileExtension,
+                    document.getDeleted(),
+                    document.getFileCleaned(),
+                    document.getRetentionExpiresAt());
         }
     }
 }
