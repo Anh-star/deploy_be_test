@@ -11,10 +11,14 @@ import java.util.UUID;
 
 public interface AdminUserService {
 
-    AdminUserPageResponseDto listUsers(int page, int size, String search, String status, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate);
+    AdminUserPageResponseDto listUsers(int page, int size, String search, String status, String role, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate);
+
+    default AdminUserPageResponseDto listUsers(int page, int size, String search, String status, java.time.LocalDateTime startDate, java.time.LocalDateTime endDate) {
+        return listUsers(page, size, search, status, null, startDate, endDate);
+    }
 
     default AdminUserPageResponseDto listUsers(int page, int size, String search) {
-        return listUsers(page, size, search, null, null, null);
+        return listUsers(page, size, search, null, null, null, null);
     }
 
     AdminUserResponseDto getUser(UUID id);

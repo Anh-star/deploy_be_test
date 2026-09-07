@@ -43,6 +43,7 @@ public class AdminUserController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String role,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate
     ) {
@@ -66,7 +67,7 @@ public class AdminUserController {
                 } catch (Exception ignored) {}
             }
         }
-        AdminUserPageResponseDto data = adminUserService.listUsers(page, size, search, status, start, end);
+        AdminUserPageResponseDto data = adminUserService.listUsers(page, size, search, status, role, start, end);
         return ResponseEntity.ok(ApiResponse.success(data, "User list"));
     }
 

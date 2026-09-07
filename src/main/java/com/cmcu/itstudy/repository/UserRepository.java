@@ -32,27 +32,42 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                     + "AND (:status IS NULL OR :status = '' OR "
                     + "  (:status = 'LOCKED' AND UPPER(u.status) IN ('LOCKED', 'DISABLED', 'BANNED')) OR "
                     + "  (:status != 'LOCKED' AND UPPER(u.status) = UPPER(:status))) "
+                    + "AND (:role IS NULL OR :role = '' OR EXISTS ("
+                    + "  SELECT 1 FROM UserRole ur2 WHERE ur2.user = u AND ("
+                    + "    UPPER(ur2.role.name) = UPPER(:role) OR "
+                    + "    UPPER(ur2.role.name) = UPPER(CONCAT('ROLE_', :role)) OR "
+                    + "    UPPER(CONCAT('ROLE_', ur2.role.name)) = UPPER(:role)"
+                    + "  )"
+                    + ")) "
                     + "AND (:startDate IS NULL OR u.createdAt >= :startDate) "
                     + "AND (:endDate IS NULL OR u.createdAt <= :endDate)",
-            countQuery = "SELECT COUNT(u) FROM User u WHERE "
+            countQuery = "SELECT COUNT(DISTINCT u) FROM User u WHERE "
                     + "(:search IS NULL OR :search = '' OR LOWER(u.email) LIKE LOWER(CONCAT('%', :search, '%')) OR "
                     + "(u.fullName IS NOT NULL AND LOWER(u.fullName) LIKE LOWER(CONCAT('%', :search, '%')))) "
                     + "AND (:status IS NULL OR :status = '' OR "
                     + "  (:status = 'LOCKED' AND UPPER(u.status) IN ('LOCKED', 'DISABLED', 'BANNED')) OR "
                     + "  (:status != 'LOCKED' AND UPPER(u.status) = UPPER(:status))) "
+                    + "AND (:role IS NULL OR :role = '' OR EXISTS ("
+                    + "  SELECT 1 FROM UserRole ur2 WHERE ur2.user = u AND ("
+                    + "    UPPER(ur2.role.name) = UPPER(:role) OR "
+                    + "    UPPER(ur2.role.name) = UPPER(CONCAT('ROLE_', :role)) OR "
+                    + "    UPPER(CONCAT('ROLE_', ur2.role.name)) = UPPER(:role)"
+                    + "  )"
+                    + ")) "
                     + "AND (:startDate IS NULL OR u.createdAt >= :startDate) "
                     + "AND (:endDate IS NULL OR u.createdAt <= :endDate)"
     )
     Page<User> searchForAdmin(
             @Param("search") String search,
             @Param("status") String status,
+            @Param("role") String role,
             @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate,
             Pageable pageable
     );
 
     default Page<User> searchForAdmin(String search, Pageable pageable) {
-        return searchForAdmin(search, null, null, null, pageable);
+        return searchForAdmin(search, null, null, null, null, pageable);
     }
 
     boolean existsByEmail(String email);

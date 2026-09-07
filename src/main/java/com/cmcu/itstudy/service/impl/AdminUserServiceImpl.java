@@ -61,13 +61,14 @@ public class AdminUserServiceImpl extends BaseAuthService implements AdminUserSe
 
     @Override
     @Transactional(readOnly = true)
-    public AdminUserPageResponseDto listUsers(int page, int size, String search, String status, LocalDateTime startDate, LocalDateTime endDate) {
+    public AdminUserPageResponseDto listUsers(int page, int size, String search, String status, String role, LocalDateTime startDate, LocalDateTime endDate) {
         int p = Math.max(0, page);
         int s = size > 0 ? Math.min(size, MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE;
         String q = (search != null && !search.isBlank()) ? search.trim() : null;
         String st = (status != null && !status.isBlank()) ? status.trim().toUpperCase() : null;
+        String r = (role != null && !role.isBlank()) ? role.trim().toUpperCase() : null;
         Pageable pageable = PageRequest.of(p, s, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<User> result = userRepository.searchForAdmin(q, st, startDate, endDate, pageable);
+        Page<User> result = userRepository.searchForAdmin(q, st, r, startDate, endDate, pageable);
         List<AdminUserResponseDto> content = result.getContent().stream()
                 .map(AdminUserMapper::toResponseDto)
                 .collect(Collectors.toList());
