@@ -286,7 +286,8 @@ public class CommunityPostController {
     ) {
         UUID userId = currentUser.getUser().getId();
         UUID parentId = parseUuid(request.getParentCommentId());
-        PostCommentResponseDto data = communityPostService.addComment(postId, userId, request.getBody(), parentId, request.getImageUrls());
+        UUID replyToUserId = parseUuid(request.getReplyToUserId());
+        PostCommentResponseDto data = communityPostService.addComment(postId, userId, request.getBody(), parentId, request.getImageUrls(), replyToUserId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(data, "Comment added"));
     }

@@ -20,5 +20,8 @@ public class CreatePostCommentRequestDto {
     /** Null for root comment, set to parent comment ID for reply */
     private String parentCommentId;
 
+    /** Target user ID being replied to */
+    private String replyToUserId;
+
     private java.util.List<String> imageUrls;
 }

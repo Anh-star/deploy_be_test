@@ -1048,12 +1048,18 @@ public class CommunityPostServiceImpl implements CommunityPostService {
     @Override
     @Transactional
     public PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId) {
-        return addComment(postId, userId, body, parentCommentId, null);
+        return addComment(postId, userId, body, parentCommentId, null, null);
     }
 
     @Override
     @Transactional
     public PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId, List<String> imageUrls) {
+        return addComment(postId, userId, body, parentCommentId, imageUrls, null);
+    }
+
+    @Override
+    @Transactional
+    public PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId, List<String> imageUrls, UUID replyToUserId) {
         CommunityPost post = postRepository.findByIdWithAuthor(postId)
                 .orElseThrow(() -> new NoSuchElementException("Post not found"));
         if (Boolean.TRUE.equals(post.getDeleted())) {
@@ -1077,18 +1083,26 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 .deleted(false);
 
         CommunityPostComment parent = null;
+        User replyToUser = null;
         if (parentCommentId != null) {
             parent = commentRepository.findById(parentCommentId)
                     .orElseThrow(() -> new NoSuchElementException("Parent comment not found"));
             builder.parent(parent);
-            builder.replyToUser(parent.getAuthor());
+
+            if (replyToUserId != null) {
+                replyToUser = userRepository.findById(replyToUserId).orElse(null);
+            }
+            if (replyToUser == null) {
+                replyToUser = parent.getAuthor();
+            }
+            builder.replyToUser(replyToUser);
         }
 
         CommunityPostComment saved = commentRepository.save(builder.build());
         saved.setAuthor(author);
         if (parent != null) {
             saved.setParent(parent);
-            saved.setReplyToUser(parent.getAuthor());
+            saved.setReplyToUser(replyToUser);
         }
 
         // Save comment images (up to 4)
@@ -1136,15 +1150,28 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                     ? parent.getAuthor().getFullName()
                     : "người dùng";
 
-            // 2a. Gửi cho tác giả của bình luận trước (nếu không phải chính người phản hồi)
-            if (!parentAuthorId.equals(userId)) {
-                String parentMsg = commenterName + " đã trả lời bình luận của bạn" + snippetSuffix;
+            UUID directReplyUserId = (saved.getReplyToUser() != null) ? saved.getReplyToUser().getId() : null;
+            String directReplyUserName = (saved.getReplyToUser() != null && saved.getReplyToUser().getFullName() != null)
+                    ? saved.getReplyToUser().getFullName()
+                    : parentAuthorName;
+
+            // 2a. Gửi cho người được phản hồi trực tiếp (nếu có và không phải chính người phản hồi)
+            if (directReplyUserId != null && !directReplyUserId.equals(userId)) {
+                String directMsg = commenterName + " đã trả lời bình luận của bạn" + snippetSuffix;
+                sendAggregatedCommentNotificationIfUnmuted(directReplyUserId, author, post, targetRefId, NotificationType.COMMENT_REPLIED, directMsg, true);
+            }
+
+            // 2b. Gửi cho chủ bình luận gốc (nếu khác người được phản hồi trực tiếp và không phải chính người phản hồi)
+            if (!parentAuthorId.equals(userId) && (directReplyUserId == null || !parentAuthorId.equals(directReplyUserId))) {
+                String parentMsg = commenterName + " đã trả lời trong một chủ đề bình luận của bạn" + snippetSuffix;
                 sendAggregatedCommentNotificationIfUnmuted(parentAuthorId, author, post, targetRefId, NotificationType.COMMENT_REPLIED, parentMsg, true);
             }
 
-            // 2b. Gửi cho tác giả bài viết (nếu khác tác giả bình luận trước và khác người phản hồi)
-            if (postAuthorId != null && !postAuthorId.equals(parentAuthorId) && !postAuthorId.equals(userId)) {
-                String postAuthorMsg = commenterName + " đã trả lời bình luận của " + parentAuthorName + " về bài viết của bạn" + snippetSuffix;
+            // 2c. Gửi cho tác giả bài viết (nếu khác chủ bình luận gốc, khác người được phản hồi trực tiếp và khác người phản hồi)
+            if (postAuthorId != null && !postAuthorId.equals(userId)
+                    && !postAuthorId.equals(parentAuthorId)
+                    && (directReplyUserId == null || !postAuthorId.equals(directReplyUserId))) {
+                String postAuthorMsg = commenterName + " đã trả lời bình luận của " + directReplyUserName + " về bài viết của bạn" + snippetSuffix;
                 sendAggregatedCommentNotificationIfUnmuted(postAuthorId, author, post, targetRefId, NotificationType.POST_COMMENTED, postAuthorMsg, false);
             }
         } else if (postAuthorId != null && !postAuthorId.equals(userId)) {

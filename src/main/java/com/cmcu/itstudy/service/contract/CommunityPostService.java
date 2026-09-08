@@ -49,6 +49,8 @@ public interface CommunityPostService {
 
     PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId, List<String> imageUrls);
 
+    PostCommentResponseDto addComment(UUID postId, UUID userId, String body, UUID parentCommentId, List<String> imageUrls, UUID replyToUserId);
+
     PostCommentResponseDto editComment(UUID commentId, UUID userId, String body, List<String> imageUrls);
 
     List<com.cmcu.itstudy.dto.document.CommentEditHistoryDto> getCommentEditHistory(UUID commentId);
