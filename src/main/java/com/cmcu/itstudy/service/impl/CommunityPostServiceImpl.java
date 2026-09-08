@@ -2194,6 +2194,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         post.setHidden(true);
         postRepository.save(post);
 
+        // Hide ALL community posts by this author
+        postRepository.hideAllByAuthorId(author.getId());
+
         // Hide ALL documents by this author
         documentRepository.hideAllByCreatedById(author.getId());
 
@@ -2273,10 +2276,13 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         author.setUpdatedAt(LocalDateTime.now());
         userRepository.save(author);
 
-        // 2. Unhide ALL documents by this author
+        // 2. Unhide ALL community posts by this author
+        postRepository.unhideAllByAuthorId(author.getId());
+
+        // 3. Unhide ALL documents by this author
         documentRepository.unhideAllByCreatedById(author.getId());
 
-        // 3. Update reports status to RESOLVED_UNBAN
+        // 4. Update reports status to RESOLVED_UNBAN
         List<CommunityPostReport> postReports = reportRepository.findByPostId(post.getId());
         LocalDateTime now = LocalDateTime.now();
         String unbanNote = (reason != null && !reason.isBlank()) ? reason.trim() : null;
@@ -2301,9 +2307,9 @@ public class CommunityPostServiceImpl implements CommunityPostService {
             reportRepository.save(report);
         }
 
-        // 4. Send unban notification to author (with note if provided)
+        // 5. Send unban notification to author (with note if provided)
         try {
-            String msg = "Tài khoản của bạn đã được mở khóa bởi Ban Quản Trị. Các tài liệu của bạn đã được khôi phục hiển thị.";
+            String msg = "Tài khoản của bạn đã được mở khóa bởi Ban Quản Trị. Các bài viết và tài liệu của bạn đã được khôi phục hiển thị.";
             if (StringUtils.hasText(unbanNote)) {
                 msg += " Ghi chú: " + unbanNote;
             }
