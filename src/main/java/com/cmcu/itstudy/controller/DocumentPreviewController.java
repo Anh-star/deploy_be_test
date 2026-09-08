@@ -164,6 +164,20 @@ public class DocumentPreviewController {
         boolean purchaser = viewer != null
                 && documentAccessService.hasAccess(viewer.getId(), id);
 
+        if (Boolean.TRUE.equals(snapshot.hidden())) {
+            boolean isOwner = viewer != null && viewer.getId() != null
+                    && viewer.getId().equals(snapshot.ownerId());
+            boolean isModeratorOrAdmin = authorities != null && authorities.stream().anyMatch(a -> {
+                String auth = a.getAuthority();
+                return "ROLE_ADMIN".equals(auth) || "ADMIN".equals(auth) || "APPROVE_DOCUMENT".equals(auth)
+                        || "ROLE_CONTENT_MODERATOR".equals(auth) || "CONTENT_MODERATOR".equals(auth);
+            });
+
+            if (!purchaser && !isOwner && !isModeratorOrAdmin) {
+                throw new NoSuchElementException("Tài liệu đã bị ẩn do vi phạm quy định: " + id);
+            }
+        }
+
         if (Boolean.TRUE.equals(snapshot.deleted())) {
             boolean isOwner = viewer != null && viewer.getId() != null
                     && viewer.getId().equals(snapshot.ownerId());

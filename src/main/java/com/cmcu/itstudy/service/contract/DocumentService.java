@@ -69,6 +69,8 @@ public interface DocumentService {
 
     void hideDocumentFromReport(UUID reportId, User moderator, String reason);
 
+    void unhideDocumentFromReport(UUID reportId, User moderator, String reason);
+
     void deleteDocumentFromReport(UUID reportId, User moderator, String reason);
 }
 

@@ -169,6 +169,16 @@ public class DocumentServiceImpl implements DocumentService {
             throw new SecurityException("User does not have permission to update this document.");
         }
 
+        if (Boolean.TRUE.equals(existingDocument.getHidden())) {
+            throw new IllegalStateException("Tài liệu đang bị ẩn không thể chỉnh sửa.");
+        }
+        if (existingDocument.getStatus() == com.cmcu.itstudy.enums.DocumentStatus.REJECTED) {
+            throw new IllegalStateException("Tài liệu đã bị từ chối không thể chỉnh sửa.");
+        }
+        if (Boolean.TRUE.equals(existingDocument.getDeleted())) {
+            throw new IllegalStateException("Tài liệu đã bị xóa không thể chỉnh sửa.");
+        }
+
         // ─────────────────────────────────────────────────────────────────
         // Pricing-change guard (legacy compatibility).
         //
@@ -756,6 +766,12 @@ public class DocumentServiceImpl implements DocumentService {
         Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new NoSuchElementException("Tài liệu không tồn tại"));
 
+        if (document.getCreatedBy() != null && reporter != null
+                && document.getCreatedBy().getId() != null
+                && document.getCreatedBy().getId().equals(reporter.getId())) {
+            throw new IllegalArgumentException("Bạn không thể tự báo cáo tài liệu của chính mình.");
+        }
+
         Optional<DocumentReport> existingOpt = documentReportRepository.findByDocumentIdAndReporterId(documentId, reporter.getId());
         if (existingOpt.isPresent()) {
             DocumentReport existingReport = existingOpt.get();
@@ -963,6 +979,64 @@ public class DocumentServiceImpl implements DocumentService {
             }
         } catch (Exception ex) {
             log.warn("Failed to push DOCUMENT_HIDDEN notification for doc {}: {}", document.getId(), ex.getMessage());
+        }
+    }
+
+    @Transactional
+    @Override
+    public void unhideDocumentFromReport(UUID reportId, User moderator, String reason) {
+        DocumentReport report = documentReportRepository.findById(reportId)
+                .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+
+        Document document = report.getDocument();
+        if (document == null) {
+            throw new NoSuchElementException("Tài liệu liên quan không tồn tại");
+        }
+
+        // 1. Unhide document
+        document.setHidden(false);
+        documentRepository.save(document);
+
+        // 2. Resolve this report and other reports for the same document
+        LocalDateTime now = LocalDateTime.now();
+        report.setStatus("RESOLVED");
+        report.setResolvedAt(now);
+        report.setResolvedBy(moderator);
+        documentReportRepository.save(report);
+
+        List<DocumentReport> otherReports = documentReportRepository.findByDocumentId(document.getId());
+        if (otherReports != null) {
+            for (DocumentReport other : otherReports) {
+                if ("PENDING".equalsIgnoreCase(other.getStatus()) && !other.getId().equals(reportId)) {
+                    other.setStatus("RESOLVED");
+                    other.setResolvedAt(now);
+                    other.setResolvedBy(moderator);
+                    documentReportRepository.save(other);
+                }
+            }
+        }
+
+        // 3. Send notification to document author
+        try {
+            if (document.getCreatedBy() != null) {
+                String docTitle = (document.getTitle() != null && !document.getTitle().isBlank())
+                        ? document.getTitle() : "tài liệu";
+                String msg = "Tài liệu \"" + docTitle + "\" của bạn đã được mở ẩn và hiển thị công khai trở lại.";
+                if (StringUtils.hasText(reason)) {
+                    msg += " Lý do: " + reason.trim();
+                }
+
+                notificationService.createAndPush(
+                        document.getCreatedBy().getId(),
+                        moderator.getId(),
+                        NotificationType.DOCUMENT_UNHIDDEN,
+                        document.getId().toString(),
+                        "DOCUMENT",
+                        msg
+                );
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to push DOCUMENT_UNHIDDEN notification for doc {}: {}", document.getId(), ex.getMessage());
         }
     }
 

@@ -120,6 +120,7 @@ public final class DocumentMapper {
                 .price(document.getPrice())
                 .hasAccess(hasAccess)
                 .isDeleted(Boolean.TRUE.equals(document.getDeleted()))
+                .isHidden(Boolean.TRUE.equals(document.getHidden()))
                 .retentionExpiresAt(document.getRetentionExpiresAt())
                 .fileCleaned(Boolean.TRUE.equals(document.getFileCleaned()))
                 .build();

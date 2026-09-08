@@ -31,6 +31,7 @@ public class DocumentDetailInfoDto {
     private Long price;
     private Boolean hasAccess;
     private Boolean isDeleted;
+    private Boolean isHidden;
     private LocalDateTime retentionExpiresAt;
     private Boolean fileCleaned;
 }

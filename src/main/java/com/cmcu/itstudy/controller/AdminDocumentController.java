@@ -174,6 +174,22 @@ public class AdminDocumentController {
         ));
     }
 
+    @PatchMapping("/reports/{reportId}/unhide")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
+    public ResponseEntity<ApiResponse<MessageResponseDto>> unhideReportDocument(
+            @PathVariable("reportId") UUID reportId,
+            @RequestBody(required = false) com.cmcu.itstudy.dto.document.DocumentReportActionRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        User resolver = currentUser.getUser();
+        String reason = request != null ? request.getReason() : null;
+        documentService.unhideDocumentFromReport(reportId, resolver, reason);
+        return ResponseEntity.ok(ApiResponse.success(
+                MessageResponseDto.builder().message("Đã mở ẩn tài liệu và xử lý báo cáo thành công").build(),
+                "OK"
+        ));
+    }
+
     @PatchMapping("/reports/{reportId}/delete")
     @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
     public ResponseEntity<ApiResponse<MessageResponseDto>> deleteReportDocument(

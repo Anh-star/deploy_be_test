@@ -42,6 +42,8 @@ import com.cmcu.itstudy.service.contract.CommunityPostService;
 import com.cmcu.itstudy.service.contract.NotificationService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -224,6 +226,14 @@ public class CommunityPostServiceImpl implements CommunityPostService {
                 .orElseThrow(() -> new NoSuchElementException("Post not found"));
         if (Boolean.TRUE.equals(post.getDeleted())) {
             throw new NoSuchElementException("Bài viết không tồn tại hoặc đã bị xóa.");
+        }
+
+        if (Boolean.TRUE.equals(post.getHidden())) {
+            boolean isAuthor = currentUserId != null && post.getAuthor() != null && currentUserId.equals(post.getAuthor().getId());
+            boolean isStaff = isCurrentCommunityStaff();
+            if (!isAuthor && !isStaff) {
+                throw new NoSuchElementException("Bài viết đã bị ẩn do vi phạm tiêu chuẩn cộng đồng.");
+            }
         }
 
         List<CommunityPostImage> images = imageRepository.findByPostIdOrderByDisplayOrderAsc(postId);
@@ -2347,5 +2357,19 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         return histories.stream()
                 .map(CommunityPostMapper::toPostEditHistoryDto)
                 .collect(Collectors.toList());
+    }
+
+    private boolean isCurrentCommunityStaff() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getAuthorities() == null) {
+            return false;
+        }
+        return auth.getAuthorities().stream().anyMatch(a -> {
+            String role = a.getAuthority();
+            return "ROLE_ADMIN".equals(role) || "ADMIN".equals(role)
+                    || "ROLE_COMMUNITY_MODERATOR".equals(role) || "COMMUNITY_MODERATOR".equals(role)
+                    || "ROLE_CONTENT_MODERATOR".equals(role) || "CONTENT_MODERATOR".equals(role)
+                    || "ROLE_USER_MODERATOR".equals(role) || "USER_MODERATOR".equals(role);
+        });
     }
 }
