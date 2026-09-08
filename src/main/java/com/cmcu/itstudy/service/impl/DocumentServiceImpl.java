@@ -789,21 +789,34 @@ public class DocumentServiceImpl implements DocumentService {
             existingReport.setResolvedBy(null);
 
             documentReportRepository.save(existingReport);
-            return;
+        } else {
+            DocumentReport report = DocumentReport.builder()
+                    .document(document)
+                    .reporter(reporter)
+                    .reasonCode(requestDto.getReasonCode())
+                    .detail(requestDto.getDetail() != null ? requestDto.getDetail().trim() : "")
+                    .status("PENDING")
+                    .build();
+
+            documentReportRepository.save(report);
         }
 
-        DocumentReport report = DocumentReport.builder()
-                .document(document)
-                .reporter(reporter)
-                .reasonCode(requestDto.getReasonCode())
-                .detail(requestDto.getDetail() != null ? requestDto.getDetail().trim() : "")
-                .status("PENDING")
-                .build();
-
-        documentReportRepository.save(report);
+        // Khi có báo cáo mới (hoặc báo cáo lại) ở trạng thái PENDING:
+        // Chuyển toàn bộ các báo cáo cũ của tài liệu này từ RESOLVED/DISMISSED sang PENDING
+        List<DocumentReport> otherReports = documentReportRepository.findByDocumentId(documentId);
+        if (otherReports != null) {
+            for (DocumentReport other : otherReports) {
+                if (!"PENDING".equalsIgnoreCase(other.getStatus())) {
+                    other.setStatus("PENDING");
+                    other.setResolvedAt(null);
+                    other.setResolvedBy(null);
+                    documentReportRepository.save(other);
+                }
+            }
+        }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     @Override
     public com.cmcu.itstudy.dto.document.DocumentReportPageResponseDto getReportedDocuments(
             String status,
@@ -813,91 +826,108 @@ public class DocumentServiceImpl implements DocumentService {
             int page,
             int size
     ) {
+        try {
+            documentReportRepository.reopenReportsForPendingDocuments();
+        } catch (Exception ex) {
+            log.warn("Auto-reopen reports for pending documents failed: {}", ex.getMessage());
+        }
+
         int p = Math.max(0, page);
         int s = size < 1 ? 10 : Math.min(size, 100);
         PageRequest pageRequest = PageRequest.of(p, s);
         String st = (status != null && !status.isBlank()) ? status.toUpperCase() : null;
         String q = (search != null && !search.isBlank()) ? search.trim() : null;
-        org.springframework.data.domain.Page<DocumentReport> reports =
-                documentReportRepository.searchReports(st, q, startDate, endDate, pageRequest);
 
-        java.util.List<com.cmcu.itstudy.dto.document.DocumentReportResponseDto> content = reports.getContent().stream().map(r -> {
-            String docTitle = "Tài liệu không tồn tại";
-            String docAuthorId = null;
-            String docAuthorName = "Không xác định";
-            String docAuthorAvatar = null;
-            String docStatus = null;
-            String docIdStr = null;
-            long count = 0L;
+        org.springframework.data.domain.Page<UUID> documentIdPage =
+                documentReportRepository.searchReportedDocumentIds(st, q, startDate, endDate, pageRequest);
 
-            try {
-                Document doc = r.getDocument();
-                if (doc != null) {
-                    docIdStr = doc.getId() != null ? doc.getId().toString() : null;
-                    docTitle = doc.getTitle() != null ? doc.getTitle() : "Tài liệu không tiêu đề";
-                    docStatus = doc.getStatus() != null ? doc.getStatus().name() : null;
+        List<UUID> orderedDocIds = documentIdPage.getContent();
+        List<com.cmcu.itstudy.dto.document.DocumentReportResponseDto> content = new java.util.ArrayList<>();
 
-                    User author = doc.getCreatedBy();
-                    if (author != null) {
-                        docAuthorId = author.getId() != null ? author.getId().toString() : null;
-                        docAuthorName = author.getFullName() != null ? author.getFullName() : (author.getEmail() != null ? author.getEmail() : "Không xác định");
-                        docAuthorAvatar = author.getAvatarUrl();
+        if (!orderedDocIds.isEmpty()) {
+            List<DocumentReport> reports = documentReportRepository.findByDocumentIdsOrdered(orderedDocIds);
+            Map<UUID, List<DocumentReport>> reportsByDocId = reports.stream()
+                    .filter(r -> r.getDocument() != null && r.getDocument().getId() != null)
+                    .collect(Collectors.groupingBy(r -> r.getDocument().getId(), java.util.LinkedHashMap::new, Collectors.toList()));
+
+            for (UUID docId : orderedDocIds) {
+                List<DocumentReport> docReports = reportsByDocId.getOrDefault(docId, Collections.emptyList());
+                long count = documentReportRepository.countByDocumentId(docId);
+
+                for (DocumentReport r : docReports) {
+                    String docTitle = "Tài liệu không tồn tại";
+                    String docAuthorId = null;
+                    String docAuthorName = "Không xác định";
+                    String docAuthorAvatar = null;
+                    String docStatus = null;
+                    String docIdStr = docId.toString();
+
+                    try {
+                        Document doc = r.getDocument();
+                        if (doc != null) {
+                            docTitle = doc.getTitle() != null ? doc.getTitle() : "Tài liệu không tiêu đề";
+                            docStatus = doc.getStatus() != null ? doc.getStatus().name() : null;
+
+                            User author = doc.getCreatedBy();
+                            if (author != null) {
+                                docAuthorId = author.getId() != null ? author.getId().toString() : null;
+                                docAuthorName = author.getFullName() != null ? author.getFullName() : (author.getEmail() != null ? author.getEmail() : "Không xác định");
+                                docAuthorAvatar = author.getAvatarUrl();
+                            }
+                        }
+                    } catch (Exception ex) {
+                        log.warn("Failed to extract document/author details for report {}: {}", r.getId(), ex.getMessage());
                     }
 
-                    if (doc.getId() != null) {
-                        count = documentReportRepository.countByDocumentId(doc.getId());
+                    String reporterIdStr = null;
+                    String reporterNameStr = "Không xác định";
+                    String reporterAvatarStr = null;
+
+                    try {
+                        User reporter = r.getReporter();
+                        if (reporter != null) {
+                            reporterIdStr = reporter.getId() != null ? reporter.getId().toString() : null;
+                            reporterNameStr = reporter.getFullName() != null ? reporter.getFullName() : (reporter.getEmail() != null ? reporter.getEmail() : "Người dùng");
+                            reporterAvatarStr = reporter.getAvatarUrl();
+                        }
+                    } catch (Exception ex) {
+                        log.warn("Failed to extract reporter details for report {}: {}", r.getId(), ex.getMessage());
                     }
+
+                    content.add(com.cmcu.itstudy.dto.document.DocumentReportResponseDto.builder()
+                            .id(r.getId() != null ? r.getId().toString() : null)
+                            .documentId(docIdStr)
+                            .documentTitle(docTitle)
+                            .documentAuthorId(docAuthorId)
+                            .documentAuthorName(docAuthorName)
+                            .documentAuthorAvatar(docAuthorAvatar)
+                            .reporterId(reporterIdStr)
+                            .reporterName(reporterNameStr)
+                            .reporterAvatar(reporterAvatarStr)
+                            .reasonCode(r.getReasonCode())
+                            .detail(r.getDetail())
+                            .status(r.getStatus())
+                            .reportCount(count)
+                            .documentStatus(docStatus)
+                            .isDocumentHidden(r.getDocument() != null && Boolean.TRUE.equals(r.getDocument().getHidden()))
+                            .isDocumentDeleted(r.getDocument() != null && Boolean.TRUE.equals(r.getDocument().getDeleted()))
+                            .createdAt(r.getCreatedAt())
+                            .resolvedAt(r.getResolvedAt())
+                            .build());
                 }
-            } catch (Exception ex) {
-                log.warn("Failed to extract document/author details for report {}: {}", r.getId(), ex.getMessage());
             }
-
-            String reporterIdStr = null;
-            String reporterNameStr = "Không xác định";
-            String reporterAvatarStr = null;
-
-            try {
-                User reporter = r.getReporter();
-                if (reporter != null) {
-                    reporterIdStr = reporter.getId() != null ? reporter.getId().toString() : null;
-                    reporterNameStr = reporter.getFullName() != null ? reporter.getFullName() : (reporter.getEmail() != null ? reporter.getEmail() : "Người dùng");
-                    reporterAvatarStr = reporter.getAvatarUrl();
-                }
-            } catch (Exception ex) {
-                log.warn("Failed to extract reporter details for report {}: {}", r.getId(), ex.getMessage());
-            }
-
-            return com.cmcu.itstudy.dto.document.DocumentReportResponseDto.builder()
-                    .id(r.getId() != null ? r.getId().toString() : null)
-                    .documentId(docIdStr)
-                    .documentTitle(docTitle)
-                    .documentAuthorId(docAuthorId)
-                    .documentAuthorName(docAuthorName)
-                    .documentAuthorAvatar(docAuthorAvatar)
-                    .reporterId(reporterIdStr)
-                    .reporterName(reporterNameStr)
-                    .reporterAvatar(reporterAvatarStr)
-                    .reasonCode(r.getReasonCode())
-                    .detail(r.getDetail())
-                    .status(r.getStatus())
-                    .reportCount(count)
-                    .documentStatus(docStatus)
-                    .isDocumentHidden(r.getDocument() != null && Boolean.TRUE.equals(r.getDocument().getHidden()))
-                    .isDocumentDeleted(r.getDocument() != null && Boolean.TRUE.equals(r.getDocument().getDeleted()))
-                    .createdAt(r.getCreatedAt())
-                    .resolvedAt(r.getResolvedAt())
-                    .build();
-        }).collect(java.util.stream.Collectors.toList());
+        }
 
         return com.cmcu.itstudy.dto.document.DocumentReportPageResponseDto.builder()
                 .content(content)
-                .page(reports.getNumber())
-                .size(reports.getSize())
-                .totalElements(reports.getTotalElements())
-                .totalPages(reports.getTotalPages())
-                .pendingCount(documentReportRepository.countByStatus("PENDING"))
-                .resolvedCount(documentReportRepository.countByStatus("RESOLVED"))
-                .dismissedCount(documentReportRepository.countByStatus("DISMISSED"))
+                .page(documentIdPage.getNumber())
+                .size(documentIdPage.getSize())
+                .totalElements(documentIdPage.getTotalElements())
+                .totalPages(documentIdPage.getTotalPages())
+                .pendingCount(documentReportRepository.countDistinctDocumentsByPending())
+                .resolvedCount(documentReportRepository.countDistinctDocumentsByResolved())
+                .dismissedCount(documentReportRepository.countDistinctDocumentsByDismissed())
+                .allCount(documentReportRepository.countDistinctDocuments())
                 .build();
     }
 
@@ -906,10 +936,25 @@ public class DocumentServiceImpl implements DocumentService {
     public void resolveReport(UUID reportId, User resolver) {
         DocumentReport report = documentReportRepository.findById(reportId)
                 .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+        LocalDateTime now = LocalDateTime.now();
         report.setStatus("RESOLVED");
-        report.setResolvedAt(LocalDateTime.now());
+        report.setResolvedAt(now);
         report.setResolvedBy(resolver);
         documentReportRepository.save(report);
+
+        if (report.getDocument() != null && report.getDocument().getId() != null) {
+            List<DocumentReport> otherReports = documentReportRepository.findByDocumentId(report.getDocument().getId());
+            if (otherReports != null) {
+                for (DocumentReport other : otherReports) {
+                    if ("PENDING".equalsIgnoreCase(other.getStatus()) && !other.getId().equals(reportId)) {
+                        other.setStatus("RESOLVED");
+                        other.setResolvedAt(now);
+                        other.setResolvedBy(resolver);
+                        documentReportRepository.save(other);
+                    }
+                }
+            }
+        }
     }
 
     @Transactional
@@ -917,10 +962,25 @@ public class DocumentServiceImpl implements DocumentService {
     public void dismissReport(UUID reportId, User resolver) {
         DocumentReport report = documentReportRepository.findById(reportId)
                 .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+        LocalDateTime now = LocalDateTime.now();
         report.setStatus("DISMISSED");
-        report.setResolvedAt(LocalDateTime.now());
+        report.setResolvedAt(now);
         report.setResolvedBy(resolver);
         documentReportRepository.save(report);
+
+        if (report.getDocument() != null && report.getDocument().getId() != null) {
+            List<DocumentReport> otherReports = documentReportRepository.findByDocumentId(report.getDocument().getId());
+            if (otherReports != null) {
+                for (DocumentReport other : otherReports) {
+                    if ("PENDING".equalsIgnoreCase(other.getStatus()) && !other.getId().equals(reportId)) {
+                        other.setStatus("DISMISSED");
+                        other.setResolvedAt(now);
+                        other.setResolvedBy(resolver);
+                        documentReportRepository.save(other);
+                    }
+                }
+            }
+        }
     }
 
     @Transactional

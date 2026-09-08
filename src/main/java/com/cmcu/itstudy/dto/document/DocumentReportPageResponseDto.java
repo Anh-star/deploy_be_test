@@ -23,4 +23,5 @@ public class DocumentReportPageResponseDto {
     private long pendingCount;
     private long resolvedCount;
     private long dismissedCount;
+    private long allCount;
 }
