@@ -986,7 +986,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         // Cancel pending quiz generation if any
         try {
-            quizGenerationService.cancelPendingForDeletedDocument(document.getId(), now);
+            quizGenerationService.cancelForDocument(document.getId(), now);
         } catch (Exception ex) {
             log.warn("Failed to cancel pending quiz generations for deleted doc {}: {}", document.getId(), ex.getMessage());
         }
