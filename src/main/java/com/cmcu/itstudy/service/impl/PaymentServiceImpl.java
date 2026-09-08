@@ -87,8 +87,8 @@ public class PaymentServiceImpl implements PaymentService {
         Document document = documentRepository.findById(request.getDocumentId())
                 .orElseThrow(() -> new NoSuchElementException("Document not found with id: " + request.getDocumentId()));
 
-        if (Boolean.TRUE.equals(document.getDeleted())) {
-            throw new IllegalStateException("Tài liệu đã bị xóa, không thể thực hiện thanh toán");
+        if (Boolean.TRUE.equals(document.getDeleted()) || Boolean.TRUE.equals(document.getHidden())) {
+            throw new IllegalStateException("Tài liệu đã bị ẩn hoặc xóa, không thể thực hiện thanh toán");
         }
 
         if (!Boolean.TRUE.equals(document.getIsPaid())) {

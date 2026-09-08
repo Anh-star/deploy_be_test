@@ -60,14 +60,16 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
     public DocumentDetailResponseDto getDocumentDetail(UUID id, UUID currentUserId) {
         Document document = documentService.getById(id);
         boolean isDeleted = Boolean.TRUE.equals(document.getDeleted());
-        if (isDeleted) {
+        boolean isHidden = Boolean.TRUE.equals(document.getHidden());
+        if (isDeleted || isHidden) {
             boolean hasAccess = currentUserId != null && documentAccessService.hasAccess(currentUserId, id);
             boolean isOwner = currentUserId != null
                     && document.getCreatedBy() != null
                     && document.getCreatedBy().getId() != null
                     && document.getCreatedBy().getId().equals(currentUserId);
-            if (!hasAccess && !isOwner) {
-                throw new NoSuchElementException("Tài liệu không tồn tại hoặc đã bị xóa.");
+            boolean isStaff = isCurrentStaff();
+            if (!hasAccess && !isOwner && !isStaff) {
+                throw new NoSuchElementException(isDeleted ? "Tài liệu không tồn tại hoặc đã bị xóa." : "Tài liệu đã bị ẩn do vi phạm quy định.");
             }
         }
 
@@ -141,18 +143,20 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
         Document document = documentService.getById(documentId);
 
         boolean isDeleted = Boolean.TRUE.equals(document.getDeleted());
-        if (isDeleted) {
+        boolean isHidden = Boolean.TRUE.equals(document.getHidden());
+        if (isDeleted || isHidden) {
             UUID userId = getCurrentUserIdOrNull();
             boolean isOwner = userId != null
                     && document.getCreatedBy() != null
                     && document.getCreatedBy().getId() != null
                     && document.getCreatedBy().getId().equals(userId);
             boolean hasAccess = userId != null && documentAccessService.hasAccess(userId, documentId);
-            if (!isOwner && !hasAccess) {
-                throw new NoSuchElementException("Tài liệu không tồn tại hoặc đã bị xóa.");
+            boolean isStaff = isCurrentStaff();
+            if (!isOwner && !hasAccess && !isStaff) {
+                throw new NoSuchElementException(isDeleted ? "Tài liệu không tồn tại hoặc đã bị xóa." : "Tài liệu đã bị ẩn do vi phạm quy định.");
             }
-            boolean isExpired = Boolean.TRUE.equals(document.getFileCleaned()) ||
-                    (document.getRetentionExpiresAt() != null && java.time.LocalDateTime.now().isAfter(document.getRetentionExpiresAt()));
+            boolean isExpired = isDeleted && (Boolean.TRUE.equals(document.getFileCleaned()) ||
+                    (document.getRetentionExpiresAt() != null && java.time.LocalDateTime.now().isAfter(document.getRetentionExpiresAt())));
             if (isExpired) {
                 throw new IllegalStateException("Tài liệu đã hết hạn lưu trữ để tải lại.");
             }
@@ -180,6 +184,19 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
         }
 
         return dto;
+    }
+
+    private boolean isCurrentStaff() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getAuthorities() == null) {
+            return false;
+        }
+        return authentication.getAuthorities().stream().anyMatch(a -> {
+            String role = a.getAuthority();
+            return "ROLE_ADMIN".equals(role) || "ADMIN".equals(role)
+                    || "ROLE_CONTENT_MODERATOR".equals(role) || "CONTENT_MODERATOR".equals(role)
+                    || "ROLE_USER_MODERATOR".equals(role) || "USER_MODERATOR".equals(role);
+        });
     }
 
     private UUID getCurrentUserIdOrNull() {

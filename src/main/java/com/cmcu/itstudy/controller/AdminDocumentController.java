@@ -158,6 +158,38 @@ public class AdminDocumentController {
         ));
     }
 
+    @PatchMapping("/reports/{reportId}/hide")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
+    public ResponseEntity<ApiResponse<MessageResponseDto>> hideReportDocument(
+            @PathVariable("reportId") UUID reportId,
+            @RequestBody(required = false) com.cmcu.itstudy.dto.document.DocumentReportActionRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        User resolver = currentUser.getUser();
+        String reason = request != null ? request.getReason() : null;
+        documentService.hideDocumentFromReport(reportId, resolver, reason);
+        return ResponseEntity.ok(ApiResponse.success(
+                MessageResponseDto.builder().message("Đã ẩn tài liệu và xử lý báo cáo thành công").build(),
+                "OK"
+        ));
+    }
+
+    @PatchMapping("/reports/{reportId}/delete")
+    @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
+    public ResponseEntity<ApiResponse<MessageResponseDto>> deleteReportDocument(
+            @PathVariable("reportId") UUID reportId,
+            @RequestBody(required = false) com.cmcu.itstudy.dto.document.DocumentReportActionRequestDto request,
+            @AuthenticationPrincipal UserDetailsImpl currentUser
+    ) {
+        User resolver = currentUser.getUser();
+        String reason = request != null ? request.getReason() : null;
+        documentService.deleteDocumentFromReport(reportId, resolver, reason);
+        return ResponseEntity.ok(ApiResponse.success(
+                MessageResponseDto.builder().message("Đã xóa tài liệu và xử lý báo cáo thành công").build(),
+                "OK"
+        ));
+    }
+
     /**
      * Returns the async Office-to-PDF preview status for a document.
      * Used by the frontend moderator review page to decide when to enable

@@ -27,6 +27,7 @@ public class DocumentCardDto {
     private String fileType; // Use enum name as String
     private Long fileSize;
     private DocumentStatus status;
+    private Boolean isHidden;
     private LocalDateTime uploadDate;
     private Long views;
     private Long downloads;

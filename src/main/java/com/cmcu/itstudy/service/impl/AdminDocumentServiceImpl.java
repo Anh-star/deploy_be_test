@@ -62,7 +62,7 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
     @Override
     @Transactional(readOnly = true)
     public DocumentAdminDetailDto getDocumentDetail(UUID documentId) {
-        Document document = documentRepository.findByIdAndDeletedFalse(documentId)
+        Document document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new NoSuchElementException("Document not found: " + documentId));
         String previewUrl = resolvePreviewFileUrl(document);
         String storagePath = documentFileRepository.findByDocumentIdAndPrimaryTrue(documentId)
@@ -85,6 +85,8 @@ public class AdminDocumentServiceImpl implements AdminDocumentService {
                 .storagePath(storagePath)
                 .isPaid(Boolean.TRUE.equals(document.getIsPaid()))
                 .price(document.getPrice() != null ? document.getPrice() : 0L)
+                .isHidden(Boolean.TRUE.equals(document.getHidden()))
+                .isDeleted(Boolean.TRUE.equals(document.getDeleted()))
                 .build();
     }
 

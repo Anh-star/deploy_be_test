@@ -66,5 +66,9 @@ public interface DocumentService {
     void resolveReport(UUID reportId, User resolver);
 
     void dismissReport(UUID reportId, User resolver);
+
+    void hideDocumentFromReport(UUID reportId, User moderator, String reason);
+
+    void deleteDocumentFromReport(UUID reportId, User moderator, String reason);
 }
 

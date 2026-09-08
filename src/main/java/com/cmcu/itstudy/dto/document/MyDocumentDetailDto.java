@@ -28,6 +28,7 @@ public class MyDocumentDetailDto {
     private String categoryName;
     private List<String> tags;
     private DocumentStatus status;
+    private Boolean isHidden;
     private String rejectReason;
     private LocalDateTime createdAt;
 

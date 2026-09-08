@@ -29,6 +29,8 @@ public class DocumentReportResponseDto {
     private String status;
     private Long reportCount;
     private String documentStatus;
+    private Boolean isDocumentHidden;
+    private Boolean isDocumentDeleted;
     private LocalDateTime createdAt;
     private LocalDateTime resolvedAt;
 }

@@ -34,4 +34,6 @@ public class DocumentAdminDetailDto {
     private String storagePath;
     private Boolean isPaid;
     private Long price;
+    private Boolean isHidden;
+    private Boolean isDeleted;
 }

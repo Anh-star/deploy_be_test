@@ -559,6 +559,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .categoryName(document.getCategory() != null ? document.getCategory().getName() : null)
                 .tags(tagNames)
                 .status(document.getStatus())
+                .isHidden(Boolean.TRUE.equals(document.getHidden()))
                 .rejectReason(document.getRejectReason())
                 .createdAt(document.getCreatedAt())
                 .isPaid(Boolean.TRUE.equals(document.getIsPaid()))
@@ -648,6 +649,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .fileType(document.getFileType() != null ? document.getFileType().name() : "OTHER")
                 .fileSize(document.getFileSize())
                 .status(document.getStatus())
+                .isHidden(Boolean.TRUE.equals(document.getHidden()))
                 .uploadDate(document.getCreatedAt())
                 .views(document.getViewCount())
                 .downloads(document.getDownloadCount())
@@ -864,6 +866,8 @@ public class DocumentServiceImpl implements DocumentService {
                     .status(r.getStatus())
                     .reportCount(count)
                     .documentStatus(docStatus)
+                    .isDocumentHidden(r.getDocument() != null && Boolean.TRUE.equals(r.getDocument().getHidden()))
+                    .isDocumentDeleted(r.getDocument() != null && Boolean.TRUE.equals(r.getDocument().getDeleted()))
                     .createdAt(r.getCreatedAt())
                     .resolvedAt(r.getResolvedAt())
                     .build();
@@ -901,6 +905,169 @@ public class DocumentServiceImpl implements DocumentService {
         report.setResolvedAt(LocalDateTime.now());
         report.setResolvedBy(resolver);
         documentReportRepository.save(report);
+    }
+
+    @Transactional
+    @Override
+    public void hideDocumentFromReport(UUID reportId, User moderator, String reason) {
+        DocumentReport report = documentReportRepository.findById(reportId)
+                .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+
+        Document document = report.getDocument();
+        if (document == null) {
+            throw new NoSuchElementException("Tài liệu liên quan không tồn tại");
+        }
+
+        // 1. Hide document
+        document.setHidden(true);
+        documentRepository.save(document);
+
+        // 2. Resolve this report and other pending reports for the same document
+        LocalDateTime now = LocalDateTime.now();
+        report.setStatus("RESOLVED");
+        report.setResolvedAt(now);
+        report.setResolvedBy(moderator);
+        documentReportRepository.save(report);
+
+        List<DocumentReport> otherReports = documentReportRepository.findByDocumentId(document.getId());
+        if (otherReports != null) {
+            for (DocumentReport other : otherReports) {
+                if ("PENDING".equalsIgnoreCase(other.getStatus()) && !other.getId().equals(reportId)) {
+                    other.setStatus("RESOLVED");
+                    other.setResolvedAt(now);
+                    other.setResolvedBy(moderator);
+                    documentReportRepository.save(other);
+                }
+            }
+        }
+
+        // 3. Send notification to document author
+        try {
+            if (document.getCreatedBy() != null) {
+                String docTitle = (document.getTitle() != null && !document.getTitle().isBlank())
+                        ? document.getTitle() : "tài liệu";
+                String msg = "Tài liệu \"" + docTitle + "\" của bạn đã bị ẩn do vi phạm báo cáo.";
+                if (StringUtils.hasText(reason)) {
+                    msg += " Lý do: " + reason.trim();
+                }
+                msg += ". Vui lòng liên hệ quản trị viên nếu bạn có thắc mắc hoặc khiếu nại.";
+
+                notificationService.createAndPush(
+                        document.getCreatedBy().getId(),
+                        moderator.getId(),
+                        NotificationType.DOCUMENT_HIDDEN,
+                        document.getId().toString(),
+                        "DOCUMENT",
+                        msg
+                );
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to push DOCUMENT_HIDDEN notification for doc {}: {}", document.getId(), ex.getMessage());
+        }
+    }
+
+    @Transactional
+    @Override
+    public void deleteDocumentFromReport(UUID reportId, User moderator, String reason) {
+        DocumentReport report = documentReportRepository.findById(reportId)
+                .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
+
+        Document document = report.getDocument();
+        if (document == null) {
+            throw new NoSuchElementException("Tài liệu liên quan không tồn tại");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        // 1. Soft-delete document
+        document.setDeleted(true);
+        document.setDeletedAt(now);
+        document.setDeletedBy(moderator);
+
+        // Cancel pending quiz generation if any
+        try {
+            quizGenerationService.cancelPendingForDeletedDocument(document.getId(), now);
+        } catch (Exception ex) {
+            log.warn("Failed to cancel pending quiz generations for deleted doc {}: {}", document.getId(), ex.getMessage());
+        }
+
+        // Check buyers retention if paid document
+        List<DocumentAccess> accesses = documentAccessRepository.findByDocumentId(document.getId());
+        List<UUID> buyerUserIds = accesses.stream()
+                .map(DocumentAccess::getUserId)
+                .filter(uid -> uid != null && !uid.equals(document.getCreatedBy() != null ? document.getCreatedBy().getId() : null))
+                .distinct()
+                .toList();
+
+        if (!buyerUserIds.isEmpty()) {
+            LocalDateTime expiresAt = now.plusDays(30);
+            document.setRetentionExpiresAt(expiresAt);
+            document.setFileCleaned(false);
+
+            String formattedDate = expiresAt.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            String docTitle = (document.getTitle() != null && !document.getTitle().isBlank())
+                    ? document.getTitle() : "tài liệu";
+            String buyerMsg = "Tài liệu \"" + docTitle + "\" bạn đã mua vừa bị gỡ khỏi hệ thống do vi phạm bản quyền hoặc nội dung. Bạn có thể tải lại tài liệu này đến hết ngày " + formattedDate + ".";
+
+            for (UUID buyerId : buyerUserIds) {
+                try {
+                    notificationService.createAndPush(
+                            buyerId,
+                            moderator.getId(),
+                            NotificationType.DOCUMENT_DELETED,
+                            document.getId().toString(),
+                            "DOCUMENT",
+                            buyerMsg
+                    );
+                } catch (Exception e) {
+                    log.warn("Failed to notify buyer {} for deleted doc {}: {}", buyerId, document.getId(), e.getMessage());
+                }
+            }
+        }
+
+        documentRepository.save(document);
+
+        // 2. Resolve this report and other pending reports for the same document
+        report.setStatus("RESOLVED");
+        report.setResolvedAt(now);
+        report.setResolvedBy(moderator);
+        documentReportRepository.save(report);
+
+        List<DocumentReport> otherReports = documentReportRepository.findByDocumentId(document.getId());
+        if (otherReports != null) {
+            for (DocumentReport other : otherReports) {
+                if ("PENDING".equalsIgnoreCase(other.getStatus()) && !other.getId().equals(reportId)) {
+                    other.setStatus("RESOLVED");
+                    other.setResolvedAt(now);
+                    other.setResolvedBy(moderator);
+                    documentReportRepository.save(other);
+                }
+            }
+        }
+
+        // 3. Send notification to document author
+        try {
+            if (document.getCreatedBy() != null) {
+                String docTitle = (document.getTitle() != null && !document.getTitle().isBlank())
+                        ? document.getTitle() : "tài liệu";
+                String authorMsg = "Tài liệu \"" + docTitle + "\" của bạn đã bị xóa khỏi hệ thống do vi phạm báo cáo.";
+                if (StringUtils.hasText(reason)) {
+                    authorMsg += " Lý do: " + reason.trim();
+                }
+                authorMsg += ". Vui lòng liên hệ quản trị viên nếu bạn có thắc mắc hoặc khiếu nại.";
+
+                notificationService.createAndPush(
+                        document.getCreatedBy().getId(),
+                        moderator.getId(),
+                        NotificationType.DOCUMENT_DELETED,
+                        document.getId().toString(),
+                        "DOCUMENT",
+                        authorMsg
+                );
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to push DOCUMENT_DELETED notification for doc {}: {}", document.getId(), ex.getMessage());
+        }
     }
 
     @Transactional(readOnly = true)
