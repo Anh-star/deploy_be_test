@@ -960,6 +960,12 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional
     @Override
     public void dismissReport(UUID reportId, User resolver) {
+        dismissReport(reportId, resolver, null);
+    }
+
+    @Transactional
+    @Override
+    public void dismissReport(UUID reportId, User resolver, String reason) {
         DocumentReport report = documentReportRepository.findById(reportId)
                 .orElseThrow(() -> new NoSuchElementException("Báo cáo không tồn tại"));
         LocalDateTime now = LocalDateTime.now();
@@ -967,6 +973,10 @@ public class DocumentServiceImpl implements DocumentService {
         report.setResolvedAt(now);
         report.setResolvedBy(resolver);
         documentReportRepository.save(report);
+
+        // Track notified user IDs to avoid duplicate notifications if user submitted multiple reports
+        Set<UUID> notifiedUserIds = new HashSet<>();
+        notifyReporterDismissed(report, resolver, reason, notifiedUserIds);
 
         if (report.getDocument() != null && report.getDocument().getId() != null) {
             List<DocumentReport> otherReports = documentReportRepository.findByDocumentId(report.getDocument().getId());
@@ -977,9 +987,48 @@ public class DocumentServiceImpl implements DocumentService {
                         other.setResolvedAt(now);
                         other.setResolvedBy(resolver);
                         documentReportRepository.save(other);
+                        notifyReporterDismissed(other, resolver, reason, notifiedUserIds);
                     }
                 }
             }
+        }
+    }
+
+    private void notifyReporterDismissed(DocumentReport report, User resolver, String reason, Set<UUID> notifiedUserIds) {
+        if (report == null || report.getReporter() == null) {
+            return;
+        }
+        UUID reporterId = report.getReporter().getId();
+        if (reporterId == null || !notifiedUserIds.add(reporterId)) {
+            return;
+        }
+
+        try {
+            Document document = report.getDocument();
+            String docTitle = (document != null && document.getTitle() != null && !document.getTitle().isBlank())
+                    ? document.getTitle()
+                    : "tài liệu";
+            UUID resolverId = resolver != null ? resolver.getId() : null;
+            String referenceId = (document != null && document.getId() != null)
+                    ? document.getId().toString()
+                    : report.getId().toString();
+
+            String msg = "Báo cáo về tài liệu \"" + docTitle + "\" của bạn đã được quản trị viên xem xét và bỏ qua do không đủ căn cứ vi phạm.";
+            if (StringUtils.hasText(reason)) {
+                msg += " Lý do: " + reason.trim();
+            }
+
+            notificationService.createAndPush(
+                    reporterId,
+                    resolverId,
+                    NotificationType.REPORT_DISMISSED,
+                    referenceId,
+                    "DOCUMENT",
+                    msg
+            );
+            log.info("[DISMISS_REPORT] Pushed REPORT_DISMISSED notification to reporterId: {} for document: {}", reporterId, referenceId);
+        } catch (Exception e) {
+            log.warn("[DISMISS_REPORT] Failed to push dismiss notification for report {}: {}", report.getId(), e.getMessage());
         }
     }
 

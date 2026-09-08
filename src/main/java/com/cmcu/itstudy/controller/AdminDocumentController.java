@@ -148,10 +148,12 @@ public class AdminDocumentController {
     @PreAuthorize("hasAnyRole('ADMIN', 'CONTENT_MODERATOR', 'USER_MODERATOR')")
     public ResponseEntity<ApiResponse<MessageResponseDto>> dismissReport(
             @PathVariable("reportId") UUID reportId,
+            @RequestBody(required = false) com.cmcu.itstudy.dto.document.DocumentReportActionRequestDto request,
             @AuthenticationPrincipal UserDetailsImpl currentUser
     ) {
         User resolver = currentUser.getUser();
-        documentService.dismissReport(reportId, resolver);
+        String reason = request != null ? request.getReason() : null;
+        documentService.dismissReport(reportId, resolver, reason);
         return ResponseEntity.ok(ApiResponse.success(
                 MessageResponseDto.builder().message("Đã bỏ qua báo cáo").build(),
                 "OK"
