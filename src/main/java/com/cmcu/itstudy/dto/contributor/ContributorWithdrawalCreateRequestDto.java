@@ -21,8 +21,8 @@ public class ContributorWithdrawalCreateRequestDto {
 
     @NotNull(message = "Amount is required")
     @Min(
-            value = 5001,
-            message = "Withdrawal amount must be at least 5001"
+            value = 5000,
+            message = "Withdrawal amount must be at least 5000"
     )
     @Max(
             value = 999999,

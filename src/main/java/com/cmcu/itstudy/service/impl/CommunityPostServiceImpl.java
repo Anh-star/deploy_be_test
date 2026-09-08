@@ -1251,8 +1251,11 @@ public class CommunityPostServiceImpl implements CommunityPostService {
         CommunityPostComment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new NoSuchElementException("Comment not found"));
 
-        if (!comment.getAuthor().getId().equals(userId)) {
-            throw new IllegalArgumentException("You can only delete your own comment");
+        boolean isCommentAuthor = comment.getAuthor() != null && comment.getAuthor().getId().equals(userId);
+        boolean isPostAuthor = comment.getPost() != null && comment.getPost().getAuthor() != null && comment.getPost().getAuthor().getId().equals(userId);
+
+        if (!isCommentAuthor && !isPostAuthor) {
+            throw new IllegalArgumentException("Bạn chỉ có thể xóa bình luận của chính mình hoặc bình luận trong bài viết của bạn");
         }
 
         comment.setDeleted(true);

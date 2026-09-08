@@ -39,7 +39,7 @@ public class ContributorWithdrawalServiceImpl implements ContributorWithdrawalSe
     private static final String MASK_ALL = "****";
     private static final String MASKED_PREFIX = "********";
 
-    private static final long MIN_AMOUNT = 5_001L;
+    private static final long MIN_AMOUNT = 5_000L;
     private static final long MAX_AMOUNT = 999_999L;
     private static final int SELLER_NOTE_MAX_LENGTH = 1000;
 
@@ -68,7 +68,7 @@ public class ContributorWithdrawalServiceImpl implements ContributorWithdrawalSe
             throw new IllegalArgumentException("amount is required");
         }
         if (amount < MIN_AMOUNT) {
-            throw new IllegalArgumentException("Withdrawal amount must be at least 5001");
+            throw new IllegalArgumentException("Withdrawal amount must be at least 5000");
         }
         if (amount > MAX_AMOUNT) {
             throw new IllegalArgumentException("Withdrawal amount must not exceed 999999");

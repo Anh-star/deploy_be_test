@@ -403,7 +403,10 @@ public class DocumentCommentServiceImpl implements DocumentCommentService {
             return;
         }
 
-        if (comment.getAuthor() == null || !comment.getAuthor().getId().equals(userId)) {
+        boolean isCommentAuthor = comment.getAuthor() != null && comment.getAuthor().getId().equals(userId);
+        boolean isDocOwner = comment.getDocument() != null && comment.getDocument().getCreatedBy() != null && comment.getDocument().getCreatedBy().getId().equals(userId);
+
+        if (!isCommentAuthor && !isDocOwner) {
             throw new org.springframework.security.access.AccessDeniedException("Bạn không có quyền xóa bình luận này");
         }
 
