@@ -19,6 +19,7 @@ import com.cmcu.itstudy.service.contract.DocumentService;
 import com.cmcu.itstudy.service.contract.QuizService;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -96,8 +97,15 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
                 && document.getCreatedBy() != null
                 && document.getCreatedBy().getId() != null
                 && document.getCreatedBy().getId().equals(currentUserId);
+        boolean isAdmin = isUserAdminOrModerator(currentUserId);
+
+        if (isOwner || isAdmin) {
+            hasAccess = true;
+        }
+
         if (Boolean.TRUE.equals(document.getIsPaid())
                 && !isOwner
+                && !isAdmin
                 && (currentUserId == null || !Boolean.TRUE.equals(hasAccess))) {
             if (primaryFile != null) {
                 primaryFile.setFileUrl(null);
@@ -139,15 +147,45 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
                     && document.getCreatedBy() != null
                     && document.getCreatedBy().getId() != null
                     && document.getCreatedBy().getId().equals(userId);
+            boolean isAdmin = isUserAdminOrModerator(userId);
             if (userId == null) {
                 throw new AccessDeniedException("You must purchase this document before downloading.");
             }
-            if (!isOwner && !documentAccessService.hasAccess(userId, documentId)) {
+            if (!isOwner && !isAdmin && !documentAccessService.hasAccess(userId, documentId)) {
                 throw new AccessDeniedException("You must purchase this document before downloading.");
             }
         }
 
         return dto;
+    }
+
+    private boolean isUserAdminOrModerator(UUID userId) {
+        if (userId == null) {
+            return false;
+        }
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof UserDetailsImpl userDetails)) {
+            return false;
+        }
+        if (userDetails.getUser() == null || !userId.equals(userDetails.getUser().getId())) {
+            return false;
+        }
+        boolean hasAdminAuthority = userDetails.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(r -> "ROLE_ADMIN".equals(r)
+                        || "ROLE_CONTENT_MODERATOR".equals(r)
+                        || "ROLE_USER_MODERATOR".equals(r));
+        if (hasAdminAuthority) {
+            return true;
+        }
+        if (userDetails.getUser().getRoles() != null) {
+            return userDetails.getUser().getRoles().stream()
+                    .anyMatch(r -> r != null && r.getName() != null &&
+                            ("ADMIN".equalsIgnoreCase(r.getName())
+                                    || "CONTENT_MODERATOR".equalsIgnoreCase(r.getName())
+                                    || "USER_MODERATOR".equalsIgnoreCase(r.getName())));
+        }
+        return false;
     }
 
     private UUID getCurrentUserIdOrNull() {
