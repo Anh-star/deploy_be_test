@@ -19,6 +19,7 @@ import com.cmcu.itstudy.service.contract.DocumentService;
 import com.cmcu.itstudy.service.contract.QuizService;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -109,11 +110,18 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
                 && document.getCreatedBy() != null
                 && document.getCreatedBy().getId() != null
                 && document.getCreatedBy().getId().equals(currentUserId);
+        boolean isAdmin = isCurrentStaff();
+
+        if (isOwner || isAdmin) {
+            hasAccess = true;
+        }
+
         boolean isExpired = isDeleted && (Boolean.TRUE.equals(document.getFileCleaned()) ||
                 (document.getRetentionExpiresAt() != null && java.time.LocalDateTime.now().isAfter(document.getRetentionExpiresAt())));
 
         if (isExpired || (Boolean.TRUE.equals(document.getIsPaid())
                 && !isOwner
+                && !isAdmin
                 && (currentUserId == null || !Boolean.TRUE.equals(hasAccess)))) {
             if (primaryFile != null) {
                 primaryFile.setFileUrl(null);
@@ -175,10 +183,11 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
                     && document.getCreatedBy() != null
                     && document.getCreatedBy().getId() != null
                     && document.getCreatedBy().getId().equals(userId);
+            boolean isAdmin = isCurrentStaff();
             if (userId == null) {
                 throw new AccessDeniedException("You must purchase this document before downloading.");
             }
-            if (!isOwner && !documentAccessService.hasAccess(userId, documentId)) {
+            if (!isOwner && !isAdmin && !documentAccessService.hasAccess(userId, documentId)) {
                 throw new AccessDeniedException("You must purchase this document before downloading.");
             }
         }
